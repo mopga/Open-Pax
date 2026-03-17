@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import type { Region } from '../types';
+import type { Region } from '../../types';
 
 interface MapViewProps {
   regions: Region[];

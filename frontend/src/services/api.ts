@@ -140,3 +140,70 @@ export const healthApi = {
     return fetchApi('/health');
   },
 };
+
+
+// ============================================================================
+// Map API
+// ============================================================================
+
+export interface MapRegionData {
+  id: string;
+  name: string;
+  color: string;
+  path: string;
+}
+
+export interface MapData {
+  id: string;
+  name: string;
+  width: number;
+  height: number;
+  regions: MapRegionData[];
+}
+
+export interface MapListItem {
+  id: string;
+  name: string;
+  regions_count: number;
+  created_at: string;
+}
+
+export const mapApi = {
+  /**
+   * Создать новую карту
+   */
+  create: (data: {
+    name: string;
+    width: number;
+    height: number;
+    regions: MapRegionData[];
+  }): Promise<{ id: string; name: string }> => {
+    return fetchApi('/maps', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Список всех карт
+   */
+  list: (): Promise<MapListItem[]> => {
+    return fetchApi('/maps');
+  },
+
+  /**
+   * Получить карту по ID
+   */
+  get: (mapId: string): Promise<MapData> => {
+    return fetchApi(`/maps/${mapId}`);
+  },
+
+  /**
+   * Удалить карту
+   */
+  delete: (mapId: string): Promise<{ status: string; id: string }> => {
+    return fetchApi(`/maps/${mapId}`, {
+      method: 'DELETE',
+    });
+  },
+};

@@ -5,12 +5,19 @@
 
 import React, { useState, useEffect } from 'react';
 import { MapView } from './components/Map/MapView';
-import { gameApi, worldApi } from './services/api';
+import { MapEditor, type EditorRegion } from './components/Editor';
+import { gameApi, worldApi, mapApi } from './services/api';
 import type { Region, World, Game, CreateWorldRequest } from './types';
+
+// Вспомогательная функция: точки в SVG path
+const pointsToPath = (points: { x: number; y: number }[]): string => {
+  if (points.length === 0) return '';
+  return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+};
 
 function App() {
   // Состояние
-  const [currentView, setCurrentView] = useState<'menu' | 'create-world' | 'game'>('menu');
+  const [currentView, setCurrentView] = useState<'menu' | 'create-world' | 'game' | 'editor'>('menu');
   const [worlds, setWorlds] = useState<World[]>([]);
   const [currentWorld, setCurrentWorld] = useState<World | null>(null);
   const [currentGame, setCurrentGame] = useState<Game | null>(null);
@@ -108,6 +115,47 @@ function App() {
     setLoading(false);
   };
 
+  // Сохранить карту из редактора
+  const handleSaveMap = async (regions: EditorRegion[], mapName: string) => {
+    setLoading(true);
+    try {
+      // Конвертируем регионы в формат для API
+      const mapRegions = regions.map(r => ({
+        id: r.id,
+        name: r.name,
+        color: r.color,
+        path: pointsToPath(r.points),
+      }));
+
+      const result = await mapApi.create({
+        name: mapName,
+        width: 800,
+        height: 600,
+        regions: mapRegions,
+      });
+
+      console.log('Map saved:', result);
+      alert(`Карта "${mapName}" сохранена!`);
+      setCurrentView('menu');
+    } catch (e) {
+      console.error('Failed to save map:', e);
+      // Для MVP - сохраняем в localStorage если API недоступен
+      const localData = {
+        name: mapName,
+        regions: regions.map(r => ({
+          id: r.id,
+          name: r.name,
+          color: r.color,
+          path: pointsToPath(r.points),
+        })),
+      };
+      localStorage.setItem(`map_${Date.now()}`, JSON.stringify(localData));
+      alert('Сохранено локально (API недоступен)');
+      setCurrentView('menu');
+    }
+    setLoading(false);
+  };
+
   // Рендер
   return (
     <div className="app">
@@ -124,6 +172,13 @@ function App() {
             <p>{currentWorld.description}</p>
             <button onClick={() => setCurrentView('create-world')}>
               Выбрать →
+            </button>
+          </div>
+          <div className="editor-card">
+            <h3>🗺️ Создать свою карту</h3>
+            <p>Нарисуйте собственный мир для альтернативной истории</p>
+            <button onClick={() => setCurrentView('editor')}>
+              Создать карту →
             </button>
           </div>
         </div>
@@ -190,6 +245,13 @@ function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {currentView === 'editor' && (
+        <MapEditor
+          onSave={handleSaveMap}
+          onCancel={() => setCurrentView('menu')}
+        />
       )}
     </div>
   );

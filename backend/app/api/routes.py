@@ -36,6 +36,7 @@ game_controller = GameController(llm_provider)
 # In-memory storage (в продакшене — PostgreSQL)
 games: Dict[str, Game] = {}
 worlds: Dict[str, GameWorld] = {}
+maps: Dict[str, Dict] = {}
 
 
 # ============================================================================
@@ -72,6 +73,32 @@ class ActionSubmit(BaseModel):
 class AdvisorRequest(BaseModel):
     game_id: str
     player_id: str
+
+
+# ============================================================================
+# Map Models
+# ============================================================================
+
+class MapRegionData(BaseModel):
+    id: str
+    name: str
+    color: str
+    path: str
+
+
+class MapData(BaseModel):
+    id: str
+    name: str
+    width: int = 800
+    height: int = 600
+    regions: List[MapRegionData]
+
+
+class MapCreate(BaseModel):
+    name: str
+    width: int = 800
+    height: int = 600
+    regions: List[MapRegionData]
 
 
 # ============================================================================
@@ -312,8 +339,63 @@ async def get_advisor_tips(game_id: str, player_id: str):
     }
     
     tips = await game_controller.get_advisor_tips(game_context)
-    
+
     return {"tips": tips}
+
+
+# ============================================================================
+# Map Endpoints
+# ============================================================================
+
+@app.post("/maps", response_model=Dict)
+async def create_map(map_data: MapCreate):
+    """Создать новую карту"""
+    map_id = str(uuid.uuid4())[:8]
+
+    new_map = {
+        "id": map_id,
+        "name": map_data.name,
+        "width": map_data.width,
+        "height": map_data.height,
+        "regions": [r.model_dump() for r in map_data.regions],
+        "created_at": datetime.now().isoformat()
+    }
+
+    maps[map_id] = new_map
+
+    return {"id": map_id, "name": map_data.name}
+
+
+@app.get("/maps")
+async def list_maps():
+    """Список всех карт"""
+    return [
+        {
+            "id": m["id"],
+            "name": m["name"],
+            "regions_count": len(m["regions"]),
+            "created_at": m["created_at"]
+        }
+        for m in maps.values()
+    ]
+
+
+@app.get("/maps/{map_id}")
+async def get_map(map_id: str):
+    """Получить карту по ID"""
+    if map_id not in maps:
+        raise HTTPException(status_code=404, detail="Map not found")
+    return maps[map_id]
+
+
+@app.delete("/maps/{map_id}")
+async def delete_map(map_id: str):
+    """Удалить карту"""
+    if map_id not in maps:
+        raise HTTPException(status_code=404, detail="Map not found")
+
+    del maps[map_id]
+    return {"status": "deleted", "id": map_id}
 
 
 # ============================================================================
