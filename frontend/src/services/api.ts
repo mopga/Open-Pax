@@ -15,7 +15,7 @@ import type {
   World
 } from '../types';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 
 class ApiError extends Error {
@@ -61,14 +61,34 @@ export const worldApi = {
       body: JSON.stringify(data),
     });
   },
-  
+
+  /**
+   * Создать мир из карты
+   */
+  createFromMap: (data: {
+    mapId: string;
+    name: string;
+    description?: string;
+    basePrompt?: string;
+  }): Promise<{
+    world_id: string;
+    name: string;
+    regions_count: number;
+    regions: { id: string; name: string; color: string }[];
+  }> => {
+    return fetchApi('/worlds/from-map', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
   /**
    * Получить мир по ID
    */
   get: (worldId: string): Promise<World> => {
     return fetchApi(`/worlds/${worldId}`);
   },
-  
+
   /**
    * Добавить регион на карту мира
    */

@@ -59,29 +59,44 @@ export const MapView: React.FC<MapViewProps> = ({
           y={0}
           width={width}
           height={height}
-          fill="#1a1a2e"
+          fill="#0d0d14"
         />
-        
+
+        {/* Grid lines for atmosphere */}
+        <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+          <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1a1a24" strokeWidth="0.5"/>
+        </pattern>
+        <rect x="0" y="0" width={width} height={height} fill="url(#grid)" />
+
         {/* Регионы */}
         {regions.map((region) => {
           const isSelected = region.id === selectedRegionId;
           const isHovered = region.id === hoveredRegion;
-          
+
           return (
             <g key={region.id}>
+              {/* Glow effect for selected */}
+              {isSelected && (
+                <path
+                  d={region.svgPath}
+                  fill={region.color}
+                  fillOpacity={0.3}
+                  style={{ filter: 'blur(8px)' }}
+                />
+              )}
               <path
                 d={region.svgPath}
                 fill={region.color}
-                stroke={isSelected ? '#ffffff' : isHovered ? '#cccccc' : '#333333'}
+                fillOpacity={isSelected ? 0.9 : isHovered ? 0.85 : 0.6}
+                stroke={isSelected ? '#ffffff' : isHovered ? '#ffffff' : '#444444'}
                 strokeWidth={isSelected ? 3 : isHovered ? 2 : 1}
                 style={{
                   cursor: onRegionClick ? 'pointer' : 'default',
                   transition: 'all 0.2s ease',
-                  opacity: isSelected || isHovered ? 1 : 0.85,
-                  filter: isSelected 
-                    ? 'drop-shadow(0 0 10px rgba(255,255,255,0.5))' 
-                    : isHovered 
-                      ? 'drop-shadow(0 0 5px rgba(255,255,255,0.3))'
+                  filter: isSelected
+                    ? 'drop-shadow(0 0 10px rgba(255,255,255,0.5))'
+                    : isHovered
+                      ? `drop-shadow(0 0 8px ${region.color})`
                       : 'none',
                 }}
                 onClick={() => handleRegionClick(region.id)}
