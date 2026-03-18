@@ -92,14 +92,20 @@ export const MapView: React.FC<MapViewProps> = ({
   const zoomIn = () => setZoom(prev => Math.min(5, prev * 1.2));
   const zoomOut = () => setZoom(prev => Math.max(0.2, prev * 0.8));
 
-  // Рендер объекта
-  const renderObject = (obj: MapObject) => {
+  // Collect all objects from all regions for rendering on top
+  const allObjects = regions.flatMap(r => r.objects || []);
+
+  // Рендер объекта (always on top)
+  const renderObject = (obj: MapObject, regionColor?: string) => {
     const icon = OBJECT_ICONS[obj.type] || { color: '#ffffff', shape: 'circle' as const, size: 8 };
 
     return (
       <g key={obj.id} transform={`translate(${obj.x}, ${obj.y})`}>
         {/* Glow effect */}
         <circle r={icon.size + 4} fill={icon.color} fillOpacity={0.3} />
+
+        {/* White outline for visibility */}
+        <circle r={icon.size + 1} fill="none" stroke="#ffffff" strokeWidth={2.5} />
 
         {icon.shape === 'circle' && (
           <circle r={icon.size} fill={icon.color} stroke="#ffffff" strokeWidth={2} />
@@ -113,12 +119,15 @@ export const MapView: React.FC<MapViewProps> = ({
             fill={icon.color} stroke="#ffffff" strokeWidth={2} />
         )}
 
-        {/* Label */}
+        {/* Label with background for visibility */}
         {obj.name && (
-          <text y={icon.size + 14} fill="#ffffff" fontSize={10}
-            textAnchor="middle" style={{ textShadow: '0 0 4px #000' }}>
-            {obj.name}
-          </text>
+          <g>
+            <rect x={-40} y={icon.size + 2} width={80} height={14} fill="#000" fillOpacity={0.7} rx={3} />
+            <text y={icon.size + 12} fill="#ffffff" fontSize={9}
+              textAnchor="middle" fontWeight={600}>
+              {obj.name}
+            </text>
+          </g>
         )}
       </g>
     );
@@ -242,12 +251,12 @@ export const MapView: React.FC<MapViewProps> = ({
               >
                 {region.name}
               </text>
-
-              {/* Objects on map */}
-              {region.objects?.map(renderObject)}
             </g>
           );
         })}
+
+        {/* Objects layer - always on top */}
+        {allObjects.map(obj => renderObject(obj))}
       </svg>
 
       {/* Tooltip */}
