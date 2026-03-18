@@ -452,32 +452,27 @@ open-pax/
 | 2.1 | Database Setup (SQLite) | P1 | 2-3h |
 | 2.2 | Repository Layer | P1 | 2h |
 
-### Phase 3: Multiplayer (P1)
+### Phase 3: Game Features (P2)
 
 | Phase | Task | Priority | Est. Time |
 |-------|------|----------|-----------|
-| 3.1 | Multiplayer Support | P1 | 4h |
+| 3.1 | Visual Turn Changes | P2 | 2h |
+| 3.2 | Country Lock | P2 | 1h |
+| 3.3 | Random Events | P2 | 2h |
+| 3.4 | Improved Object System | P2 | 2h |
+| 3.5 | Bloc/Coalition System | P2 | 3h |
+| 3.6 | Map Import/Export | P2 | 1h |
+| 3.7 | Border Detection | P2 | 2h |
 
-### Phase 4: Game Features (P2)
-
-| Phase | Task | Priority | Est. Time |
-|-------|------|----------|-----------|
-| 4.1 | Visual Turn Changes | P2 | 2h |
-| 4.2 | Improved Object System | P2 | 2h |
-| 4.3 | Bloc/Coalition System | P2 | 3h |
-| 4.4 | Country Lock (user can't change country) | P2 | 1h |
-| 4.5 | Map Import/Export | P2 | 1h |
-| 4.6 | Border Detection | P2 | 2h |
-
-### Phase 5: Polish (P3)
+### Phase 4: Polish (P3)
 
 | Phase | Task | Priority | Est. Time |
 |-------|------|----------|-----------|
-| 5.1 | Advisor Panel UI | P3 | 1h |
-| 5.2 | Random Events | P3 | 2h |
-| 5.3 | Error Handling | P3 | 1h |
+| 4.1 | Advisor Panel UI | P3 | 1h |
+| 4.2 | Error Handling | P3 | 1h |
 
 ### REMOVED
+- 3.1 Multiplayer Support (solo game only)
 - 3.2 Additional LLM Providers (only MiniMax needed)
 
 ---
