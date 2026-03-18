@@ -7,7 +7,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { MapView } from './components/Map/MapView';
 import { MapEditor, type EditorRegion, type EditorObject } from './components/Editor';
 import { CreateWorld, type WorldConfig } from './components/WorldBuilder/CreateWorld';
-import { gameApi, worldApi, mapApi } from './services/api';
+import { gameApi, worldApi, mapApi, savesApi } from './services/api';
 import type { Region, World, Game } from './types';
 
 // Вспомогательная функция: точки в SVG path
@@ -42,7 +42,11 @@ function App() {
   const [history, setHistory] = useState<{ turn: number; action: string; result: string; events?: string[]; date?: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [showAdvisor, setShowAdvisor] = useState(false);
+  const [advisorMode, setAdvisorMode] = useState<'advisor' | 'suggestions'>('advisor');
   const [advisorTips, setAdvisorTips] = useState<string>('');
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [savedGames, setSavedGames] = useState<any[]>([]);
+  const [showSavesMenu, setShowSavesMenu] = useState(false);
   const historyEndRef = useRef<HTMLDivElement>(null);
 
   // Прокрутка истории вниз
@@ -637,6 +641,54 @@ function App() {
             >
               {loading ? 'Думаю...' : `Ход (+${playerActions.filter(a => a.trim()).length}) →`}
             </button>
+
+            {/* Save/Load buttons */}
+            <div className="save-load-section">
+              <button
+                className="btn-save"
+                onClick={async () => {
+                  if (!currentGame) return;
+                  try {
+                    const name = prompt('Название сохранения:', `Игра ${new Date().toLocaleString()}`);
+                    if (name) {
+                      await gameApi.saveGame(currentGame.id, name);
+                      alert('Игра сохранена!');
+                    }
+                  } catch (e) {
+                    console.error(e);
+                    alert('Ошибка сохранения');
+                  }
+                }}
+              >
+                💾 Сохранить
+              </button>
+              <button
+                className="btn-load"
+                onClick={async () => {
+                  try {
+                    const data = await savesApi.list();
+                    if (data.saves.length === 0) {
+                      alert('Нет сохранённых игр');
+                      return;
+                    }
+                    const save = data.saves[0]; // Load most recent
+                    if (save && confirm(`Загрузить "${save.name}" (Ход ${save.current_turn})?`)) {
+                      await gameApi.loadSave(save.id);
+                      // Reload game
+                      const game = await gameApi.get(currentGame.id);
+                      setCurrentGame(game);
+                      setHistory([]);
+                      alert('Игра загружена!');
+                    }
+                  } catch (e) {
+                    console.error(e);
+                    alert('Ошибка загрузки');
+                  }
+                }}
+              >
+                📂 Загрузить
+              </button>
+            </div>
           </div>
 
           {/* Events from last turn */}
@@ -657,6 +709,7 @@ function App() {
               className="floating-advisor-btn"
               onClick={() => {
                 setShowAdvisor(true);
+                setAdvisorMode('advisor');
                 // Auto-generate initial advice
                 if (!advisorTips) {
                   (async () => {
@@ -677,38 +730,93 @@ function App() {
           {showAdvisor && (
             <div className="floating-advisor-panel">
               <div className="floating-advisor-header">
-                <h4>💡 Советник</h4>
+                <div className="advisor-tabs">
+                  <button
+                    className={`advisor-tab ${advisorMode === 'advisor' ? 'active' : ''}`}
+                    onClick={() => setAdvisorMode('advisor')}
+                  >
+                    💡 Советник
+                  </button>
+                  <button
+                    className={`advisor-tab ${advisorMode === 'suggestions' ? 'active' : ''}`}
+                    onClick={async () => {
+                      setAdvisorMode('suggestions');
+                      if (suggestions.length === 0) {
+                        try {
+                          const data = await gameApi.getSuggestions(currentGame.id);
+                          setSuggestions(data.suggestions || []);
+                        } catch (e) { console.error(e); }
+                      }
+                    }}
+                  >
+                    📋 Подсказки
+                  </button>
+                </div>
                 <button className="btn-close" onClick={() => setShowAdvisor(false)}>×</button>
               </div>
-              <div className="floating-advisor-messages">
-                {advisorTips ? (
-                  advisorTips.split('\n').map((line, i) => (
-                    <div key={i} className="advisor-message">
-                      {line || <br/>}
-                    </div>
-                  ))
-                ) : (
-                  <div className="advisor-message loading">Загрузка совета...</div>
-                )}
-              </div>
-              <div className="floating-advisor-input">
-                <button
-                  className="btn-refresh-advice"
-                  onClick={async () => {
-                    if (!currentGame) return;
-                    setAdvisorTips('Загрузка...');
-                    try {
-                      const tips = await gameApi.getAdvisor(currentGame.id, currentGame.players[0].id);
-                      setAdvisorTips((tips.tips || []).join('\n'));
-                    } catch (e) {
-                      console.error(e);
-                      setAdvisorTips('Ошибка получения совета');
-                    }
-                  }}
-                >
-                  🔄 Новый совет
-                </button>
-              </div>
+
+              {/* Advisor Tab */}
+              {advisorMode === 'advisor' && (
+                <>
+                  <div className="floating-advisor-messages">
+                    {advisorTips ? (
+                      advisorTips.split('\n').map((line, i) => (
+                        <div key={i} className="advisor-message">
+                          {line || <br/>}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="advisor-message loading">Загрузка совета...</div>
+                    )}
+                  </div>
+                  <div className="floating-advisor-input">
+                    <button
+                      className="btn-refresh-advice"
+                      onClick={async () => {
+                        if (!currentGame) return;
+                        setAdvisorTips('Загрузка...');
+                        try {
+                          const tips = await gameApi.getAdvisor(currentGame.id, currentGame.players[0].id);
+                          setAdvisorTips((tips.tips || []).join('\n'));
+                        } catch (e) {
+                          console.error(e);
+                          setAdvisorTips('Ошибка получения совета');
+                        }
+                      }}
+                    >
+                      🔄 Новый совет
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {/* Suggestions Tab */}
+              {advisorMode === 'suggestions' && (
+                <div className="floating-advisor-messages suggestions-list">
+                  {suggestions.length > 0 ? (
+                    suggestions.map((s, i) => (
+                      <div key={i} className="suggestion-item">
+                        <div className="suggestion-topic">📌 {s.topic}</div>
+                        <div className="suggestion-description">{s.description}</div>
+                        {s.actions?.map((a: any, ai: number) => (
+                          <div
+                            key={ai}
+                            className="suggestion-action"
+                            onClick={() => {
+                              // Add action to player's actions
+                              setPlayerActions(prev => [...prev, a.content]);
+                            }}
+                          >
+                            → {a.title}: {a.content}
+                          </div>
+                        ))}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="advisor-message loading">Загрузка подсказок...</div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

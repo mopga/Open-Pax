@@ -124,6 +124,19 @@ export function initDatabase() {
     )
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS saves (
+      id TEXT PRIMARY KEY,
+      game_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      current_turn INTEGER DEFAULT 1,
+      current_date TEXT DEFAULT '1951-01-01',
+      data TEXT,
+      saved_at TEXT NOT NULL,
+      FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
+    )
+  `);
+
   console.log('✅ Database initialized');
 }
 

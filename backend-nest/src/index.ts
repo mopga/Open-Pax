@@ -9,6 +9,7 @@ import { v4 as uuid } from 'uuid';
 import { MiniMaxProvider } from './llm';
 import { GameController } from './agents';
 import { initDatabase } from './database';
+import db from './database';
 import { mapRepository, worldRepository, gameRepository } from './repositories';
 import type {
   Game, GameWorld, MapRegion, MapObject, Player, Action, TurnResult,
@@ -678,6 +679,90 @@ app.get('/api/games/:id/suggestions', async (req, res) => {
     console.error('[Suggestions] Error:', e);
     res.status(500).json({ error: 'Failed to get suggestions' });
   }
+});
+
+// Save game endpoint
+app.post('/api/games/:id/save', (req, res) => {
+  const gameId = req.params.id;
+  const { name } = req.body;
+
+  const game = activeGames.get(gameId);
+  if (!game) {
+    res.status(404).json({ error: 'Game not found' });
+    return;
+  }
+
+  // Save to database
+  const saveId = uuid().slice(0, 8);
+
+  // Serialize full game state
+  const saveData = {
+    currentTurn: game.currentTurn,
+    currentDate: game.currentDate,
+    worldName: game.world.name,
+    playerName: game.players[0]?.name || 'Player',
+    playerRegionId: game.players[0]?.regionId || '',
+  };
+
+  // Save to saves table
+  const stmt = db.prepare(`
+    INSERT INTO saves (id, game_id, name, current_turn, current_date, data, saved_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+  stmt.run(
+    saveId,
+    gameId,
+    name || `Game ${new Date().toLocaleDateString()}`,
+    game.currentTurn,
+    game.currentDate,
+    JSON.stringify(saveData),
+    new Date().toISOString()
+  );
+
+  console.log('[SAVE] Game saved:', saveId, 'turn:', game.currentTurn);
+  res.json({ save_id: saveId, currentTurn: game.currentTurn, currentDate: game.currentDate });
+});
+
+// List saved games
+app.get('/api/saves', (_req, res) => {
+  const stmt = db.prepare('SELECT id, game_id, name, current_turn, current_date, saved_at FROM saves ORDER BY saved_at DESC');
+  const saves = stmt.all();
+  res.json({ saves });
+});
+
+// Load saved game
+app.post('/api/saves/:id/load', (req, res) => {
+  const saveId = req.params.id;
+
+  const stmt = db.prepare('SELECT * FROM saves WHERE id = ?');
+  const save = stmt.get(saveId) as any;
+
+  if (!save) {
+    res.status(404).json({ error: 'Save not found' });
+    return;
+  }
+
+  // Get the original game from active games
+  const originalGame = activeGames.get(save.game_id);
+  if (!originalGame) {
+    res.status(404).json({ error: 'Original game not found' });
+    return;
+  }
+
+  // Update the in-memory game with saved state
+  originalGame.currentTurn = save.current_turn;
+  originalGame.currentDate = save.current_date;
+
+  // ALSO update the database so subsequent GET requests return correct data
+  const updateStmt = db.prepare('UPDATE games SET current_turn = ? WHERE id = ?');
+  updateStmt.run(save.current_turn, save.game_id);
+
+  console.log('[LOAD] Game loaded:', saveId, 'turn:', save.current_turn);
+  res.json({
+    game_id: save.game_id,
+    currentTurn: save.current_turn,
+    currentDate: save.current_date,
+  });
 });
 
 // ============================================================================

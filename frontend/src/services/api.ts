@@ -153,6 +153,45 @@ export const gameApi = {
   getAdvisor: (gameId: string, playerId: string): Promise<AdvisorResponse> => {
     return fetchApi(`/games/${gameId}/advisor?player_id=${playerId}`);
   },
+
+  /**
+   * Получить подсказки (actions.md)
+   */
+  getSuggestions: (gameId: string): Promise<{ suggestions: any[] }> => {
+    return fetchApi(`/games/${gameId}/suggestions`);
+  },
+
+  /**
+   * Сохранить игру
+   */
+  saveGame: (gameId: string, name?: string): Promise<any> => {
+    return fetchApi(`/games/${gameId}/save`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+  },
+
+  /**
+   * Загрузить сохранённую игру
+   */
+  loadSave: (saveId: string): Promise<any> => {
+    return fetchApi(`/saves/${saveId}/load`, {
+      method: 'POST',
+    });
+  },
+};
+
+// ============================================================================
+// Saves API
+// ============================================================================
+
+export const savesApi = {
+  /**
+   * Получить список сохранений
+   */
+  list: (): Promise<{ saves: any[] }> => {
+    return fetchApi('/saves');
+  },
 };
 
 

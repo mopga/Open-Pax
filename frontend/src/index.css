@@ -276,6 +276,37 @@ body {
   cursor: not-allowed;
 }
 
+/* Save/Load buttons */
+.save-load-section {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.btn-save, .btn-load {
+  flex: 1;
+  padding: 10px;
+  background: #1a1a24;
+  border: 1px solid #2a2a3a;
+  border-radius: 8px;
+  color: #888;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-save:hover {
+  background: #222230;
+  border-color: #667eea;
+  color: #fff;
+}
+
+.btn-load:hover {
+  background: #222230;
+  border-color: #f093fb;
+  color: #fff;
+}
+
 /* Actions List */
 .actions-header {
   display: flex;
@@ -518,7 +549,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
+  padding: 8px 12px;
   border-bottom: 1px solid #2a2a3a;
   background: #1a1a24;
   border-radius: 12px 12px 0 0;
@@ -528,6 +559,34 @@ body {
   color: #f093fb;
   font-size: 1rem;
   margin: 0;
+}
+
+/* Advisor Tabs */
+.advisor-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.advisor-tab {
+  padding: 6px 12px;
+  background: #0a0a0f;
+  border: 1px solid #2a2a3a;
+  border-radius: 6px;
+  color: #888;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.advisor-tab:hover {
+  background: #1a1a24;
+  color: #ccc;
+}
+
+.advisor-tab.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-color: #667eea;
+  color: white;
 }
 
 .floating-advisor-messages {
@@ -576,6 +635,51 @@ body {
 .btn-refresh-advice:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+/* Suggestions */
+.suggestions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.suggestion-item {
+  background: #1a1a24;
+  border-radius: 8px;
+  padding: 10px;
+  border-left: 3px solid #667eea;
+}
+
+.suggestion-topic {
+  color: #667eea;
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 6px;
+}
+
+.suggestion-description {
+  color: #888;
+  font-size: 0.8rem;
+  margin-bottom: 8px;
+}
+
+.suggestion-action {
+  background: #0a0a0f;
+  padding: 8px;
+  border-radius: 6px;
+  color: #ccc;
+  font-size: 0.8rem;
+  margin-top: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+}
+
+.suggestion-action:hover {
+  background: #222230;
+  border-color: #667eea;
+  color: #fff;
 }
 
 /* Old Advisor Panel (hidden now) */
