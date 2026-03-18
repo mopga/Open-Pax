@@ -191,6 +191,15 @@ body {
   border-color: #667eea;
 }
 
+.country-locked {
+  padding: 12px 16px;
+  background: #1a1a24;
+  border: 1px solid #2a2a3a;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
 .country-info {
   background: #1a1a24;
   border-radius: 8px;

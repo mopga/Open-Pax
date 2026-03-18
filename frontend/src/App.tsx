@@ -434,19 +434,16 @@ function App() {
             <span className="turn-number">ХОД {currentGame?.currentTurn || 1}</span>
           </div>
 
-          {/* Country selector */}
+          {/* Country selector - locked to player's region */}
           <div className="country-selector">
-            <label>Выберите страну:</label>
-            <select
-              value={selectedRegion || ''}
-              onChange={(e) => handleCountryChange(e.target.value)}
-            >
-              {regions.map(r => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
+            <label>Ваша страна:</label>
+            <div className="country-locked">
+              {currentGame?.players[0] && (
+                <span style={{ color: currentRegion?.color || '#fff' }}>
+                  {currentRegion?.name || 'Неизвестно'}
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Current country info */}
