@@ -155,6 +155,7 @@ export interface SubmitActionResponse {
   turn: number;
   narration: string;
   country_response: string;
+  events?: string[];
 }
 
 export interface AdvisorResponse {

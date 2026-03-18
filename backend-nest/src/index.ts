@@ -451,6 +451,7 @@ app.post('/api/games/:id/action', async (req, res) => {
     turn: game.currentTurn - 1,
     narration: result.worldResponse,
     country_response: result.countryResponse,
+    events: npcEvents,
   });
 });
 

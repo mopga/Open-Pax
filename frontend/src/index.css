@@ -258,6 +258,61 @@ body {
   cursor: not-allowed;
 }
 
+/* Events Section */
+.events-section {
+  background: #1a1a24;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 12px;
+  border-left: 3px solid #f093fb;
+}
+
+.events-section h4 {
+  color: #f093fb;
+  font-size: 0.8rem;
+  margin-bottom: 8px;
+}
+
+.events-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.event-item {
+  color: #aaa;
+  font-size: 0.85rem;
+  padding: 4px 0;
+}
+
+.event-item:before {
+  content: "•";
+  color: #f093fb;
+  margin-right: 6px;
+}
+
+/* Advisor Section */
+.advisor-section {
+  margin-bottom: 16px;
+}
+
+.btn-advisor {
+  width: 100%;
+  padding: 10px;
+  background: #1a1a24;
+  border: 1px solid #2a2a3a;
+  border-radius: 8px;
+  color: #f093fb;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+}
+
+.btn-advisor:hover {
+  background: #222230;
+  border-color: #f093fb;
+}
+
 .history-section {
   flex: 1;
   display: flex;

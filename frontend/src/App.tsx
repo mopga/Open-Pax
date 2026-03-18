@@ -33,7 +33,7 @@ function App() {
   const [currentGame, setCurrentGame] = useState<Game | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
   const [actionText, setActionText] = useState('');
-  const [history, setHistory] = useState<{ turn: number; action: string; result: string }[]>([]);
+  const [history, setHistory] = useState<{ turn: number; action: string; result: string; events?: string[] }[]>([]);
   const [loading, setLoading] = useState(false);
   const historyEndRef = useRef<HTMLDivElement>(null);
 
@@ -296,6 +296,7 @@ function App() {
         turn,
         action: actionText,
         result: result.narration,
+        events: result.events || [],
       }]);
 
       const updatedGame = await gameApi.get(currentGame.id);
@@ -425,6 +426,36 @@ function App() {
               disabled={loading || !actionText.trim()}
             >
               {loading ? 'Думаю...' : 'Turn →'}
+            </button>
+          </div>
+
+          {/* Events from last turn */}
+          {history.length > 0 && history[history.length - 1].events && (
+            <div className="events-section">
+              <h4>📌 События</h4>
+              <div className="events-list">
+                {(history[history.length - 1].events || []).map((event, i) => (
+                  <div key={i} className="event-item">{event}</div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Advisor Button */}
+          <div className="advisor-section">
+            <button
+              className="btn-advisor"
+              onClick={async () => {
+                if (!currentGame) return;
+                try {
+                  const tips = await gameApi.getAdvisor(currentGame.id, currentGame.players[0].id);
+                  alert('Советы:\n\n' + (tips.tips || []).join('\n'));
+                } catch (e) {
+                  console.error('Advisor error:', e);
+                }
+              }}
+            >
+              💡 Получить совет
             </button>
           </div>
 
