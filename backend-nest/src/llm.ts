@@ -4,9 +4,7 @@
  */
 
 import 'dotenv/config';
-
-// @ts-ignore - node-fetch v3
-import fetch from 'node-fetch';
+import https from 'https';
 
 export interface LLMResponse {
   content: string;
@@ -24,6 +22,37 @@ export class MiniMaxProvider {
     this.model = process.env.LLM_MODEL || 'MiniMax-M2.5';
   }
 
+  /**
+   * Make HTTPS request using Node.js native https module
+   * This properly handles UTF-8 encoding for Cyrillic text
+   */
+  private async httpsRequest(path: string, data: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      // Parse baseUrl to get hostname
+      const url = new URL(this.baseUrl);
+      const options = {
+        hostname: url.hostname,
+        path: path,
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json; charset=utf-8',
+          'Content-Length': Buffer.byteLength(data),
+        },
+      };
+
+      const req = https.request(options, (res) => {
+        let body = '';
+        res.on('data', chunk => body += chunk);
+        res.on('end', () => resolve(body));
+      });
+
+      req.on('error', reject);
+      req.write(data);
+      req.end();
+    });
+  }
+
   async generate(
     system: string,
     user: string,
@@ -34,30 +63,30 @@ export class MiniMaxProvider {
     }
 
     try {
-      const response = await fetch(`${this.baseUrl}/text/chatcompletion_v2`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: this.model,
-          messages: [
-            { role: 'system', content: system },
-            { role: 'user', content: user },
-          ],
-          temperature: options.temperature ?? 0.7,
-          max_tokens: options.maxTokens ?? 4096,
-        }),
-      });
+      const payload = {
+        model: this.model,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+        temperature: options.temperature ?? 0.7,
+        max_tokens: options.maxTokens ?? 4096,
+      };
 
-      if (!response.ok) {
-        const error = await response.text();
-        console.error('MiniMax API error:', error);
-        return { content: `[API Error: ${response.status}]` };
+      const body = JSON.stringify(payload);
+      console.log('[LLM] Request body:', body.substring(0, 200));
+
+      const responseText = await this.httpsRequest('/v1/text/chatcompletion_v2', body);
+      console.log('[LLM] Response:', responseText.substring(0, 500));
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (e) {
+        console.error('[LLM] JSON parse error:', e);
+        return { content: '[Invalid JSON response]' };
       }
 
-      const data = await response.json() as any;
       return {
         content: data.choices?.[0]?.message?.content || '',
         tokensUsed: data.usage?.total_tokens,
