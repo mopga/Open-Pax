@@ -8,6 +8,7 @@ import cors from 'cors';
 import { v4 as uuid } from 'uuid';
 import { MiniMaxProvider } from './llm';
 import { GameController } from './agents';
+import { initDatabase, mapQueries, worldQueries, gameQueries } from './database';
 import type {
   Game, GameWorld, MapRegion, MapObject, Player, Action, TurnResult,
   CreateWorldRequest, CreateGameRequest, SubmitActionRequest, MapData
@@ -20,14 +21,15 @@ const PORT = process.env.PORT || 8000;
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
+// Initialize Database
+initDatabase();
+
 // Initialize LLM
 const llmProvider = new MiniMaxProvider();
 const gameController = new GameController(llmProvider);
 
-// In-memory storage
-const worlds: Map<string, GameWorld> = new Map();
-const games: Map<string, Game> = new Map();
-const maps: Map<string, MapData> = new Map();
+// In-memory cache for active games (for fast gameplay)
+const activeGames: Map<string, any> = new Map();
 
 // Helper: convert points to SVG path
 const pointsToPath = (points: { x: number; y: number }[]): string => {
@@ -48,9 +50,9 @@ app.get('/health', (_req, res) => {
 // ============================================================================
 
 app.post('/api/maps', (req, res) => {
-  const { name, width = 800, height = 600, regions } = req.body;
+  const { name, width = 800, height = 600, regions, objects } = req.body;
 
-  const map: MapData = {
+  const map = {
     id: uuid().slice(0, 8),
     name,
     width,
@@ -61,23 +63,25 @@ app.post('/api/maps', (req, res) => {
       color: r.color,
       path: r.path || pointsToPath(r.points || []),
     })),
+    objects: objects || [],
   };
 
-  maps.set(map.id, map);
+  mapQueries.create(map);
   res.json({ id: map.id, name: map.name });
 });
 
 app.get('/api/maps', (_req, res) => {
-  const list = Array.from(maps.values()).map(m => ({
+  const list = mapQueries.getAll().map(m => ({
     id: m.id,
     name: m.name,
-    regions_count: m.regions.length,
+    regions_count: m.regions_count,
+    created_at: m.created_at,
   }));
   res.json(list);
 });
 
 app.get('/api/maps/:id', (req, res) => {
-  const map = maps.get(req.params.id);
+  const map = mapQueries.getById(req.params.id);
   if (!map) {
     res.status(404).json({ error: 'Map not found' });
     return;
@@ -86,11 +90,12 @@ app.get('/api/maps/:id', (req, res) => {
 });
 
 app.delete('/api/maps/:id', (req, res) => {
-  if (!maps.has(req.params.id)) {
+  const map = mapQueries.getById(req.params.id);
+  if (!map) {
     res.status(404).json({ error: 'Map not found' });
     return;
   }
-  maps.delete(req.params.id);
+  mapQueries.delete(req.params.id);
   res.json({ status: 'deleted', id: req.params.id });
 });
 
@@ -101,40 +106,40 @@ app.delete('/api/maps/:id', (req, res) => {
 app.post('/api/worlds', (req, res) => {
   const { name, description, startDate, basePrompt, historicalAccuracy = 0.8 } = req.body;
 
-  const world: GameWorld = {
+  const world = {
     id: uuid().slice(0, 8),
     name,
     description,
     startDate: startDate || '1951-01-01',
     basePrompt: basePrompt || 'Альтернативная история',
     historicalAccuracy,
-    regions: new Map(),
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
   };
 
-  worlds.set(world.id, world);
+  worldQueries.create(world);
   res.json({ id: world.id, name: world.name });
 });
 
 app.get('/api/worlds/:id', (req, res) => {
-  const world = worlds.get(req.params.id);
+  const world = worldQueries.getById(req.params.id);
   if (!world) {
     res.status(404).json({ error: 'World not found' });
     return;
   }
-  // Convert Map to object for JSON serialization
   res.json({
-    ...world,
-    regions: Array.from(world.regions.entries()).reduce((acc, [k, v]) => {
-      acc[k] = v;
-      return acc;
-    }, {} as Record<string, MapRegion>),
+    id: world.id,
+    name: world.name,
+    description: world.description,
+    startDate: world.start_date,
+    basePrompt: world.base_prompt,
+    historicalAccuracy: world.historical_accuracy,
+    createdAt: world.created_at,
+    updatedAt: world.updated_at,
+    regions: world.regions.reduce((acc: any, r: any) => { acc[r.id] = r; return acc; }, {}),
   });
 });
 
 app.post('/api/worlds/:id/regions', (req, res) => {
-  const world = worlds.get(req.params.id);
+  const world = worldQueries.getById(req.params.id);
   if (!world) {
     res.status(404).json({ error: 'World not found' });
     return;
@@ -142,22 +147,14 @@ app.post('/api/worlds/:id/regions', (req, res) => {
 
   const { id, name, svgPath, color = '#888888' } = req.body;
 
-  const region: MapRegion = {
+  worldQueries.addRegion({
     id,
+    worldId: req.params.id,
     name,
     svgPath,
     color,
-    owner: 'neutral',
-    population: 1000000,
-    gdp: 100,
-    militaryPower: 100,
-    borders: [],
-    status: 'active',
-    objects: [],
-  };
-
-  world.regions.set(id, region);
-  res.json({ id: region.id, name: region.name });
+  });
+  res.json({ id, name });
 });
 
 // ============================================================================
@@ -167,7 +164,7 @@ app.post('/api/worlds/:id/regions', (req, res) => {
 app.post('/api/worlds/from-map', (req, res) => {
   const { mapId, name, description, startDate, basePrompt, historicalAccuracy, initialOwners } = req.body;
 
-  const map = maps.get(mapId);
+  const map = mapQueries.getById(mapId);
   if (!map) {
     res.status(404).json({ error: 'Map not found' });
     return;
@@ -183,12 +180,10 @@ app.post('/api/worlds/from-map', (req, res) => {
     }
   }
 
-  // Create regions from map
-  const regions = new Map<string, MapRegion>();
-  map.regions.forEach(r => {
+  // Prepare regions from map
+  const regions = map.regions.map((r: any) => {
     const owner = ownerMap.get(r.id) || 'neutral';
 
-    // Assign different military power based on owner type
     let militaryPower = 100;
     let population = 1000000;
     let gdp = 100;
@@ -198,13 +193,12 @@ app.post('/api/worlds/from-map', (req, res) => {
       population = 1500000;
       gdp = 150;
     } else if (owner.startsWith('ai-')) {
-      // AI countries get varying power
       militaryPower = 80 + Math.floor(Math.random() * 80);
       population = 800000 + Math.floor(Math.random() * 400000);
       gdp = 80 + Math.floor(Math.random() * 80);
     }
 
-    regions.set(r.id, {
+    return {
       id: r.id,
       name: r.name,
       svgPath: r.path,
@@ -213,31 +207,24 @@ app.post('/api/worlds/from-map', (req, res) => {
       population,
       gdp,
       militaryPower,
-      borders: [],
-      status: 'active',
-      objects: [],
-    });
+    };
   });
 
-  const world: GameWorld = {
+  // Save world and regions to database
+  worldQueries.createWithRegions({
     id: worldId,
     name: name || map.name,
     description: description || '',
     startDate: startDate || '1951-01-01',
     basePrompt: basePrompt || 'Альтернативная история',
     historicalAccuracy: historicalAccuracy ?? 0.8,
-    regions,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-
-  worlds.set(worldId, world);
+  }, regions);
 
   res.json({
     world_id: worldId,
-    name: world.name,
-    regions_count: world.regions.size,
-    regions: Array.from(world.regions.values()).map(r => ({
+    name: name || map.name,
+    regions_count: regions.length,
+    regions: regions.map((r: any) => ({
       id: r.id,
       name: r.name,
       color: r.color,
@@ -253,61 +240,72 @@ app.post('/api/worlds/from-map', (req, res) => {
 app.post('/api/games', (req, res) => {
   const { worldId, playerName, playerRegionId } = req.body;
 
-  const world = worlds.get(worldId);
+  const world = worldQueries.getById(worldId);
   if (!world) {
     res.status(404).json({ error: 'World not found' });
     return;
   }
 
-  const region = world.regions.get(playerRegionId);
+  const region = world.regions.find((r: any) => r.id === playerRegionId);
   if (!region) {
     res.status(404).json({ error: 'Region not found' });
     return;
   }
 
-  const player: Player = {
-    id: uuid().slice(0, 8),
+  const playerId = uuid().slice(0, 8);
+  const gameId = uuid().slice(0, 8);
+
+  // Save game to database
+  gameQueries.create({
+    id: gameId,
+    worldId,
+    currentTurn: 1,
+    maxTurns: 100,
+    status: 'playing',
+  });
+
+  gameQueries.addPlayer({
+    id: playerId,
+    gameId,
     name: playerName || 'Player',
     regionId: playerRegionId,
     color: '#FF0000',
-  };
-
-  const game: Game = {
-    id: uuid().slice(0, 8),
-    world,
-    players: [player],
-    currentTurn: 1,
-    maxTurns: 100,
-    actions: [],
-    results: [],
-    status: 'playing',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-
-  games.set(game.id, game);
+  });
 
   // Setup game controller
-  gameController.setupWorld(world.basePrompt);
+  gameController.setupWorld(world.base_prompt);
   gameController.addCountry(playerRegionId, region.name);
 
   // Setup NPC countries
-  const regionConfigs = Array.from(world.regions.values()).map(r => ({
+  const regionConfigs = world.regions.map((r: any) => ({
     id: r.id,
     name: r.name,
     owner: r.owner,
   }));
   gameController.setupNPCCountries(regionConfigs);
 
+  // Cache in memory for fast gameplay
+  const game = {
+    id: gameId,
+    world: { ...world, regions: world.regions.reduce((acc: any, r: any) => { acc[r.id] = r; return acc; }, {}) },
+    players: [{ id: playerId, name: playerName || 'Player', regionId: playerRegionId, color: '#FF0000' }],
+    currentTurn: 1,
+    maxTurns: 100,
+    actions: [],
+    results: [],
+    status: 'playing',
+  };
+  activeGames.set(gameId, game);
+
   res.json({
-    game_id: game.id,
-    player_id: player.id,
+    game_id: gameId,
+    player_id: playerId,
     region: { id: region.id, name: region.name },
   });
 });
 
 app.get('/api/games/:id', (req, res) => {
-  const game = games.get(req.params.id);
+  const game = gameQueries.getById(req.params.id);
   if (!game) {
     res.status(404).json({ error: 'Game not found' });
     return;
@@ -315,11 +313,11 @@ app.get('/api/games/:id', (req, res) => {
 
   res.json({
     id: game.id,
-    turn: game.currentTurn,
+    turn: game.current_turn,
     status: game.status,
     world: {
       name: game.world.name,
-      regions: Array.from(game.world.regions.values()).map(r => ({
+      regions: game.world.regions.map((r: any) => ({
         id: r.id,
         name: r.name,
         color: r.color,
@@ -328,7 +326,7 @@ app.get('/api/games/:id', (req, res) => {
         militaryPower: r.militaryPower,
       })),
     },
-    players: game.players.map(p => ({
+    players: game.players.map((p: any) => ({
       id: p.id,
       regionId: p.regionId,
     })),
@@ -339,13 +337,13 @@ app.post('/api/games/:id/action', async (req, res) => {
   const { playerId, text } = req.body;
   const gameId = req.params.id;
 
-  const game = games.get(gameId);
+  const game = activeGames.get(gameId);
   if (!game) {
     res.status(404).json({ error: 'Game not found' });
     return;
   }
 
-  const player = game.players.find(p => p.id === playerId);
+  const player = game.players.find((p: any) => p.id === playerId);
   if (!player) {
     res.status(404).json({ error: 'Player not found' });
     return;
@@ -430,10 +428,11 @@ app.post('/api/games/:id/action', async (req, res) => {
     if (!npcRegion) continue;
 
     // Get neighbors for NPC context
-    const neighbors = Array.from(game.world.regions.values())
-      .filter(r => r.id !== npcRegionId)
+    const regionsArray = Object.values(game.world.regions) as any[];
+    const neighbors = regionsArray
+      .filter((r: any) => r.id !== npcRegionId)
       .slice(0, 5)
-      .map(r => ({
+      .map((r: any) => ({
         id: r.id,
         name: r.name,
         owner: r.owner,
@@ -447,7 +446,7 @@ app.post('/api/games/:id/action', async (req, res) => {
       gdp: npcRegion.gdp,
       militaryPower: npcRegion.militaryPower,
       neighbors,
-      recentEvents: game.results.slice(-3).map(r => r.narration),
+      recentEvents: game.results.slice(-3).map((r: any) => r.narration),
     };
 
     try {
@@ -475,8 +474,9 @@ app.post('/api/games/:id/action', async (req, res) => {
   }
 
   // Save action
+  const actionId = uuid().slice(0, 8);
   const action: Action = {
-    id: uuid().slice(0, 8),
+    id: actionId,
     playerId: player.id,
     turn: game.currentTurn,
     text,
@@ -484,7 +484,17 @@ app.post('/api/games/:id/action', async (req, res) => {
   };
   game.actions.push(action);
 
+  // Persist action to database
+  gameQueries.addAction({
+    id: actionId,
+    gameId: game.id,
+    playerId: player.id,
+    turn: game.currentTurn,
+    text,
+  });
+
   // Save result with NPC events
+  const resultId = uuid().slice(0, 8);
   const turnResult: TurnResult = {
     turn: game.currentTurn,
     narration: result.worldResponse,
@@ -492,6 +502,22 @@ app.post('/api/games/:id/action', async (req, res) => {
     events: npcEvents,
   };
   game.results.push(turnResult);
+
+  // Persist turn result to database
+  gameQueries.addTurnResult({
+    id: resultId,
+    gameId: game.id,
+    turn: game.currentTurn,
+    narration: result.worldResponse,
+    countryResponse: result.countryResponse,
+    events: [...npcEvents, ...createdObjects],
+  });
+
+  // Persist region updates (objects)
+  worldQueries.updateRegion(player.regionId, { objects: region.objects });
+
+  // Persist turn number
+  gameQueries.updateTurn(game.id, game.currentTurn + 1);
 
   // Next turn
   game.currentTurn += 1;
@@ -509,13 +535,13 @@ app.get('/api/games/:id/advisor', async (req, res) => {
   const { playerId } = req.query;
   const gameId = req.params.id;
 
-  const game = games.get(gameId);
+  const game = activeGames.get(gameId);
   if (!game) {
     res.status(404).json({ error: 'Game not found' });
     return;
   }
 
-  const player = game.players.find(p => p.id === playerId);
+  const player = game.players.find((p: any) => p.id === playerId);
   if (!player) {
     res.status(404).json({ error: 'Player not found' });
     return;
