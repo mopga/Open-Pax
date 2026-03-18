@@ -36,8 +36,10 @@ function App() {
   const [currentGame, setCurrentGame] = useState<Game | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
   const [changedRegions, setChangedRegions] = useState<string[]>([]);
-  const [actionText, setActionText] = useState('');
-  const [history, setHistory] = useState<{ turn: number; action: string; result: string; events?: string[] }[]>([]);
+  const [playerActions, setPlayerActions] = useState<string[]>(['']);
+  const [jumpDays, setJumpDays] = useState<number>(30);
+  const [showJumpMenu, setShowJumpMenu] = useState(false);
+  const [history, setHistory] = useState<{ turn: number; action: string; result: string; events?: string[]; date?: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const historyEndRef = useRef<HTMLDivElement>(null);
 
@@ -116,23 +118,49 @@ function App() {
   // Сохранить карту на сервере
   const handleSaveMap = async (regions: EditorRegion[], mapName: string, objects?: EditorObject[]) => {
     setLoading(true);
-    try {
-      const mapRegions = regions.map(r => ({
-        id: r.id,
-        name: r.name,
-        color: r.color,
-        path: pointsToPath(r.points),
-      }));
+    const mapRegions = regions.map(r => ({
+      id: r.id,
+      name: r.name,
+      color: r.color,
+      path: pointsToPath(r.points),
+    }));
 
-      // Note: Backend doesn't support objects yet, save locally
-      handleSaveMapLocal(regions, mapName, objects);
-      alert(`Карта "${mapName}" сохранена!`);
-      setCurrentView('menu');
+    // Пробуем сохранить на сервере
+    let serverMapId = null;
+    try {
+      const mapData = {
+        name: mapName,
+        width: 2000,
+        height: 1500,
+        regions: mapRegions,
+        objects: objects?.map(o => ({
+          id: o.id,
+          type: o.type,
+          name: o.name,
+          x: o.x,
+          y: o.y,
+          regionId: o.regionId,
+        })) || [],
+      };
+      const result = await mapApi.create(mapData);
+      serverMapId = result.id;
+      alert(`Карта "${mapName}" сохранена на сервере!`);
     } catch (e) {
-      handleSaveMapLocal(regions, mapName, objects);
-      alert('Сохранено локально!');
-      setCurrentView('menu');
+      console.warn('Failed to save map to server:', e);
     }
+
+    // Сохраняем локально (с серверным ID если получилось)
+    const localMap = handleSaveMapLocal(regions, mapName, objects);
+    if (serverMapId) {
+      // Обновляем localStorage с серверным ID
+      const updatedMap = { ...localMap, id: `server_${serverMapId}` };
+      localStorage.removeItem(localMap.id);
+      localStorage.setItem(updatedMap.id, JSON.stringify(updatedMap));
+      // Обновляем state
+      setSavedMaps(prev => prev.filter(m => m.id !== localMap.id).concat(updatedMap));
+    }
+
+    setCurrentView('menu');
     setLoading(false);
   };
 
@@ -145,9 +173,16 @@ function App() {
   // Создать мир из конфигурации
   const handleCreateWorld = async (config: WorldConfig) => {
     setLoading(true);
-    const mapId = selectedMapForWorld?.id.startsWith('server_')
-      ? selectedMapForWorld.id.replace('server_', '')
-      : selectedMapForWorld?.id.replace('map_', '') || '';
+
+    // Проверяем что карта сохранена на сервере
+    if (!selectedMapForWorld?.id.startsWith('server_')) {
+      alert('Сначала сохраните карту на сервере (кнопка "Сохранить" в редакторе карт)!');
+      setLoading(false);
+      return;
+    }
+
+    const mapId = selectedMapForWorld.id.replace('server_', '');
+    console.log('[DEBUG] Creating world from map:', mapId);
 
     // Prepare initial owners
     const initialOwners = config.regions
@@ -206,38 +241,46 @@ function App() {
         regions: regions.reduce((acc: any, r) => { acc[r.id] = r; return acc; }, {}),
       } as World);
 
-      const playerRegion = regions.find(r =>
-        config.regions.find(cr => cr.id === r.id && cr.owner === 'player')
-      ) || regions[0];
+      // Find player region from WORLD (not config!) - regions have new IDs after world creation
+      const playerRegionInWorld = regions.find(r => r.owner === 'player');
+      const initialPlayerRegionId = playerRegionInWorld?.id || regions[0]?.id || null;
+      console.log('[DEBUG] Player region ID from world:', initialPlayerRegionId, 'owner:', playerRegionInWorld?.owner);
 
-      const firstRegionId = playerRegion?.id || regions[0]?.id || null;
-      setSelectedRegion(firstRegionId);
-
-      // Создаем игру
-      if (result.world_id && firstRegionId) {
+      // Создаем игру - сервер сам определит правильный regionId на основе initialOwners
+      if (result.world_id && initialPlayerRegionId) {
         try {
+          console.log('[DEBUG] Creating game with:', { world_id: result.world_id, player_region_id: initialPlayerRegionId });
           const gameResponse = await gameApi.create({
             world_id: result.world_id,
             player_name: 'Player',
-            player_region_id: firstRegionId,
+            player_region_id: initialPlayerRegionId,
           });
+          console.log('[DEBUG] Game created, response:', gameResponse);
           const game = await gameApi.get(gameResponse.game_id);
+          console.log('[DEBUG] Game fetched:', game);
           setCurrentGame(game);
+
+          // Use player's actual regionId from game (may differ from initial)
+          const playerRegionId = game.players[0]?.regionId || initialPlayerRegionId;
+          setSelectedRegion(playerRegionId);
         } catch (e) {
+          console.error('[DEBUG] Failed to create game via API:', e);
           // Fallback to local game
           setCurrentGame({
             id: 'local_' + Date.now(),
             world: { ...world, regions: regions.reduce((acc: any, r) => { acc[r.id] = r; return acc; }, {}) } as World,
-            players: [{ id: 'player_1', name: 'Player', regionId: firstRegionId, color: '#ff0000' }],
+            players: [{ id: 'player_1', name: 'Player', regionId: initialPlayerRegionId, color: '#ff0000' }],
             currentTurn: 1,
             maxTurns: 100,
             status: 'playing' as any,
           } as Game);
+          setSelectedRegion(initialPlayerRegionId);
         }
       }
 
       setCurrentView('game');
     } catch (e) {
+      console.error('[DEBUG] Failed to create world via API:', e);
       // Используем локальные данные (fallback для офлайн режима)
       const mapObjects = selectedMapForWorld?.objects || [];
       const regions: Region[] = selectedMapForWorld?.regions.map(r => {
@@ -269,6 +312,15 @@ function App() {
         };
       }) || [];
 
+      // Apply owner from config to regions
+      const regionsWithOwner = regions.map(r => {
+        const ownerConfig = config.regions.find(cr => cr.id === r.id);
+        return {
+          ...r,
+          owner: ownerConfig?.owner || 'neutral',
+        };
+      });
+
       setCurrentWorld({
         id: selectedMapForWorld?.id || 'local',
         name: selectedMapForWorld?.name || 'Local World',
@@ -276,19 +328,21 @@ function App() {
         startDate: '1951-01-01',
         basePrompt: 'Альтернативная история',
         historicalAccuracy: 0.8,
-        regions: regions.reduce((acc: any, r) => { acc[r.id] = r; return acc; }, {}),
+        regions: regionsWithOwner.reduce((acc: any, r) => { acc[r.id] = r; return acc; }, {}),
         blocs: {},
       });
 
-      const firstRegionId = regions[0]?.id || null;
-      setSelectedRegion(firstRegionId);
+      // Find player region from config
+      const playerConfigRegion = config.regions.find(cr => cr.owner === 'player');
+      const playerRegionId = playerConfigRegion?.id || regions[0]?.id || null;
+      setSelectedRegion(playerRegionId);
 
       // Создаем локальную игру
-      if (firstRegionId) {
+      if (playerRegionId) {
         setCurrentGame({
           id: 'local_' + Date.now(),
-          world: currentWorld!,
-          players: [{ id: 'player_1', name: 'Player', regionId: firstRegionId, color: '#ff0000' }],
+          world: { ...currentWorld, regions: regionsWithOwner.reduce((acc: any, r) => { acc[r.id] = r; return acc; }, {}) },
+          players: [{ id: 'player_1', name: 'Player', regionId: playerRegionId, color: '#ff0000' }],
           currentTurn: 1,
           maxTurns: 100,
           status: 'playing' as any,
@@ -300,42 +354,50 @@ function App() {
     setLoading(false);
   };
 
-  // Отправить действие
-  const handleSubmitAction = async () => {
-    if (!currentGame || !actionText.trim() || !selectedRegion) {
-      console.log('Debug: currentGame=', currentGame, 'actionText=', actionText, 'selectedRegion=', selectedRegion);
+  // Отправить действия (несколько)
+  const handleSubmitActions = async (actions: string[]) => {
+    if (!currentGame || actions.length === 0 || !selectedRegion) {
+      console.log('Debug: currentGame=', currentGame, 'actions=', actions, 'selectedRegion=', selectedRegion);
       return;
     }
 
     setLoading(true);
 
     const turn = currentGame.currentTurn;
+    const actionsText = actions.join(' | ');
+
+    console.log('[DEBUG] Submitting actions:', { gameId: currentGame.id, actions: actionsText, jumpDays, playerId: currentGame.players[0]?.id });
 
     // Для локальных игр (id начинается с local_) не делаем API вызов
     if (currentGame.id.startsWith('local_')) {
       setHistory(prev => [...prev, {
         turn,
-        action: actionText,
-        result: 'Мир отреагировал на ваши действия...',
+        action: actionsText,
+        result: `Мир отреагировал на ${actions.length} действий за ${jumpDays} дней...`,
+        date: `${jumpDays} дней`,
       }]);
       setCurrentGame({ ...currentGame, currentTurn: turn + 1 });
-      setActionText('');
+      setPlayerActions(['']);
       setLoading(false);
       return;
     }
 
     try {
+      console.log('[DEBUG] Making API call to submit action...');
+      // Отправляем все действия и jumpDays на сервер
       const result = await gameApi.submitAction({
         game_id: currentGame.id,
         player_id: currentGame.players[0].id,
-        text: actionText,
-      });
+        text: actionsText,
+        jump_days: jumpDays,
+      } as any);
 
       setHistory(prev => [...prev, {
         turn,
-        action: actionText,
+        action: actionsText,
         result: result.narration,
         events: result.events || [],
+        date: `${jumpDays} дней`,
       }]);
 
       // Update region objects if any were created
@@ -391,12 +453,14 @@ function App() {
       console.error('Failed to submit action:', e);
       setHistory(prev => [...prev, {
         turn,
-        action: actionText,
+        action: actionsText,
         result: 'Мир отреагировал на ваши действия...',
+        date: `${jumpDays} дней`,
       }]);
     }
 
-    setActionText('');
+    // Очистить список действий
+    setPlayerActions(['']);
     setLoading(false);
   };
 
@@ -496,20 +560,80 @@ function App() {
             </div>
           )}
 
-          {/* Action input */}
+          {/* Actions input */}
           <div className="action-section">
-            <textarea
-              value={actionText}
-              onChange={(e) => setActionText(e.target.value)}
-              placeholder="Опишите ваши действия..."
-              rows={4}
-            />
+            <div className="actions-header">
+              <span>Ваши действия:</span>
+              <button
+                className="btn-add-action"
+                onClick={() => setPlayerActions([...playerActions, ''])}
+              >
+                + Добавить действие
+              </button>
+            </div>
+
+            <div className="actions-list">
+              {playerActions.map((action, index) => (
+                <div key={index} className="action-item">
+                  <div className="action-label">Действие {index + 1}</div>
+                  <div className="action-input-row">
+                    <textarea
+                      value={action}
+                      onChange={(e) => {
+                        const newActions = [...playerActions];
+                        newActions[index] = e.target.value;
+                        setPlayerActions(newActions);
+                      }}
+                      placeholder="Опишите ваше действие..."
+                      rows={2}
+                    />
+                    {playerActions.length > 1 && (
+                      <button
+                        className="btn-remove-action"
+                        onClick={() => {
+                          const newActions = playerActions.filter((_, i) => i !== index);
+                          setPlayerActions(newActions);
+                        }}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Date jump selector */}
+            <div className="jump-section">
+              <button
+                className="btn-jump-toggle"
+                onClick={() => setShowJumpMenu(!showJumpMenu)}
+              >
+                Перемотать время: {jumpDays} дней ▼
+              </button>
+              {showJumpMenu && (
+                <div className="jump-menu">
+                  <button onClick={() => { setJumpDays(1); setShowJumpMenu(false); }}>1 день</button>
+                  <button onClick={() => { setJumpDays(7); setShowJumpMenu(false); }}>1 неделя</button>
+                  <button onClick={() => { setJumpDays(30); setShowJumpMenu(false); }}>1 месяц</button>
+                  <button onClick={() => { setJumpDays(90); setShowJumpMenu(false); }}>3 месяца</button>
+                  <button onClick={() => { setJumpDays(180); setShowJumpMenu(false); }}>6 месяцев</button>
+                  <button onClick={() => { setJumpDays(365); setShowJumpMenu(false); }}>1 год</button>
+                </div>
+              )}
+            </div>
+
             <button
               className="btn-turn"
-              onClick={handleSubmitAction}
-              disabled={loading || !actionText.trim()}
+              onClick={() => {
+                const actions = playerActions.filter(a => a.trim());
+                if (actions.length > 0) {
+                  handleSubmitActions(actions);
+                }
+              }}
+              disabled={loading || !playerActions.some(a => a.trim())}
             >
-              {loading ? 'Думаю...' : 'Turn →'}
+              {loading ? 'Думаю...' : `Ход (+${playerActions.filter(a => a.trim()).length}) →`}
             </button>
           </div>
 
@@ -549,9 +673,19 @@ function App() {
             <div className="history-list">
               {history.map((item, i) => (
                 <div key={i} className="history-item">
-                  <div className="history-turn">Ход {item.turn}</div>
+                  <div className="history-header">
+                    <span className="history-turn">Ход {item.turn}</span>
+                    {item.date && <span className="history-date">📅 {item.date}</span>}
+                  </div>
                   <div className="history-action">→ {item.action}</div>
                   <div className="history-result">{item.result}</div>
+                  {item.events && item.events.length > 0 && (
+                    <div className="history-events">
+                      {item.events.map((event, ei) => (
+                        <div key={ei} className="history-event">• {event}</div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
               <div ref={historyEndRef} />

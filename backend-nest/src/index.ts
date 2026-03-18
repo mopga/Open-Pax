@@ -22,6 +22,12 @@ const PORT = process.env.PORT || 8000;
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
+// Global request logging
+app.use((req, res, next) => {
+  console.log(`[HTTP] ${req.method} ${req.path}`);
+  next();
+});
+
 // Initialize Database
 initDatabase();
 
@@ -164,12 +170,18 @@ app.post('/api/worlds/:id/regions', (req, res) => {
 
 app.post('/api/worlds/from-map', (req, res) => {
   const { mapId, name, description, startDate, basePrompt, historicalAccuracy, initialOwners } = req.body;
+  console.log('[DEBUG] from-map request, mapId:', mapId, 'name:', name);
 
   const map = mapRepository.findById(mapId);
   if (!map) {
-    res.status(404).json({ error: 'Map not found' });
+    console.log('[DEBUG] Map not found in DB, checking all maps...');
+    // Debug: list all maps
+    const allMaps = (mapRepository as any).findAll?.() || [];
+    console.log('[DEBUG] Available maps:', allMaps);
+    res.status(404).json({ error: 'Map not found', mapId });
     return;
   }
+  console.log('[DEBUG] Map found:', map.name);
 
   const worldId = uuid().slice(0, 8);
 
@@ -181,9 +193,10 @@ app.post('/api/worlds/from-map', (req, res) => {
     }
   }
 
-  // Prepare regions from map
-  const regions = map.regions.map((r: any) => {
+  // Prepare regions from map - generate new unique IDs for world
+  const regions = map.regions.map((r: any, index: number) => {
     const owner = ownerMap.get(r.id) || 'neutral';
+    const regionId = `${worldId}_r${index}_${uuid().slice(0, 4)}`;
 
     let militaryPower = 100;
     let population = 1000000;
@@ -200,7 +213,7 @@ app.post('/api/worlds/from-map', (req, res) => {
     }
 
     return {
-      id: r.id,
+      id: regionId,
       name: r.name,
       svgPath: r.path,
       color: r.color,
@@ -239,7 +252,10 @@ app.post('/api/worlds/from-map', (req, res) => {
 // ============================================================================
 
 app.post('/api/games', (req, res) => {
-  const { worldId, playerName, playerRegionId } = req.body;
+  // Support both camelCase and snake_case field names
+  const worldId = req.body.worldId || req.body.world_id;
+  const playerName = req.body.playerName || req.body.player_name;
+  const playerRegionId = req.body.playerRegionId || req.body.player_region_id;
 
   const world = worldRepository.findById(worldId);
   if (!world) {
@@ -314,7 +330,8 @@ app.get('/api/games/:id', (req, res) => {
 
   res.json({
     id: game.id,
-    turn: game.current_turn,
+    currentTurn: game.current_turn,
+    maxTurns: game.max_turns,
     status: game.status,
     world: {
       name: game.world.name,
@@ -335,10 +352,18 @@ app.get('/api/games/:id', (req, res) => {
 });
 
 app.post('/api/games/:id/action', async (req, res) => {
-  const { playerId, text } = req.body;
+  console.log('[API] POST /api/games/:id/action called');
+  // Support both camelCase and snake_case
+  const playerId = req.body.playerId || req.body.player_id;
+  const text = req.body.text;
+  const jump_days = req.body.jump_days || req.body.jumpDays || 30;
+  console.log('[API] Request body:', { playerId, text: text?.substring(0, 50), jump_days });
   const gameId = req.params.id;
+  const timeJump = jump_days || 30; // Default 30 days
 
   const game = activeGames.get(gameId);
+  console.log('[API] Active games:', Array.from(activeGames.keys()));
+  console.log('[API] Looking for gameId:', gameId);
   if (!game) {
     res.status(404).json({ error: 'Game not found' });
     return;
@@ -350,7 +375,9 @@ app.post('/api/games/:id/action', async (req, res) => {
     return;
   }
 
-  const region = game.world.regions.get(player.regionId);
+  const region = typeof game.world.regions.get === 'function'
+    ? game.world.regions.get(player.regionId)
+    : game.world.regions[player.regionId];
   if (!region) {
     res.status(404).json({ error: 'Region not found' });
     return;
@@ -425,7 +452,9 @@ app.post('/api/games/:id/action', async (req, res) => {
   const npcEvents: string[] = [];
 
   for (const npcRegionId of npcCountries) {
-    const npcRegion = game.world.regions.get(npcRegionId);
+    const npcRegion = typeof game.world.regions.get === 'function'
+      ? game.world.regions.get(npcRegionId)
+      : game.world.regions[npcRegionId];
     if (!npcRegion) continue;
 
     // Get neighbors for NPC context
@@ -460,7 +489,9 @@ app.post('/api/games/:id/action', async (req, res) => {
           npcRegion.gdp = Math.floor(npcRegion.gdp * 1.05);
           npcRegion.militaryPower = Math.floor(npcRegion.militaryPower * 1.03);
         } else if (npcAction.type === 'war' && npcAction.targetRegionId) {
-          const targetRegion = game.world.regions.get(npcAction.targetRegionId);
+          const targetRegion = typeof game.world.regions.get === 'function'
+            ? game.world.regions.get(npcAction.targetRegionId)
+            : game.world.regions[npcAction.targetRegionId];
           if (targetRegion && targetRegion.militaryPower < npcRegion.militaryPower * 0.7) {
             // Conquer the region
             targetRegion.owner = npcRegionId;
@@ -587,7 +618,9 @@ app.get('/api/games/:id/advisor', async (req, res) => {
     return;
   }
 
-  const region = game.world.regions.get(player.regionId);
+  const region = typeof game.world.regions.get === 'function'
+    ? game.world.regions.get(player.regionId)
+    : game.world.regions[player.regionId];
 
   const gameContext = {
     turn: game.currentTurn,

@@ -40,7 +40,9 @@ async function fetchApi<T>(
   });
   
   if (!response.ok) {
-    throw new ApiError(response.status, `API Error: ${response.statusText}`);
+    const errorText = await response.text();
+    console.error('[API Error]', response.status, endpoint, errorText);
+    throw new ApiError(response.status, `API Error: ${response.statusText} - ${errorText}`);
   }
   
   return response.json();
