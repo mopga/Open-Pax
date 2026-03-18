@@ -6,6 +6,7 @@
 import { MiniMaxProvider } from './llm';
 import { NPCCountryAgent, NPCCountryContext, createNPCCountries, type NPCAction } from './npc-agents';
 import { TurnControllerAgent, type TurnContext } from './turn-controller';
+import { PromptEngine } from './prompt-builder';
 
 export class CountryAgent {
   private provider: MiniMaxProvider;
@@ -127,11 +128,88 @@ export class GameController {
   private countryAgents: Map<string, CountryAgent> = new Map();
   private npcAgents: Map<string, NPCCountryAgent> = new Map();
   private worldPrompt: string = '';
+  private promptEngine: PromptEngine | null = null;
 
   constructor(provider: MiniMaxProvider) {
     this.provider = provider;
     this.advisorAgent = new AdvisorAgent(provider);
     this.turnController = new TurnControllerAgent(provider);
+  }
+
+  /**
+   * Инициализировать PromptEngine для игры
+   */
+  initPromptEngine(gameData: any): void {
+    this.promptEngine = new PromptEngine(this.provider);
+    // Сохраняем gameData для использования в промптах
+    this.promptEngine;
+    console.log('[GameController] PromptEngine initialized');
+  }
+
+  /**
+   * Обработать ход используя новые промпты (time-rewind.md)
+   */
+  async processTurnWithPrompts(
+    gameData: any,
+    actions: string[],
+    jumpDays: number
+  ): Promise<{
+    narration: string;
+    events: string[];
+    worldChanges: any;
+    convertedActions: any[];
+  }> {
+    if (!this.promptEngine) {
+      this.initPromptEngine(gameData);
+    }
+
+    console.log('[GameController] Processing turn with prompts:', { actions, jumpDays });
+
+    // 1. Конвертируем каждое действие через desript-to-action.md
+    const convertedActions = [];
+    for (const action of actions) {
+      const converted = await this.promptEngine!.convertAction(gameData, action);
+      convertedActions.push(converted);
+      console.log('[GameController] Converted action:', converted);
+    }
+
+    // 2. Запускаем симуляцию через time-rewind.md
+    const simulationResult = await this.promptEngine!.runSimulation(
+      gameData,
+      convertedActions.map(a => a.text),
+      jumpDays
+    );
+
+    console.log('[GameController] Simulation result:', simulationResult.narration.substring(0, 100));
+
+    return {
+      narration: simulationResult.narration,
+      events: simulationResult.events.map(e => e.headline),
+      worldChanges: simulationResult.worldChanges,
+      convertedActions,
+    };
+  }
+
+  /**
+   * Получить советы через advisor.md
+   */
+  async getAdvisorWithPrompts(gameData: any, message: string, history: any[] = []): Promise<string> {
+    if (!this.promptEngine) {
+      this.initPromptEngine(gameData);
+    }
+
+    return this.promptEngine!.getAdvisor(gameData, message, history);
+  }
+
+  /**
+   * Получить предложения через actions.md
+   */
+  async getSuggestionsWithPrompts(gameData: any): Promise<any[]> {
+    if (!this.promptEngine) {
+      this.initPromptEngine(gameData);
+    }
+
+    return this.promptEngine!.getSuggestions(gameData);
   }
 
   setupWorld(worldPrompt: string): void {

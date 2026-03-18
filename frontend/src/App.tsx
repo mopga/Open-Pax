@@ -41,6 +41,8 @@ function App() {
   const [showJumpMenu, setShowJumpMenu] = useState(false);
   const [history, setHistory] = useState<{ turn: number; action: string; result: string; events?: string[]; date?: string }[]>([]);
   const [loading, setLoading] = useState(false);
+  const [showAdvisor, setShowAdvisor] = useState(false);
+  const [advisorTips, setAdvisorTips] = useState<string>('');
   const historyEndRef = useRef<HTMLDivElement>(null);
 
   // Прокрутка истории вниз
@@ -649,23 +651,66 @@ function App() {
             </div>
           )}
 
-          {/* Advisor Button */}
-          <div className="advisor-section">
+          {/* Floating Advisor Button */}
+          {!showAdvisor && (
             <button
-              className="btn-advisor"
-              onClick={async () => {
-                if (!currentGame) return;
-                try {
-                  const tips = await gameApi.getAdvisor(currentGame.id, currentGame.players[0].id);
-                  alert('Советы:\n\n' + (tips.tips || []).join('\n'));
-                } catch (e) {
-                  console.error('Advisor error:', e);
+              className="floating-advisor-btn"
+              onClick={() => {
+                setShowAdvisor(true);
+                // Auto-generate initial advice
+                if (!advisorTips) {
+                  (async () => {
+                    try {
+                      const tips = await gameApi.getAdvisor(currentGame.id, currentGame.players[0].id);
+                      setAdvisorTips((tips.tips || []).join('\n'));
+                    } catch (e) { console.error(e); }
+                  })();
                 }
               }}
+              title="Советник"
             >
-              💡 Получить совет
+              💡
             </button>
-          </div>
+          )}
+
+          {/* Floating Advisor Panel */}
+          {showAdvisor && (
+            <div className="floating-advisor-panel">
+              <div className="floating-advisor-header">
+                <h4>💡 Советник</h4>
+                <button className="btn-close" onClick={() => setShowAdvisor(false)}>×</button>
+              </div>
+              <div className="floating-advisor-messages">
+                {advisorTips ? (
+                  advisorTips.split('\n').map((line, i) => (
+                    <div key={i} className="advisor-message">
+                      {line || <br/>}
+                    </div>
+                  ))
+                ) : (
+                  <div className="advisor-message loading">Загрузка совета...</div>
+                )}
+              </div>
+              <div className="floating-advisor-input">
+                <button
+                  className="btn-refresh-advice"
+                  onClick={async () => {
+                    if (!currentGame) return;
+                    setAdvisorTips('Загрузка...');
+                    try {
+                      const tips = await gameApi.getAdvisor(currentGame.id, currentGame.players[0].id);
+                      setAdvisorTips((tips.tips || []).join('\n'));
+                    } catch (e) {
+                      console.error(e);
+                      setAdvisorTips('Ошибка получения совета');
+                    }
+                  }}
+                >
+                  🔄 Новый совет
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* History */}
           <div className="history-section">

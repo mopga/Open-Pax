@@ -307,6 +307,7 @@ app.post('/api/games', (req, res) => {
     world: { ...world, regions: world.regions.reduce((acc: any, r: any) => { acc[r.id] = r; return acc; }, {}) },
     players: [{ id: playerId, name: playerName || 'Player', regionId: playerRegionId, color: '#FF0000' }],
     currentTurn: 1,
+    currentDate: world.start_date || '1951-01-01',
     maxTurns: 100,
     actions: [],
     results: [],
@@ -398,7 +399,35 @@ app.post('/api/games/:id/action', async (req, res) => {
     },
   };
 
-  const result = await gameController.processTurnLegacy(player.regionId, text, gameContext);
+  // Используем новую систему промптов (time-rewind.md)
+  console.log('[API] Using new prompt system...');
+  const promptResult = await gameController.processTurnWithPrompts(
+    game,
+    text.split(' | '), // Разделяем действия
+    timeJump
+  );
+
+  const result = {
+    countryResponse: promptResult.convertedActions.map((a: any) => a.text).join('\n'),
+    worldResponse: promptResult.narration,
+    narration: promptResult.narration,
+    events: promptResult.events,
+  };
+
+  // Применяем изменения мира
+  if (promptResult.worldChanges) {
+    const { regionOwners, regionColors } = promptResult.worldChanges;
+    // Обновляем владельцев регионов
+    for (const [regionId, newOwner] of Object.entries(regionOwners || {})) {
+      const targetRegion = typeof game.world.regions.get === 'function'
+        ? game.world.regions.get(regionId)
+        : game.world.regions[regionId];
+      if (targetRegion) {
+        targetRegion.owner = newOwner;
+        targetRegion.color = regionColors?.[regionId] || targetRegion.color;
+      }
+    }
+  }
 
   // ==============================================================================
   // Detect and create objects from player actions
@@ -590,8 +619,11 @@ app.post('/api/games/:id/action', async (req, res) => {
   // Persist turn number
   gameRepository.updateTurn(game.id, game.currentTurn + 1);
 
-  // Next turn
+  // Next turn - update date
   game.currentTurn += 1;
+  const currentDate = new Date(game.currentDate);
+  currentDate.setDate(currentDate.getDate() + timeJump);
+  game.currentDate = currentDate.toISOString().split('T')[0];
 
   res.json({
     turn: game.currentTurn - 1,
@@ -603,7 +635,7 @@ app.post('/api/games/:id/action', async (req, res) => {
 });
 
 app.get('/api/games/:id/advisor', async (req, res) => {
-  const { playerId } = req.query;
+  const { playerId, message } = req.query;
   const gameId = req.params.id;
 
   const game = activeGames.get(gameId);
@@ -612,32 +644,40 @@ app.get('/api/games/:id/advisor', async (req, res) => {
     return;
   }
 
-  const player = game.players.find((p: any) => p.id === playerId);
+  // Используем первого игрока если playerId не передан или не найден
+  const player = game.players.find((p: any) => p.id === playerId) || game.players[0];
   if (!player) {
     res.status(404).json({ error: 'Player not found' });
     return;
   }
 
-  const region = typeof game.world.regions.get === 'function'
-    ? game.world.regions.get(player.regionId)
-    : game.world.regions[player.regionId];
+  // Используем новую систему промптов для советника
+  try {
+    const advice = await gameController.getAdvisorWithPrompts(game, message as string || '', []);
+    res.json({ tips: [advice] });
+  } catch (e) {
+    console.error('[Advisor] Error:', e);
+    res.status(500).json({ error: 'Failed to get advisor tips' });
+  }
+});
 
-  const gameContext = {
-    turn: game.currentTurn,
-    playerState: {
-      region: region?.name || '',
-      population: region?.population || 0,
-      gdp: region?.gdp || 0,
-      militaryPower: region?.militaryPower || 0,
-    },
-    worldState: {
-      totalRegions: game.world.regions.size,
-      totalPlayers: game.players.length,
-    },
-  };
+// Suggestions endpoint (использует actions.md)
+app.get('/api/games/:id/suggestions', async (req, res) => {
+  const gameId = req.params.id;
 
-  const tips = await gameController.getAdvisorTips(gameContext);
-  res.json({ tips });
+  const game = activeGames.get(gameId);
+  if (!game) {
+    res.status(404).json({ error: 'Game not found' });
+    return;
+  }
+
+  try {
+    const suggestions = await gameController.getSuggestionsWithPrompts(game);
+    res.json({ suggestions });
+  } catch (e) {
+    console.error('[Suggestions] Error:', e);
+    res.status(500).json({ error: 'Failed to get suggestions' });
+  }
 });
 
 // ============================================================================
