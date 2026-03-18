@@ -7,10 +7,10 @@ import express from 'express';
 import cors from 'cors';
 import { v4 as uuid } from 'uuid';
 import { MiniMaxProvider } from './llm';
-import { GameController } from './agents';
 import { initDatabase } from './database';
 import db from './database';
 import { mapRepository, worldRepository, gameRepository } from './repositories';
+import { initSessionRegistry, getSessionRegistry } from './session-registry';
 import type {
   Game, GameWorld, MapRegion, MapObject, Player, Action, TurnResult,
   CreateWorldRequest, CreateGameRequest, SubmitActionRequest, MapData
@@ -34,10 +34,9 @@ initDatabase();
 
 // Initialize LLM
 const llmProvider = new MiniMaxProvider();
-const gameController = new GameController(llmProvider);
 
-// In-memory cache for active games (for fast gameplay)
-const activeGames: Map<string, any> = new Map();
+// Initialize Session Registry (manages per-game sessions)
+const sessionRegistry = initSessionRegistry(llmProvider);
 
 // Helper: convert points to SVG path
 const pointsToPath = (points: { x: number; y: number }[]): string => {
@@ -258,69 +257,31 @@ app.post('/api/games', (req, res) => {
   const playerName = req.body.playerName || req.body.player_name;
   const playerRegionId = req.body.playerRegionId || req.body.player_region_id;
 
-  const world = worldRepository.findById(worldId);
-  if (!world) {
-    res.status(404).json({ error: 'World not found' });
-    return;
+  try {
+    const { session, playerId, gameId } = sessionRegistry.createSession(
+      worldId,
+      playerName || 'Player',
+      playerRegionId
+    );
+
+    const player = session.getPlayer();
+    const region = session.getRegion(playerRegionId);
+
+    res.json({
+      game_id: gameId,
+      player_id: playerId,
+      region: { id: region?.id, name: region?.name },
+    });
+  } catch (e: any) {
+    if (e.message === 'World not found') {
+      res.status(404).json({ error: 'World not found' });
+    } else if (e.message === 'Region not found') {
+      res.status(404).json({ error: 'Region not found' });
+    } else {
+      console.error('[POST /api/games] Error:', e);
+      res.status(500).json({ error: 'Failed to create game' });
+    }
   }
-
-  const region = world.regions.find((r: any) => r.id === playerRegionId);
-  if (!region) {
-    res.status(404).json({ error: 'Region not found' });
-    return;
-  }
-
-  const playerId = uuid().slice(0, 8);
-  const gameId = uuid().slice(0, 8);
-
-  // Save game to database
-  gameRepository.create({
-    id: gameId,
-    worldId,
-    currentTurn: 1,
-    maxTurns: 100,
-    status: 'playing',
-  });
-
-  gameRepository.addPlayer({
-    id: playerId,
-    gameId,
-    name: playerName || 'Player',
-    regionId: playerRegionId,
-    color: '#FF0000',
-  });
-
-  // Setup game controller
-  gameController.setupWorld(world.base_prompt);
-  gameController.addCountry(playerRegionId, region.name);
-
-  // Setup NPC countries
-  const regionConfigs = world.regions.map((r: any) => ({
-    id: r.id,
-    name: r.name,
-    owner: r.owner,
-  }));
-  gameController.setupNPCCountries(regionConfigs);
-
-  // Cache in memory for fast gameplay
-  const game = {
-    id: gameId,
-    world: { ...world, regions: world.regions.reduce((acc: any, r: any) => { acc[r.id] = r; return acc; }, {}) },
-    players: [{ id: playerId, name: playerName || 'Player', regionId: playerRegionId, color: '#FF0000' }],
-    currentTurn: 1,
-    currentDate: world.start_date || '1951-01-01',
-    maxTurns: 100,
-    actions: [],
-    results: [],
-    status: 'playing',
-  };
-  activeGames.set(gameId, game);
-
-  res.json({
-    game_id: gameId,
-    player_id: playerId,
-    region: { id: region.id, name: region.name },
-  });
 });
 
 app.get('/api/games/:id', (req, res) => {
@@ -355,329 +316,58 @@ app.get('/api/games/:id', (req, res) => {
 
 app.post('/api/games/:id/action', async (req, res) => {
   console.log('[API] POST /api/games/:id/action called');
-  // Support both camelCase and snake_case
   const playerId = req.body.playerId || req.body.player_id;
   const text = req.body.text;
   const jump_days = req.body.jump_days || req.body.jumpDays || 30;
-  console.log('[API] Request body:', { playerId, text: text?.substring(0, 50), jump_days });
   const gameId = req.params.id;
-  const timeJump = jump_days || 30; // Default 30 days
+  const timeJump = jump_days || 30;
 
-  const game = activeGames.get(gameId);
-  console.log('[API] Active games:', Array.from(activeGames.keys()));
-  console.log('[API] Looking for gameId:', gameId);
-  if (!game) {
-    res.status(404).json({ error: 'Game not found' });
-    return;
-  }
+  try {
+    const session = getSessionRegistry().getSessionOrThrow(gameId);
+    const result = await session.applyTurn(text, timeJump);
 
-  const player = game.players.find((p: any) => p.id === playerId);
-  if (!player) {
-    res.status(404).json({ error: 'Player not found' });
-    return;
-  }
-
-  const region = typeof game.world.regions.get === 'function'
-    ? game.world.regions.get(player.regionId)
-    : game.world.regions[player.regionId];
-  if (!region) {
-    res.status(404).json({ error: 'Region not found' });
-    return;
-  }
-
-  const gameContext = {
-    turn: game.currentTurn,
-    state: {
-      region: {
-        name: region.name,
-        population: region.population,
-        gdp: region.gdp,
-        militaryPower: region.militaryPower,
-      },
-      world: {
-        regionsCount: game.world.regions.size,
-      },
-    },
-  };
-
-  // Используем новую систему промптов (time-rewind.md)
-  console.log('[API] Using new prompt system...');
-  const promptResult = await gameController.processTurnWithPrompts(
-    game,
-    text.split(' | '), // Разделяем действия
-    timeJump
-  );
-
-  const result = {
-    countryResponse: promptResult.convertedActions.map((a: any) => a.text).join('\n'),
-    worldResponse: promptResult.narration,
-    narration: promptResult.narration,
-    events: promptResult.events,
-  };
-
-  // Применяем изменения мира
-  if (promptResult.worldChanges) {
-    const { regionOwners, regionColors } = promptResult.worldChanges;
-    // Обновляем владельцев регионов
-    for (const [regionId, newOwner] of Object.entries(regionOwners || {})) {
-      const targetRegion = typeof game.world.regions.get === 'function'
-        ? game.world.regions.get(regionId)
-        : game.world.regions[regionId];
-      if (targetRegion) {
-        targetRegion.owner = newOwner;
-        targetRegion.color = regionColors?.[regionId] || targetRegion.color;
-      }
+    res.json({
+      turn: result.turn,
+      narration: result.narration,
+      country_response: result.countryResponse,
+      events: result.events,
+      objects: result.objects,
+    });
+  } catch (e: any) {
+    console.error('[POST /api/games/:id/action] Error:', e);
+    if (e.message.includes('not found')) {
+      res.status(404).json({ error: e.message });
+    } else {
+      res.status(500).json({ error: 'Failed to process turn' });
     }
   }
-
-  // ==============================================================================
-  // Detect and create objects from player actions
-  // ==============================================================================
-  const createdObjects: string[] = [];
-
-  // Object type patterns (Russian keywords)
-  const objectPatterns: Record<string, RegExp[]> = {
-    army: [/арми(?:ю|я|ю|)\s/iu, /войск(?:а|о|у|)\s/iu, /воен(?:ый|ая|ое)\s/iu, /soldiers/iu],
-    fleet: [/флот(?:а|у|ом|)\s/iu, /корабл(?:ь|ей|ям|)\s/iu, /морск(?:ой|ая|ое)\s/iu, /navy/iu, /fleet/iu],
-    missile: [/ракет(?:а|ы|е|)\s/iu, /баллистическ/iu, /missile/iu],
-    radar: [/радар(?:а|у|ом|)\s/iu, /радиолокацион/iu, /radar/iu],
-    port: [/порт(?:а|у|ом|)\s/iu, /гаван(?:ь|и|ью|)\s/iu, /port/iu],
-    exchange: [/бирж(?:а|у|ей|)\s/iu, /обмен(?:а|у|)\s/iu, /exchange/iu],
-    clearing: [/клиринг(?:а|у|ов|)\s/iu, /расчет(?:а|ов|)\s/iu, /clearing/iu],
-    grouping: [/группировк(?:а|и|у|)\s/iu, /объединен/iu, /grouping/iu],
-    factory: [/завод(?:а|у|ом|)\s/iu, /фабрик(?:а|и|у|)\s/iu, /предприят/iu, /factory/iu, /plant/iu],
-    university: [/университет(?:а|у|ом|)\s/iu, /университет/iu, /институт(?:а|у|)\s/iu, /академи(?:я|и|)\s/iu, /university/iu, / institute/iu],
-  };
-
-  // Check action text and response for object creation
-  const combinedText = (text + ' ' + result.countryResponse).toLowerCase();
-
-  for (const [objType, patterns] of Object.entries(objectPatterns)) {
-    for (const pattern of patterns) {
-      if (pattern.test(combinedText)) {
-        // Create new object
-        const newObject: MapObject = {
-          id: uuid().slice(0, 8),
-          type: objType,
-          name: `${objType.charAt(0).toUpperCase() + objType.slice(1)} ${region.objects.length + 1}`,
-          x: 400 + Math.random() * 200, // Random position in region
-          y: 300 + Math.random() * 150,
-          level: 1,
-        };
-
-        // Initialize objects array if needed
-        if (!region.objects) {
-          region.objects = [];
-        }
-
-        region.objects.push(newObject);
-        createdObjects.push(`✓ Создан ${objType}: ${newObject.name}`);
-        break;
-      }
-    }
-  }
-
-  // Process NPC turns
-  const npcCountries = gameController.getNPCCountries();
-  const npcEvents: string[] = [];
-
-  for (const npcRegionId of npcCountries) {
-    const npcRegion = typeof game.world.regions.get === 'function'
-      ? game.world.regions.get(npcRegionId)
-      : game.world.regions[npcRegionId];
-    if (!npcRegion) continue;
-
-    // Get neighbors for NPC context
-    const regionsArray = Object.values(game.world.regions) as any[];
-    const neighbors = regionsArray
-      .filter((r: any) => r.id !== npcRegionId)
-      .slice(0, 5)
-      .map((r: any) => ({
-        id: r.id,
-        name: r.name,
-        owner: r.owner,
-        militaryPower: r.militaryPower,
-        gdp: r.gdp,
-      }));
-
-    const npcContext = {
-      turn: game.currentTurn,
-      population: npcRegion.population,
-      gdp: npcRegion.gdp,
-      militaryPower: npcRegion.militaryPower,
-      neighbors,
-      recentEvents: game.results.slice(-3).map((r: any) => r.narration),
-    };
-
-    try {
-      const npcAction = await gameController.processNPCTurn(npcRegionId, npcContext);
-      if (npcAction) {
-        npcEvents.push(`${npcRegion.name}: ${npcAction.description}`);
-
-        // Apply NPC action effects (simplified)
-        if (npcAction.type === 'develop') {
-          npcRegion.gdp = Math.floor(npcRegion.gdp * 1.05);
-          npcRegion.militaryPower = Math.floor(npcRegion.militaryPower * 1.03);
-        } else if (npcAction.type === 'war' && npcAction.targetRegionId) {
-          const targetRegion = typeof game.world.regions.get === 'function'
-            ? game.world.regions.get(npcAction.targetRegionId)
-            : game.world.regions[npcAction.targetRegionId];
-          if (targetRegion && targetRegion.militaryPower < npcRegion.militaryPower * 0.7) {
-            // Conquer the region
-            targetRegion.owner = npcRegionId;
-            targetRegion.color = npcRegion.color;
-            npcEvents.push(`⚔️ ${npcRegion.name} захватила ${targetRegion.name}!`);
-          }
-        }
-      }
-    } catch (e) {
-      console.error(`NPC turn error for ${npcRegionId}:`, e);
-    }
-  }
-
-  // Save action
-  const actionId = uuid().slice(0, 8);
-  const action: Action = {
-    id: actionId,
-    playerId: player.id,
-    turn: game.currentTurn,
-    text,
-    createdAt: new Date().toISOString(),
-  };
-  game.actions.push(action);
-
-  // Persist action to database
-  gameRepository.addAction({
-    id: actionId,
-    gameId: game.id,
-    playerId: player.id,
-    turn: game.currentTurn,
-    text,
-  });
-
-  // Save result with NPC events
-  const resultId = uuid().slice(0, 8);
-
-  // ==============================================================================
-  // Random Events (15% chance per turn)
-  // ==============================================================================
-  const randomEvents: string[] = [];
-  if (Math.random() < 0.15) {
-    const eventTypes = [
-      { name: 'Природное бедствие', effects: ['землетрясение', 'наводнение', 'засуха', 'ураган'] },
-      { name: 'Экономический кризис', effects: ['рецессия', 'инфляция', 'дефицит'] },
-      { name: 'Технологический прорыв', effects: ['изобретение', 'открытие', 'инновация'] },
-      { name: 'Социальные волнения', effects: ['протесты', 'забастовка', 'революция'] },
-      { name: 'Эпидемия', effects: ['чума', 'грипп', 'вирус'] },
-    ];
-
-    const event = eventTypes[Math.floor(Math.random() * eventTypes.length)];
-    const effect = event.effects[Math.floor(Math.random() * event.effects.length)];
-    const affectedRegions = Array.from(game.world.regions.values()) as MapRegion[];
-    const targetRegion = affectedRegions[Math.floor(Math.random() * affectedRegions.length)] as MapRegion;
-
-    const eventText = `🔮 ${event.name}: ${effect} в ${targetRegion.name}`;
-    randomEvents.push(eventText);
-
-    // Apply random event effects
-    if (event.name === 'Природное бедствие') {
-      targetRegion.population = Math.floor(targetRegion.population * 0.95);
-      targetRegion.gdp = Math.floor(targetRegion.gdp * 0.9);
-    } else if (event.name === 'Экономический кризис') {
-      targetRegion.gdp = Math.floor(targetRegion.gdp * 0.85);
-    } else if (event.name === 'Технологический прорыв') {
-      targetRegion.gdp = Math.floor(targetRegion.gdp * 1.15);
-      targetRegion.militaryPower = Math.floor(targetRegion.militaryPower * 1.1);
-    } else if (event.name === 'Социальные волнения') {
-      targetRegion.militaryPower = Math.floor(targetRegion.militaryPower * 0.9);
-    } else if (event.name === 'Эпидемия') {
-      targetRegion.population = Math.floor(targetRegion.population * 0.9);
-      targetRegion.militaryPower = Math.floor(targetRegion.militaryPower * 0.85);
-    }
-  }
-
-  const turnResult: TurnResult = {
-    turn: game.currentTurn,
-    narration: result.worldResponse,
-    countryResponse: result.countryResponse,
-    events: [...npcEvents, ...randomEvents],
-  };
-  game.results.push(turnResult);
-
-  // Persist turn result to database
-  gameRepository.addTurnResult({
-    id: resultId,
-    gameId: game.id,
-    turn: game.currentTurn,
-    narration: result.worldResponse,
-    countryResponse: result.countryResponse,
-    events: [...npcEvents, ...createdObjects],
-  });
-
-  // Persist region updates (objects)
-  worldRepository.updateRegion(player.regionId, { objects: region.objects });
-
-  // Persist turn number
-  gameRepository.updateTurn(game.id, game.currentTurn + 1);
-
-  // Next turn - update date
-  game.currentTurn += 1;
-  const currentDate = new Date(game.currentDate);
-  currentDate.setDate(currentDate.getDate() + timeJump);
-  game.currentDate = currentDate.toISOString().split('T')[0];
-
-  res.json({
-    turn: game.currentTurn - 1,
-    narration: result.worldResponse,
-    country_response: result.countryResponse,
-    events: [...npcEvents, ...randomEvents, ...createdObjects],
-    objects: region.objects,
-  });
 });
 
 app.get('/api/games/:id/advisor', async (req, res) => {
   const { playerId, message } = req.query;
   const gameId = req.params.id;
 
-  const game = activeGames.get(gameId);
-  if (!game) {
-    res.status(404).json({ error: 'Game not found' });
-    return;
-  }
-
-  // Используем первого игрока если playerId не передан или не найден
-  const player = game.players.find((p: any) => p.id === playerId) || game.players[0];
-  if (!player) {
-    res.status(404).json({ error: 'Player not found' });
-    return;
-  }
-
-  // Используем новую систему промптов для советника
   try {
-    const advice = await gameController.getAdvisorWithPrompts(game, message as string || '', []);
+    const session = getSessionRegistry().getSessionOrThrow(gameId);
+    const advice = await session.getAdvisor(message as string || '', []);
     res.json({ tips: [advice] });
   } catch (e) {
     console.error('[Advisor] Error:', e);
-    res.status(500).json({ error: 'Failed to get advisor tips' });
+    res.status(404).json({ error: 'Game not found' });
   }
 });
 
-// Suggestions endpoint (использует actions.md)
+// Suggestions endpoint (uses actions.md)
 app.get('/api/games/:id/suggestions', async (req, res) => {
   const gameId = req.params.id;
 
-  const game = activeGames.get(gameId);
-  if (!game) {
-    res.status(404).json({ error: 'Game not found' });
-    return;
-  }
-
   try {
-    const suggestions = await gameController.getSuggestionsWithPrompts(game);
+    const session = getSessionRegistry().getSessionOrThrow(gameId);
+    const suggestions = await session.getSuggestions();
     res.json({ suggestions });
   } catch (e) {
     console.error('[Suggestions] Error:', e);
-    res.status(500).json({ error: 'Failed to get suggestions' });
+    res.status(404).json({ error: 'Game not found' });
   }
 });
 
@@ -686,41 +376,16 @@ app.post('/api/games/:id/save', (req, res) => {
   const gameId = req.params.id;
   const { name } = req.body;
 
-  const game = activeGames.get(gameId);
-  if (!game) {
+  try {
+    const session = getSessionRegistry().getSessionOrThrow(gameId);
+    const { saveId, currentTurn, currentDate } = session.save(name);
+
+    console.log('[SAVE] Game saved:', saveId, 'turn:', currentTurn);
+    res.json({ save_id: saveId, currentTurn, currentDate });
+  } catch (e) {
+    console.error('[SAVE] Error:', e);
     res.status(404).json({ error: 'Game not found' });
-    return;
   }
-
-  // Save to database
-  const saveId = uuid().slice(0, 8);
-
-  // Serialize full game state
-  const saveData = {
-    currentTurn: game.currentTurn,
-    currentDate: game.currentDate,
-    worldName: game.world.name,
-    playerName: game.players[0]?.name || 'Player',
-    playerRegionId: game.players[0]?.regionId || '',
-  };
-
-  // Save to saves table
-  const stmt = db.prepare(`
-    INSERT INTO saves (id, game_id, name, current_turn, current_date, data, saved_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `);
-  stmt.run(
-    saveId,
-    gameId,
-    name || `Game ${new Date().toLocaleDateString()}`,
-    game.currentTurn,
-    game.currentDate,
-    JSON.stringify(saveData),
-    new Date().toISOString()
-  );
-
-  console.log('[SAVE] Game saved:', saveId, 'turn:', game.currentTurn);
-  res.json({ save_id: saveId, currentTurn: game.currentTurn, currentDate: game.currentDate });
 });
 
 // List saved games
@@ -734,40 +399,31 @@ app.get('/api/saves', (_req, res) => {
 app.post('/api/saves/:id/load', (req, res) => {
   const saveId = req.params.id;
 
-  const stmt = db.prepare('SELECT * FROM saves WHERE id = ?');
-  const save = stmt.get(saveId) as any;
+  try {
+    const session = getSessionRegistry().loadSavedGame(saveId);
+    if (!session) {
+      res.status(404).json({ error: 'Save not found' });
+      return;
+    }
 
-  if (!save) {
-    res.status(404).json({ error: 'Save not found' });
-    return;
+    console.log('[LOAD] Game loaded:', saveId);
+    res.json({
+      game_id: session.id,
+      currentTurn: session.getCurrentTurn(),
+      currentDate: session.getCurrentDate(),
+    });
+  } catch (e) {
+    console.error('[LOAD] Error:', e);
+    res.status(404).json({ error: 'Failed to load game' });
   }
-
-  // Get the original game from active games
-  const originalGame = activeGames.get(save.game_id);
-  if (!originalGame) {
-    res.status(404).json({ error: 'Original game not found' });
-    return;
-  }
-
-  // Update the in-memory game with saved state
-  originalGame.currentTurn = save.current_turn;
-  originalGame.currentDate = save.current_date;
-
-  // ALSO update the database so subsequent GET requests return correct data
-  const updateStmt = db.prepare('UPDATE games SET current_turn = ? WHERE id = ?');
-  updateStmt.run(save.current_turn, save.game_id);
-
-  console.log('[LOAD] Game loaded:', saveId, 'turn:', save.current_turn);
-  res.json({
-    game_id: save.game_id,
-    currentTurn: save.current_turn,
-    currentDate: save.current_date,
-  });
 });
 
 // ============================================================================
 // Start Server
 // ============================================================================
+
+// Reload active sessions from database (survives server restart)
+sessionRegistry.reloadActiveSessions();
 
 app.listen(PORT, () => {
   console.log(`🚀 Open-Pax API running on http://localhost:${PORT}`);

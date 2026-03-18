@@ -137,6 +137,24 @@ export function initDatabase() {
     )
   `);
 
+  // Migration: Add current_turn and current_date if they don't exist
+  try {
+    db.exec("ALTER TABLE saves ADD COLUMN current_turn INTEGER DEFAULT 1");
+    console.log('[Migration] Added current_turn to saves');
+  } catch (e: any) {
+    if (!e.message.includes('duplicate column')) {
+      // Column might already exist or SQLite version doesn't support this
+    }
+  }
+  try {
+    db.exec("ALTER TABLE saves ADD COLUMN current_date TEXT DEFAULT '1951-01-01'");
+    console.log('[Migration] Added current_date to saves');
+  } catch (e: any) {
+    if (!e.message.includes('duplicate column')) {
+      // Column might already exist
+    }
+  }
+
   console.log('✅ Database initialized');
 }
 
