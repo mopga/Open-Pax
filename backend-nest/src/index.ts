@@ -370,7 +370,7 @@ app.post('/api/games/:id/action', async (req, res) => {
     },
   };
 
-  const result = await gameController.processTurn(player.regionId, text, gameContext);
+  const result = await gameController.processTurnLegacy(player.regionId, text, gameContext);
 
   // Process NPC turns
   const npcCountries = gameController.getNPCCountries();

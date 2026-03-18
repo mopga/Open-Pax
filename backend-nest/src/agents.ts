@@ -5,6 +5,7 @@
 
 import { MiniMaxProvider } from './llm';
 import { NPCCountryAgent, NPCCountryContext, createNPCCountries, type NPCAction } from './npc-agents';
+import { TurnControllerAgent, type TurnContext } from './turn-controller';
 
 export class CountryAgent {
   private provider: MiniMaxProvider;
@@ -122,15 +123,19 @@ export class GameController {
   private provider: MiniMaxProvider;
   private worldAgent: WorldAgent | null = null;
   private advisorAgent: AdvisorAgent;
+  private turnController: TurnControllerAgent;
   private countryAgents: Map<string, CountryAgent> = new Map();
   private npcAgents: Map<string, NPCCountryAgent> = new Map();
+  private worldPrompt: string = '';
 
   constructor(provider: MiniMaxProvider) {
     this.provider = provider;
     this.advisorAgent = new AdvisorAgent(provider);
+    this.turnController = new TurnControllerAgent(provider);
   }
 
   setupWorld(worldPrompt: string): void {
+    this.worldPrompt = worldPrompt;
     this.worldAgent = new WorldAgent(this.provider, worldPrompt);
   }
 
@@ -167,7 +172,60 @@ export class GameController {
     return Array.from(this.npcAgents.keys());
   }
 
+  /**
+   * Process full turn with Turn Controller
+   */
   async processTurn(
+    playerRegionId: string,
+    playerAction: string,
+    gameContext: any,
+    npcActions: { country: string; action: string; description: string }[] = []
+  ): Promise<{ narration: string; countryResponse: string; events: string[]; summary: string }> {
+    const countryAgent = this.countryAgents.get(playerRegionId);
+    if (!countryAgent) {
+      return {
+        narration: 'Country agent not found',
+        countryResponse: '',
+        events: [],
+        summary: 'Ошибка'
+      };
+    }
+
+    // 1. Get country name
+    const playerCountry = countryAgent['regionName'] || 'Страна игрока';
+
+    // 2. Process player action through country agent
+    const countryResponse = await countryAgent.think(gameContext, playerAction);
+
+    // 3. Generate turn narrative through Turn Controller
+    const turnContext: TurnContext = {
+      turn: gameContext.turn || 1,
+      year: new Date().getFullYear().toString(),
+      playerCountry,
+      playerAction,
+      playerResponse: countryResponse,
+      npcActions,
+      worldState: {
+        totalRegions: gameContext.state?.world?.regionsCount || 0,
+        totalCountries: (this.npcAgents.size || 0) + 1,
+        blocs: [],
+      },
+    };
+
+    const turnResult = await this.turnController.generateTurnNarrative(turnContext);
+
+    return {
+      narration: turnResult.narration,
+      countryResponse,
+      events: turnResult.events,
+      summary: turnResult.summary,
+    };
+  }
+
+  /**
+   * Legacy method - kept for compatibility
+   */
+  async processTurnLegacy(
     playerRegionId: string,
     playerAction: string,
     gameContext: any
