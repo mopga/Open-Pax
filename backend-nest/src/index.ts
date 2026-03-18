@@ -496,11 +496,50 @@ app.post('/api/games/:id/action', async (req, res) => {
 
   // Save result with NPC events
   const resultId = uuid().slice(0, 8);
+
+  // ==============================================================================
+  // Random Events (15% chance per turn)
+  // ==============================================================================
+  const randomEvents: string[] = [];
+  if (Math.random() < 0.15) {
+    const eventTypes = [
+      { name: 'Природное бедствие', effects: ['землетрясение', 'наводнение', 'засуха', 'ураган'] },
+      { name: 'Экономический кризис', effects: ['рецессия', 'инфляция', 'дефицит'] },
+      { name: 'Технологический прорыв', effects: ['изобретение', 'открытие', 'инновация'] },
+      { name: 'Социальные волнения', effects: ['протесты', 'забастовка', 'революция'] },
+      { name: 'Эпидемия', effects: ['чума', 'грипп', 'вирус'] },
+    ];
+
+    const event = eventTypes[Math.floor(Math.random() * eventTypes.length)];
+    const effect = event.effects[Math.floor(Math.random() * event.effects.length)];
+    const affectedRegions = Array.from(game.world.regions.values()) as MapRegion[];
+    const targetRegion = affectedRegions[Math.floor(Math.random() * affectedRegions.length)] as MapRegion;
+
+    const eventText = `🔮 ${event.name}: ${effect} в ${targetRegion.name}`;
+    randomEvents.push(eventText);
+
+    // Apply random event effects
+    if (event.name === 'Природное бедствие') {
+      targetRegion.population = Math.floor(targetRegion.population * 0.95);
+      targetRegion.gdp = Math.floor(targetRegion.gdp * 0.9);
+    } else if (event.name === 'Экономический кризис') {
+      targetRegion.gdp = Math.floor(targetRegion.gdp * 0.85);
+    } else if (event.name === 'Технологический прорыв') {
+      targetRegion.gdp = Math.floor(targetRegion.gdp * 1.15);
+      targetRegion.militaryPower = Math.floor(targetRegion.militaryPower * 1.1);
+    } else if (event.name === 'Социальные волнения') {
+      targetRegion.militaryPower = Math.floor(targetRegion.militaryPower * 0.9);
+    } else if (event.name === 'Эпидемия') {
+      targetRegion.population = Math.floor(targetRegion.population * 0.9);
+      targetRegion.militaryPower = Math.floor(targetRegion.militaryPower * 0.85);
+    }
+  }
+
   const turnResult: TurnResult = {
     turn: game.currentTurn,
     narration: result.worldResponse,
     countryResponse: result.countryResponse,
-    events: npcEvents,
+    events: [...npcEvents, ...randomEvents],
   };
   game.results.push(turnResult);
 
@@ -527,7 +566,7 @@ app.post('/api/games/:id/action', async (req, res) => {
     turn: game.currentTurn - 1,
     narration: result.worldResponse,
     country_response: result.countryResponse,
-    events: [...npcEvents, ...createdObjects],
+    events: [...npcEvents, ...randomEvents, ...createdObjects],
     objects: region.objects,
   });
 });
