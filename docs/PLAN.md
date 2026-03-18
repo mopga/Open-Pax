@@ -19,37 +19,39 @@
 
 #### Frontend (`frontend/src/`)
 - `App.tsx` — главное приложение с навигацией
-- `components/Map/MapView.tsx` — отображение карты с SVG регионами
-- `components/Editor/MapEditor.tsx` — редактор карт со свободным рисованием
+- `components/Map/MapView.tsx` — отображение карты с SVG регионами, зум, панорамирование
+- `components/Editor/MapEditor.tsx` — редактор карт со свободным рисованием, объектами, зумом
 - `components/WorldBuilder/CreateWorld.tsx` — экран создания мира с настройками
 - `services/api.ts` — API клиент
 - `types/index.ts` — TypeScript типы
 
 #### Backend (`backend-nest/src/`)
 - `index.ts` — Express сервер (maps, worlds, games endpoints)
-- `models.ts` — модели данных (MapRegion, GameWorld, Player, Game, Action)
+- `models.ts` — модели данных (MapRegion, GameWorld, Player, Game, Action, MapObject)
 - `agents.ts` — AI агенты (CountryAgent, WorldAgent, AdvisorAgent, GameController)
 - `npc-agents.ts` — NPC агенты с личностями (aggressive, diplomatic, neutral, isolationist)
 - `llm.ts` — MiniMax LLM провайдер
 
 ### 🆕 Latest Changes (2026-03-18)
 
-1. **Phase 1.1: Create World Screen** — UI для настройки мира
-   - Выбор даты старта (пресеты: 1914, 1939, 1951, 1991, 2000)
-   - Base prompt для альтернативной истории
-   - Slider исторической точности (0-100%)
-   - Назначение владельцев регионов (игрок, AI типы)
+1. **Map Zoom/Pan** — зум колесом мыши и перетаскивание
+   - Zoom levels: 0.2x - 5x
+   - Zoom controls (+/-/reset)
+   - Larger default map (2000x1500)
 
-2. **Phase 1.2: NPC Country Agents** — AI для не-игровых стран
-   - 4 типа личностей: aggressive, diplomatic, neutral, isolationist
-   - Каждый NPC анализирует соседей и генерирует действия
-   - Действия: expand, ally, war, develop, neutral, trade, defense
-   - Применение эффектов (захват регионов, развитие экономики)
+2. **Map Objects System** — объекты на карте
+   - Типы: army, fleet, missile, radar, port, exchange, clearing, grouping, factory, university
+   - Backend парсит действия игрока и создает объекты
+   - Объекты отображаются как иконки с подписями
 
-3. **Phase 1.3: Turn Controller Agent** — объединение событий в нарратив
-   - TurnControllerAgent класс для генерации связного нарратива
-   - Объединяет действия игрока, NPC стран, глобальные события
-   - Генерирует краткую сводку хода
+3. **Map Editor Enhancements**
+   - Zoom/pan в редакторе
+   - Размеры карт: 800x600, 1200x900, 2000x1500, 3000x2000
+   - Размещение объектов (города, порты, заводы, военные базы, столицы)
+
+4. **Fix: Objects Visibility**
+   - Объекты теперь рендерятся поверх регионов
+   - Белые обводки и фон подписей для видимости
 
 ---
 
@@ -440,22 +442,43 @@ open-pax/
 
 ## Priority Order
 
+### Phase 1: Core Game Loop ✅ COMPLETE
+- 1.1-1.4: All done
+
+### Phase 2: Persistence (P1)
+
 | Phase | Task | Priority | Est. Time |
 |-------|------|----------|-----------|
-| 1.1 | Create World Screen | P0 | 2-3h |
-| 1.2 | NPC Country Agents | P0 | 3-4h |
-| 1.3 | Turn Controller | P0 | 1-2h |
-| 1.4 | Display Turn Results | P0 | 2-3h |
-| 2.1 | Database Setup | P1 | 2-3h |
+| 2.1 | Database Setup (SQLite) | P1 | 2-3h |
 | 2.2 | Repository Layer | P1 | 2h |
+
+### Phase 3: Multiplayer (P1)
+
+| Phase | Task | Priority | Est. Time |
+|-------|------|----------|-----------|
 | 3.1 | Multiplayer Support | P1 | 4h |
-| 3.2 | Additional LLM Providers | P1 | 2h |
-| 4.1 | Border Detection | P2 | 2h |
-| 4.2 | Bloc System | P2 | 3h |
-| 4.3 | Map Import/Export | P2 | 1h |
+
+### Phase 4: Game Features (P2)
+
+| Phase | Task | Priority | Est. Time |
+|-------|------|----------|-----------|
+| 4.1 | Visual Turn Changes | P2 | 2h |
+| 4.2 | Improved Object System | P2 | 2h |
+| 4.3 | Bloc/Coalition System | P2 | 3h |
+| 4.4 | Country Lock (user can't change country) | P2 | 1h |
+| 4.5 | Map Import/Export | P2 | 1h |
+| 4.6 | Border Detection | P2 | 2h |
+
+### Phase 5: Polish (P3)
+
+| Phase | Task | Priority | Est. Time |
+|-------|------|----------|-----------|
 | 5.1 | Advisor Panel UI | P3 | 1h |
 | 5.2 | Random Events | P3 | 2h |
 | 5.3 | Error Handling | P3 | 1h |
+
+### REMOVED
+- 3.2 Additional LLM Providers (only MiniMax needed)
 
 ---
 

@@ -2,117 +2,122 @@
 
 ## Описание
 
-Проект для создания и управления альтернативными мирами с помощью LLM агентов.
+Open-Pax — это open-source альтернатива [paxhistoria.co](https://paxhistoria.co) с поддержкой кастомных карт. Позволяет создавать альтернативные миры на основе любых карт (книги, фильмы, игры).
+
+Игрок управляет одной страной, описывая свои действия текстом. LLM обрабатывает действия и генерирует реакцию мира и других стран.
+
+## Особенности
+
+- Создание кастомных карт с регионами
+- Размещение объектов на карте (города, порты, заводы, военные базы)
+- AI-агенты для не-игровых стран с разными личностями
+- Зум и панорамирование карты
+- Нарративная генерация событий
+- Советник с подсказками
 
 ## Структура проекта
 
 ```
 open-pax/
-├── frontend/                 # React SPA
+├── frontend/                    # React + TypeScript + Vite
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── Map/         # Интерактивная карта
-│   │   │   │   ├── MapView.tsx
-│   │   │   │   ├── Region.tsx
-│   │   │   │   └── MapObjects.tsx
-│   │   │   ├── Game/        # Игровой интерфейс
-│   │   │   │   ├── CountryPanel.tsx
-│   │   │   │   ├── ActionInput.tsx
-│   │   │   │   └── TurnResult.tsx
-│   │   │   ├── Creator/     # Редактор карт
-│   │   │   │   ├── MapEditor.tsx
-│   │   │   │   └── RegionEditor.tsx
-│   │   │   └── UI/          # Базовые компоненты
-│   │   │       ├── Button.tsx
-│   │   │       ├── Modal.tsx
-│   │   │       └── Tooltip.tsx
-│   │   ├── hooks/
-│   │   │   ├── useMap.ts
-│   │   │   ├── useGame.ts
-│   │   │   └── useLLM.ts
+│   │   │   ├── Map/          # Компоненты карты
+│   │   │   │   └── MapView.tsx
+│   │   │   ├── Editor/       # Редактор карт
+│   │   │   │   └── MapEditor.tsx
+│   │   │   └── WorldBuilder/  # Создание мира
+│   │   │       └── CreateWorld.tsx
 │   │   ├── services/
-│   │   │   ├── api.ts       # Backend API
-│   │   │   └── mapParser.ts # SVG → JSON
+│   │   │   └── api.ts        # API клиент
 │   │   ├── types/
-│   │   │   └── index.ts     # TypeScript интерфейсы
-│   │   ├── prompts/
-│   │   │   └── system.md   # Промпт для LLM
-│   │   ├── App.tsx
-│   │   └── main.tsx
-│   ├── public/
-│   │   └── maps/           # SVG карты
-│   │       ├── default.json
-│   │       └── default.svg
+│   │   │   └── index.ts       # TypeScript типы
+│   │   ├── App.tsx           # Главное приложение
+│   │   └── index.css          # Стили
 │   ├── package.json
-│   ├── vite.config.ts
-│   └── tsconfig.json
+│   └── vite.config.ts
 │
-├── backend/                 # FastAPI
-│   ├── app/
-│   │   ├── api/
-│   │   │   └── routes.py   # REST endpoints
-│   │   ├── agents/
-│   │   │   ├── __init__.py
-│   │   │   ├── base.py     # BaseAgent класс
-│   │   │   ├── country.py  # Agent страны
-│   │   │   ├── advisor.py  # Agent советника
-│   │   │   ├── world.py    # Agent мира
-│   │   │   └── controller.py # Game controller
-│   │   ├── core/
-│   │   │   ├── config.py   # Настройки
-│   │   │   └── prompts.py  # Промпты
-│   │   ├── models/
-│   │   │   ├── game.py     # Game state
-│   │   │   ├── region.py   # Region model
-│   │   │   └── world.py    # World model
-│   │   ├── db/
-│   │   │   ├── database.py
-│   │   │   └── repositories/
-│   │   └── main.py
-│   ├── requirements.txt
-│   └── Dockerfile
+├── backend-nest/               # Node.js + Express + TypeScript
+│   ├── src/
+│   │   ├── index.ts          # API сервер
+│   │   ├── database.ts       # SQLite база данных
+│   │   ├── models.ts         # TypeScript модели
+│   │   ├── agents.ts         # AI агенты
+│   │   ├── npc-agents.ts    # NPC агенты
+│   │   ├── llm.ts           # MiniMax LLM провайдер
+│   │   └── turn-controller.ts
+│   ├── data/                 # SQLite база
+│   └── package.json
 │
 ├── docs/
-│   ├── ARCHITECTURE.md
-│   ├── PROMPTS.md
-│   └── WORLD_CREATION.md
+│   └── PLAN.md              # Технический план
 │
 └── README.md
 ```
 
+## Технологии
+
+- **Frontend**: React 18, TypeScript, Vite
+- **Backend**: Node.js, Express, TypeScript
+- **Database**: SQLite (better-sqlite3)
+- **LLM**: MiniMax API
+
 ## Быстрый старт
 
 ### Требования
-- Python 3.10+
+
 - Node.js 18+
 - MiniMax API ключ
 
 ### Установка
 
 ```bash
-# Backend
-cd backend
-cp .env.example .env
-# Отредактируй .env с твоим MiniMax API ключом
-pip install -r requirements.txt
-python -m uvicorn app.main:app --reload
-
 # Frontend
 cd frontend
 npm install
 npm run dev
+
+# Backend (отдельный терминал)
+cd backend-nest
+npm install
+npm run dev
 ```
 
-## Конфигурация
+### Конфигурация
 
-### .env (backend)
+Создай файл `backend-nest/.env`:
+
 ```env
-LLM_PROVIDER=minimax
-MINIMAX_API_KEY=твой_ключ
-MINIMAX_BASE_URL=https://api.minimax.io/v1
-DATABASE_URL=sqlite:///./pax.db
-DEBUG=true
+MINIMAX_API_KEY=твой_ключ_minimax
+PORT=8000
 ```
+
+## API Endpoints
+
+### Maps
+- `POST /api/maps` — Создать карту
+- `GET /api/maps` — Список карт
+- `GET /api/maps/:id` — Получить карту
+- `DELETE /api/maps/:id` — Удалить карту
+
+### Worlds
+- `POST /api/worlds/from-map` — Создать мир из карты
+- `GET /api/worlds/:id` — Получить мир
+
+### Games
+- `POST /api/games` — Начать игру
+- `GET /api/games/:id` — Получить состояние игры
+- `POST /api/games/:id/action` — Отправить действие
+- `GET /api/games/:id/advisor` — Получить совет
+
+## Геймплей
+
+1. Создай карту в редакторе (или используй существующую)
+2. Назначь владельцев регионов (игрок, AI)
+3. Начни игру, выбрав страну
+4. Описывай действия текстом (например: "Построить завод в Москве")
+5. LLM генерирует реакцию мира
+6. AI страны также делают ходы
 
 ## Лицензия
 
