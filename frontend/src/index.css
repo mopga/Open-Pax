@@ -135,16 +135,17 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  padding: 12px;
+  min-height: 0;
 }
 
 .game-panel {
-  width: 420px;
+  width: 340px;
   background: #111118;
   border-left: 1px solid #222;
   display: flex;
   flex-direction: column;
-  padding: 20px;
+  padding: 16px;
 }
 
 .turn-header {
@@ -192,9 +193,9 @@ body {
 
 .country-info {
   background: #1a1a24;
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 16px;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
 }
 
 .country-name {
@@ -216,14 +217,14 @@ body {
 
 .action-section textarea {
   width: 100%;
-  padding: 14px;
+  padding: 10px 12px;
   background: #1a1a24;
   border: 1px solid #2a2a3a;
-  border-radius: 12px;
+  border-radius: 8px;
   color: #fff;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   resize: none;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .action-section textarea:focus {
@@ -237,12 +238,12 @@ body {
 
 .btn-turn {
   width: 100%;
-  padding: 14px;
-  font-size: 1rem;
+  padding: 10px;
+  font-size: 0.9rem;
   font-weight: 600;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   border: none;
-  border-radius: 10px;
+  border-radius: 8px;
   color: white;
   cursor: pointer;
   transition: all 0.3s ease;
@@ -351,9 +352,9 @@ body {
 
 .history-item {
   background: #1a1a24;
-  border-radius: 10px;
-  padding: 12px;
-  margin-bottom: 10px;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
 }
 
 .history-turn {

@@ -3,6 +3,16 @@
  * ======================
  */
 
+export interface MapObject {
+  id: string;
+  type: string; // 'army' | 'fleet' | 'missile' | 'radar' | 'port' | 'exchange' | 'clearing' | 'grouping' | 'factory' | 'university'
+  name: string;
+  x: number;
+  y: number;
+  owner?: string;
+  level: number;
+}
+
 export interface MapRegion {
   id: string;
   name: string;
@@ -14,6 +24,7 @@ export interface MapRegion {
   militaryPower: number;
   borders: string[];
   status: 'active' | 'occupied' | 'destroyed' | 'independent';
+  objects: MapObject[];
 }
 
 export interface GameWorld {

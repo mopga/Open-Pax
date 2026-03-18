@@ -9,7 +9,7 @@ import { v4 as uuid } from 'uuid';
 import { MiniMaxProvider } from './llm';
 import { GameController } from './agents';
 import type {
-  Game, GameWorld, MapRegion, Player, Action, TurnResult,
+  Game, GameWorld, MapRegion, MapObject, Player, Action, TurnResult,
   CreateWorldRequest, CreateGameRequest, SubmitActionRequest, MapData
 } from './models';
 
@@ -153,6 +153,7 @@ app.post('/api/worlds/:id/regions', (req, res) => {
     militaryPower: 100,
     borders: [],
     status: 'active',
+    objects: [],
   };
 
   world.regions.set(id, region);
@@ -214,6 +215,7 @@ app.post('/api/worlds/from-map', (req, res) => {
       militaryPower,
       borders: [],
       status: 'active',
+      objects: [],
     });
   });
 
@@ -372,6 +374,53 @@ app.post('/api/games/:id/action', async (req, res) => {
 
   const result = await gameController.processTurnLegacy(player.regionId, text, gameContext);
 
+  // ==============================================================================
+  // Detect and create objects from player actions
+  // ==============================================================================
+  const createdObjects: string[] = [];
+
+  // Object type patterns (Russian keywords)
+  const objectPatterns: Record<string, RegExp[]> = {
+    army: [/арми(?:ю|я|ю|)\s/iu, /войск(?:а|о|у|)\s/iu, /воен(?:ый|ая|ое)\s/iu, /soldiers/iu],
+    fleet: [/флот(?:а|у|ом|)\s/iu, /корабл(?:ь|ей|ям|)\s/iu, /морск(?:ой|ая|ое)\s/iu, /navy/iu, /fleet/iu],
+    missile: [/ракет(?:а|ы|е|)\s/iu, /баллистическ/iu, /missile/iu],
+    radar: [/радар(?:а|у|ом|)\s/iu, /радиолокацион/iu, /radar/iu],
+    port: [/порт(?:а|у|ом|)\s/iu, /гаван(?:ь|и|ью|)\s/iu, /port/iu],
+    exchange: [/бирж(?:а|у|ей|)\s/iu, /обмен(?:а|у|)\s/iu, /exchange/iu],
+    clearing: [/клиринг(?:а|у|ов|)\s/iu, /расчет(?:а|ов|)\s/iu, /clearing/iu],
+    grouping: [/группировк(?:а|и|у|)\s/iu, /объединен/iu, /grouping/iu],
+    factory: [/завод(?:а|у|ом|)\s/iu, /фабрик(?:а|и|у|)\s/iu, /предприят/iu, /factory/iu, /plant/iu],
+    university: [/университет(?:а|у|ом|)\s/iu, /университет/iu, /институт(?:а|у|)\s/iu, /академи(?:я|и|)\s/iu, /university/iu, / institute/iu],
+  };
+
+  // Check action text and response for object creation
+  const combinedText = (text + ' ' + result.countryResponse).toLowerCase();
+
+  for (const [objType, patterns] of Object.entries(objectPatterns)) {
+    for (const pattern of patterns) {
+      if (pattern.test(combinedText)) {
+        // Create new object
+        const newObject: MapObject = {
+          id: uuid().slice(0, 8),
+          type: objType,
+          name: `${objType.charAt(0).toUpperCase() + objType.slice(1)} ${region.objects.length + 1}`,
+          x: 400 + Math.random() * 200, // Random position in region
+          y: 300 + Math.random() * 150,
+          level: 1,
+        };
+
+        // Initialize objects array if needed
+        if (!region.objects) {
+          region.objects = [];
+        }
+
+        region.objects.push(newObject);
+        createdObjects.push(`✓ Создан ${objType}: ${newObject.name}`);
+        break;
+      }
+    }
+  }
+
   // Process NPC turns
   const npcCountries = gameController.getNPCCountries();
   const npcEvents: string[] = [];
@@ -451,7 +500,8 @@ app.post('/api/games/:id/action', async (req, res) => {
     turn: game.currentTurn - 1,
     narration: result.worldResponse,
     country_response: result.countryResponse,
-    events: npcEvents,
+    events: [...npcEvents, ...createdObjects],
+    objects: region.objects,
   });
 });
 

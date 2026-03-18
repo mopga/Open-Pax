@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { MapView } from './components/Map/MapView';
-import { MapEditor, type EditorRegion } from './components/Editor';
+import { MapEditor, type EditorRegion, type EditorObject } from './components/Editor';
 import { CreateWorld, type WorldConfig } from './components/WorldBuilder/CreateWorld';
 import { gameApi, worldApi, mapApi } from './services/api';
 import type { Region, World, Game } from './types';
@@ -20,7 +20,10 @@ const pointsToPath = (points: { x: number; y: number }[]): string => {
 interface LocalMap {
   id: string;
   name: string;
+  width?: number;
+  height?: number;
   regions: { id: string; name: string; color: string; path: string }[];
+  objects?: { id: string; type: string; name: string; x: number; y: number; regionId?: string }[];
 }
 
 function App() {
@@ -85,7 +88,7 @@ function App() {
   }, []);
 
   // Сохранить карту локально
-  const handleSaveMapLocal = (regions: EditorRegion[], mapName: string): LocalMap => {
+  const handleSaveMapLocal = (regions: EditorRegion[], mapName: string, objects?: EditorObject[]): LocalMap => {
     const mapData: LocalMap = {
       id: `map_${Date.now()}`,
       name: mapName,
@@ -95,6 +98,14 @@ function App() {
         color: r.color,
         path: pointsToPath(r.points),
       })),
+      objects: objects?.map(o => ({
+        id: o.id,
+        type: o.type,
+        name: o.name,
+        x: o.x,
+        y: o.y,
+        regionId: o.regionId,
+      })),
     };
     localStorage.setItem(mapData.id, JSON.stringify(mapData));
     setSavedMaps(prev => [...prev, mapData]);
@@ -102,7 +113,7 @@ function App() {
   };
 
   // Сохранить карту на сервере
-  const handleSaveMap = async (regions: EditorRegion[], mapName: string) => {
+  const handleSaveMap = async (regions: EditorRegion[], mapName: string, objects?: EditorObject[]) => {
     setLoading(true);
     try {
       const mapRegions = regions.map(r => ({
@@ -112,18 +123,12 @@ function App() {
         path: pointsToPath(r.points),
       }));
 
-      await mapApi.create({
-        name: mapName,
-        width: 800,
-        height: 600,
-        regions: mapRegions,
-      });
-
-      handleSaveMapLocal(regions, mapName);
+      // Note: Backend doesn't support objects yet, save locally
+      handleSaveMapLocal(regions, mapName, objects);
       alert(`Карта "${mapName}" сохранена!`);
       setCurrentView('menu');
     } catch (e) {
-      handleSaveMapLocal(regions, mapName);
+      handleSaveMapLocal(regions, mapName, objects);
       alert('Сохранено локально!');
       setCurrentView('menu');
     }
@@ -298,6 +303,19 @@ function App() {
         result: result.narration,
         events: result.events || [],
       }]);
+
+      // Update region objects if any were created
+      if (result.objects && currentWorld && selectedRegion) {
+        const updatedRegions = { ...currentWorld.regions };
+        const region = updatedRegions[selectedRegion];
+        if (region) {
+          updatedRegions[selectedRegion] = {
+            ...region,
+            objects: result.objects,
+          };
+          setCurrentWorld({ ...currentWorld, regions: updatedRegions });
+        }
+      }
 
       const updatedGame = await gameApi.get(currentGame.id);
       setCurrentGame(updatedGame);

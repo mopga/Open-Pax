@@ -156,6 +156,7 @@ export interface SubmitActionResponse {
   narration: string;
   country_response: string;
   events?: string[];
+  objects?: MapObject[];
 }
 
 export interface AdvisorResponse {

@@ -3,4 +3,4 @@
  * ============================
  */
 
-export { MapEditor, type EditorMode, type EditorRegion } from './MapEditor';
+export { MapEditor, type EditorMode, type EditorRegion, type EditorObject } from './MapEditor';
