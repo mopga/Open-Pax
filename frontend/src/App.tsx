@@ -167,20 +167,38 @@ function App() {
       // Применяем начальное распределение владельцев
       const world = await worldApi.get(result.world_id);
 
-      const regions: Region[] = Object.values(world.regions || {}).map((r: any) => ({
-        id: r.id,
-        name: r.name,
-        svgPath: r.svgPath,
-        color: r.color,
-        owner: r.owner || 'neutral',
-        population: r.population || 1000000,
-        gdp: r.gdp || 100,
-        militaryPower: r.militaryPower || 100,
-        objects: [],
-        borders: r.borders || [],
-        status: r.status || 'active',
-        metadata: {},
-      }));
+      // Get objects from the selected map (localStorage)
+      const mapObjects = selectedMapForWorld?.objects || [];
+
+      const regions: Region[] = Object.values(world.regions || {}).map((r: any) => {
+        // Find objects that belong to this region
+        const regionObjects = mapObjects
+          .filter((o: any) => o.regionId === r.id)
+          .map((o: any) => ({
+            id: o.id,
+            type: o.type,
+            name: o.name,
+            x: o.x,
+            y: o.y,
+            level: 1,
+            metadata: {},
+          }));
+
+        return {
+          id: r.id,
+          name: r.name,
+          svgPath: r.svgPath,
+          color: r.color,
+          owner: r.owner || 'neutral',
+          population: r.population || 1000000,
+          gdp: r.gdp || 100,
+          militaryPower: r.militaryPower || 100,
+          objects: regionObjects,
+          borders: r.borders || [],
+          status: r.status || 'active',
+          metadata: {},
+        };
+      });
 
       setCurrentWorld({
         ...world,
@@ -220,20 +238,35 @@ function App() {
       setCurrentView('game');
     } catch (e) {
       // Используем локальные данные (fallback для офлайн режима)
-      const regions: Region[] = selectedMapForWorld?.regions.map(r => ({
-        id: r.id,
-        name: r.name,
-        svgPath: r.path,
-        color: r.color,
-        owner: 'neutral',
-        population: 1000000,
-        gdp: 100,
-        militaryPower: 100,
-        objects: [],
-        borders: [],
-        status: 'active' as any,
-        metadata: {},
-      })) || [];
+      const mapObjects = selectedMapForWorld?.objects || [];
+      const regions: Region[] = selectedMapForWorld?.regions.map(r => {
+        const regionObjects = mapObjects
+          .filter((o: any) => o.regionId === r.id)
+          .map((o: any) => ({
+            id: o.id,
+            type: o.type,
+            name: o.name,
+            x: o.x,
+            y: o.y,
+            level: 1,
+            metadata: {},
+          }));
+
+        return {
+          id: r.id,
+          name: r.name,
+          svgPath: r.path,
+          color: r.color,
+          owner: 'neutral',
+          population: 1000000,
+          gdp: 100,
+          militaryPower: 100,
+          objects: regionObjects,
+          borders: [],
+          status: 'active' as any,
+          metadata: {},
+        };
+      }) || [];
 
       setCurrentWorld({
         id: selectedMapForWorld?.id || 'local',
