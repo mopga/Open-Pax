@@ -11,6 +11,7 @@ interface MapViewProps {
   regions: Region[];
   selectedRegionId?: string;
   onRegionClick?: (regionId: string) => void;
+  changedRegionIds?: string[];
   width?: number;
   height?: number;
 }
@@ -33,6 +34,7 @@ export const MapView: React.FC<MapViewProps> = ({
   regions,
   selectedRegionId,
   onRegionClick,
+  changedRegionIds = [],
   width = 2000,
   height = 1500,
 }) => {
@@ -203,9 +205,19 @@ export const MapView: React.FC<MapViewProps> = ({
         {regions.map((region) => {
           const isSelected = region.id === selectedRegionId;
           const isHovered = region.id === hoveredRegion;
+          const isChanged = changedRegionIds.includes(region.id);
 
           return (
             <g key={region.id}>
+              {/* Glow for changed regions */}
+              {isChanged && (
+                <path
+                  d={region.svgPath}
+                  fill={region.color}
+                  fillOpacity={0.5}
+                  style={{ filter: 'blur(20px)', animation: 'pulse 1s ease-in-out infinite' }}
+                />
+              )}
               {/* Glow for selected */}
               {isSelected && (
                 <path

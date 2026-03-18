@@ -35,6 +35,7 @@ function App() {
   const [currentWorld, setCurrentWorld] = useState<World | null>(null);
   const [currentGame, setCurrentGame] = useState<Game | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
+  const [changedRegions, setChangedRegions] = useState<string[]>([]);
   const [actionText, setActionText] = useState('');
   const [history, setHistory] = useState<{ turn: number; action: string; result: string; events?: string[] }[]>([]);
   const [loading, setLoading] = useState(false);
@@ -352,6 +353,40 @@ function App() {
 
       const updatedGame = await gameApi.get(currentGame.id);
       setCurrentGame(updatedGame);
+
+      // Also update currentWorld with new region data (for owner changes, colors, etc.)
+      const changed: string[] = [];
+      if (updatedGame.world && currentWorld) {
+        const newRegions = { ...currentWorld.regions };
+        // Handle both array (from API) and object (from local)
+        const gameRegions = Array.isArray(updatedGame.world.regions)
+          ? updatedGame.world.regions
+          : Object.values(updatedGame.world.regions);
+        gameRegions.forEach((r: any) => {
+          if (newRegions[r.id]) {
+            const oldRegion = newRegions[r.id];
+            // Check if anything changed
+            if (oldRegion.owner !== r.owner || oldRegion.color !== r.color) {
+              changed.push(r.id);
+            }
+            newRegions[r.id] = {
+              ...newRegions[r.id],
+              owner: r.owner,
+              color: r.color,
+              population: r.population,
+              militaryPower: r.militaryPower,
+              gdp: r.gdp,
+            };
+          }
+        });
+        setCurrentWorld({ ...currentWorld, regions: newRegions });
+
+        // Highlight changed regions briefly
+        if (changed.length > 0) {
+          setChangedRegions(changed);
+          setTimeout(() => setChangedRegions([]), 3000);
+        }
+      }
     } catch (e) {
       console.error('Failed to submit action:', e);
       setHistory(prev => [...prev, {
@@ -424,6 +459,7 @@ function App() {
             regions={regions}
             selectedRegionId={selectedRegion || undefined}
             onRegionClick={handleCountryChange}
+            changedRegionIds={changedRegions}
           />
         </div>
 
