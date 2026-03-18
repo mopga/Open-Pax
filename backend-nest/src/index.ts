@@ -8,7 +8,8 @@ import cors from 'cors';
 import { v4 as uuid } from 'uuid';
 import { MiniMaxProvider } from './llm';
 import { GameController } from './agents';
-import { initDatabase, mapQueries, worldQueries, gameQueries } from './database';
+import { initDatabase } from './database';
+import { mapRepository, worldRepository, gameRepository } from './repositories';
 import type {
   Game, GameWorld, MapRegion, MapObject, Player, Action, TurnResult,
   CreateWorldRequest, CreateGameRequest, SubmitActionRequest, MapData
@@ -66,12 +67,12 @@ app.post('/api/maps', (req, res) => {
     objects: objects || [],
   };
 
-  mapQueries.create(map);
+  mapRepository.create(map);
   res.json({ id: map.id, name: map.name });
 });
 
 app.get('/api/maps', (_req, res) => {
-  const list = mapQueries.getAll().map(m => ({
+  const list = mapRepository.findAll().map(m => ({
     id: m.id,
     name: m.name,
     regions_count: m.regions_count,
@@ -81,7 +82,7 @@ app.get('/api/maps', (_req, res) => {
 });
 
 app.get('/api/maps/:id', (req, res) => {
-  const map = mapQueries.getById(req.params.id);
+  const map = mapRepository.findById(req.params.id);
   if (!map) {
     res.status(404).json({ error: 'Map not found' });
     return;
@@ -90,12 +91,12 @@ app.get('/api/maps/:id', (req, res) => {
 });
 
 app.delete('/api/maps/:id', (req, res) => {
-  const map = mapQueries.getById(req.params.id);
+  const map = mapRepository.findById(req.params.id);
   if (!map) {
     res.status(404).json({ error: 'Map not found' });
     return;
   }
-  mapQueries.delete(req.params.id);
+  mapRepository.delete(req.params.id);
   res.json({ status: 'deleted', id: req.params.id });
 });
 
@@ -115,12 +116,12 @@ app.post('/api/worlds', (req, res) => {
     historicalAccuracy,
   };
 
-  worldQueries.create(world);
+  worldRepository.create(world);
   res.json({ id: world.id, name: world.name });
 });
 
 app.get('/api/worlds/:id', (req, res) => {
-  const world = worldQueries.getById(req.params.id);
+  const world = worldRepository.findById(req.params.id);
   if (!world) {
     res.status(404).json({ error: 'World not found' });
     return;
@@ -139,7 +140,7 @@ app.get('/api/worlds/:id', (req, res) => {
 });
 
 app.post('/api/worlds/:id/regions', (req, res) => {
-  const world = worldQueries.getById(req.params.id);
+  const world = worldRepository.findById(req.params.id);
   if (!world) {
     res.status(404).json({ error: 'World not found' });
     return;
@@ -147,7 +148,7 @@ app.post('/api/worlds/:id/regions', (req, res) => {
 
   const { id, name, svgPath, color = '#888888' } = req.body;
 
-  worldQueries.addRegion({
+  worldRepository.addRegion({
     id,
     worldId: req.params.id,
     name,
@@ -164,7 +165,7 @@ app.post('/api/worlds/:id/regions', (req, res) => {
 app.post('/api/worlds/from-map', (req, res) => {
   const { mapId, name, description, startDate, basePrompt, historicalAccuracy, initialOwners } = req.body;
 
-  const map = mapQueries.getById(mapId);
+  const map = mapRepository.findById(mapId);
   if (!map) {
     res.status(404).json({ error: 'Map not found' });
     return;
@@ -211,7 +212,7 @@ app.post('/api/worlds/from-map', (req, res) => {
   });
 
   // Save world and regions to database
-  worldQueries.createWithRegions({
+  worldRepository.createWithRegions({
     id: worldId,
     name: name || map.name,
     description: description || '',
@@ -240,7 +241,7 @@ app.post('/api/worlds/from-map', (req, res) => {
 app.post('/api/games', (req, res) => {
   const { worldId, playerName, playerRegionId } = req.body;
 
-  const world = worldQueries.getById(worldId);
+  const world = worldRepository.findById(worldId);
   if (!world) {
     res.status(404).json({ error: 'World not found' });
     return;
@@ -256,7 +257,7 @@ app.post('/api/games', (req, res) => {
   const gameId = uuid().slice(0, 8);
 
   // Save game to database
-  gameQueries.create({
+  gameRepository.create({
     id: gameId,
     worldId,
     currentTurn: 1,
@@ -264,7 +265,7 @@ app.post('/api/games', (req, res) => {
     status: 'playing',
   });
 
-  gameQueries.addPlayer({
+  gameRepository.addPlayer({
     id: playerId,
     gameId,
     name: playerName || 'Player',
@@ -305,7 +306,7 @@ app.post('/api/games', (req, res) => {
 });
 
 app.get('/api/games/:id', (req, res) => {
-  const game = gameQueries.getById(req.params.id);
+  const game = gameRepository.findById(req.params.id);
   if (!game) {
     res.status(404).json({ error: 'Game not found' });
     return;
@@ -485,7 +486,7 @@ app.post('/api/games/:id/action', async (req, res) => {
   game.actions.push(action);
 
   // Persist action to database
-  gameQueries.addAction({
+  gameRepository.addAction({
     id: actionId,
     gameId: game.id,
     playerId: player.id,
@@ -504,7 +505,7 @@ app.post('/api/games/:id/action', async (req, res) => {
   game.results.push(turnResult);
 
   // Persist turn result to database
-  gameQueries.addTurnResult({
+  gameRepository.addTurnResult({
     id: resultId,
     gameId: game.id,
     turn: game.currentTurn,
@@ -514,10 +515,10 @@ app.post('/api/games/:id/action', async (req, res) => {
   });
 
   // Persist region updates (objects)
-  worldQueries.updateRegion(player.regionId, { objects: region.objects });
+  worldRepository.updateRegion(player.regionId, { objects: region.objects });
 
   // Persist turn number
-  gameQueries.updateTurn(game.id, game.currentTurn + 1);
+  gameRepository.updateTurn(game.id, game.currentTurn + 1);
 
   // Next turn
   game.currentTurn += 1;
