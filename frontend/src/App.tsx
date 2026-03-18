@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MapView } from './components/Map/MapView';
 import { MapEditor, type EditorRegion } from './components/Editor';
+import { CreateWorld, type WorldConfig } from './components/WorldBuilder/CreateWorld';
 import { gameApi, worldApi, mapApi } from './services/api';
 import type { Region, World, Game } from './types';
 
@@ -27,6 +28,7 @@ function App() {
   type ViewType = 'menu' | 'select-map' | 'create-world' | 'game' | 'editor';
   const [currentView, setCurrentView] = useState<ViewType>('menu');
   const [savedMaps, setSavedMaps] = useState<LocalMap[]>([]);
+  const [selectedMapForWorld, setSelectedMapForWorld] = useState<LocalMap | null>(null);
   const [currentWorld, setCurrentWorld] = useState<World | null>(null);
   const [currentGame, setCurrentGame] = useState<Game | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
@@ -128,15 +130,36 @@ function App() {
     setLoading(false);
   };
 
-  // Загрузить карту и создать мир
-  const handleLoadMap = async (map: LocalMap) => {
-    setLoading(true);
-    try {
-      const mapId = map.id.startsWith('server_')
-        ? map.id.replace('server_', '')
-        : map.id.replace('map_', '');
+  // Выбрать карту для создания мира
+  const handleSelectMap = (map: LocalMap) => {
+    setSelectedMapForWorld(map);
+    setCurrentView('create-world');
+  };
 
-      const result = await worldApi.createFromMap({ mapId, name: map.name });
+  // Создать мир из конфигурации
+  const handleCreateWorld = async (config: WorldConfig) => {
+    setLoading(true);
+    const mapId = selectedMapForWorld?.id.startsWith('server_')
+      ? selectedMapForWorld.id.replace('server_', '')
+      : selectedMapForWorld?.id.replace('map_', '') || '';
+
+    // Prepare initial owners
+    const initialOwners = config.regions
+      .filter(r => r.owner !== 'neutral')
+      .map(r => ({ id: r.id, owner: r.owner }));
+
+    try {
+      const result = await worldApi.createFromMap({
+        mapId,
+        name: config.name,
+        description: config.description,
+        startDate: config.startDate,
+        basePrompt: config.basePrompt,
+        historicalAccuracy: config.historicalAccuracy / 100,
+        initialOwners,
+      });
+
+      // Применяем начальное распределение владельцев
       const world = await worldApi.get(result.world_id);
 
       const regions: Region[] = Object.values(world.regions || {}).map((r: any) => ({
@@ -159,7 +182,11 @@ function App() {
         regions: regions.reduce((acc: any, r) => { acc[r.id] = r; return acc; }, {}),
       } as World);
 
-      const firstRegionId = regions[0]?.id || null;
+      const playerRegion = regions.find(r =>
+        config.regions.find(cr => cr.id === r.id && cr.owner === 'player')
+      ) || regions[0];
+
+      const firstRegionId = playerRegion?.id || regions[0]?.id || null;
       setSelectedRegion(firstRegionId);
 
       // Создаем игру
@@ -187,8 +214,8 @@ function App() {
 
       setCurrentView('game');
     } catch (e) {
-      // Используем локальные данные
-      const regions: Region[] = map.regions.map(r => ({
+      // Используем локальные данные (fallback для офлайн режима)
+      const regions: Region[] = selectedMapForWorld?.regions.map(r => ({
         id: r.id,
         name: r.name,
         svgPath: r.path,
@@ -201,11 +228,11 @@ function App() {
         borders: [],
         status: 'active' as any,
         metadata: {},
-      }));
+      })) || [];
 
       setCurrentWorld({
-        id: map.id,
-        name: map.name,
+        id: selectedMapForWorld?.id || 'local',
+        name: selectedMapForWorld?.name || 'Local World',
         description: 'Локальная карта',
         startDate: '1951-01-01',
         basePrompt: 'Альтернативная история',
@@ -304,7 +331,7 @@ function App() {
           <h3>Сохраненные миры</h3>
           <div className="maps-grid">
             {savedMaps.map(map => (
-              <div key={map.id} className="map-card" onClick={() => handleLoadMap(map)}>
+              <div key={map.id} className="map-card" onClick={() => handleSelectMap(map)}>
                 <div className="map-preview">
                   <svg viewBox="0 0 800 600">
                     {map.regions.map(r => (
@@ -438,11 +465,38 @@ function App() {
     />
   );
 
+  const renderCreateWorld = () => {
+    if (!selectedMapForWorld) {
+      return (
+        <div className="error-container">
+          <p>Карта не выбрана</p>
+          <button onClick={() => setCurrentView('menu')}>Назад в меню</button>
+        </div>
+      );
+    }
+
+    return (
+      <CreateWorld
+        mapId={selectedMapForWorld.id.startsWith('server_')
+          ? selectedMapForWorld.id.replace('server_', '')
+          : selectedMapForWorld.id.replace('map_', '')}
+        mapName={selectedMapForWorld.name}
+        regions={selectedMapForWorld.regions}
+        onSave={handleCreateWorld}
+        onCancel={() => {
+          setSelectedMapForWorld(null);
+          setCurrentView('menu');
+        }}
+      />
+    );
+  };
+
   return (
     <div className="app">
       {currentView === 'menu' && renderMenu()}
       {currentView === 'game' && renderGame()}
       {currentView === 'editor' && renderEditor()}
+      {currentView === 'create-world' && renderCreateWorld()}
     </div>
   );
 }

@@ -69,12 +69,15 @@ export const worldApi = {
     mapId: string;
     name: string;
     description?: string;
+    startDate?: string;
     basePrompt?: string;
+    historicalAccuracy?: number;
+    initialOwners?: { id: string; owner: string }[];
   }): Promise<{
     world_id: string;
     name: string;
     regions_count: number;
-    regions: { id: string; name: string; color: string }[];
+    regions: { id: string; name: string; color: string; owner: string }[];
   }> => {
     return fetchApi('/worlds/from-map', {
       method: 'POST',
