@@ -93,6 +93,7 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
       style: 'mapbox://styles/mapbox/dark-v11',
       center: [0, 20],
       zoom: 1,
+      projection: 'mercator',
       attributionControl: false,
     });
 

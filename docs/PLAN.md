@@ -138,6 +138,11 @@
 3. **Frontend Types**
    - Added `CountryState` interface (matches backend BalanceAgent output)
 
+#### Phase 5: 2D Mapbox Projection
+**Flat Mercator projection instead of globe view.**
+
+- Added `projection: 'mercator'` to MapboxMapView
+
 ---
 
 #### Previous Changes (2026-03-18)
