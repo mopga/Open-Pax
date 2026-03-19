@@ -98,6 +98,7 @@ npm start
 | 2 | Sequential Processing | ✅ Готово |
 | 3 | Event Display | ✅ Готово |
 | 4 | Time-Skip Integration | ✅ Готово |
+| 5 | Map Visual Improvements | ✅ Готово |
 
 [Полная дорожная карта →](./ROADMAP.md)
 

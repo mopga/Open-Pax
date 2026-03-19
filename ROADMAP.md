@@ -211,14 +211,25 @@ open-pax/
 
 ---
 
-### Phase 5: Map Layers System
+### Phase 5: Map Visual Improvements ✅
 
-**Статус:** Запланирован (Hard)
+**Статус:** Завершено (1c34483)
 
-**Возможности:**
-- Слои: политическая карта, экономика, военные силы
-- Переключение между слоями на лету
-- Heatmap для статистики
+**Цель:** Paxhistoria-like appearance
+
+**Функционал:**
+- City markers: white circles with letter inside (like paxhistoria)
+- Country labels: larger (18px), bolder (700), full opacity
+- Borders: darker (#1a1a1a), wider (2px)
+- Fill opacity: 85-100% (vs 50%)
+- City detection: "город", "city", "capital", "столица"
+- Cities positioned at region centroid
+
+**Frontend файлы:**
+- `frontend/src/components/Map/MapView.tsx` — city markers, label improvements
+
+**Backend файлы:**
+- `backend-nest/src/game-session.ts` — city detection, centroid positioning
 
 ---
 
