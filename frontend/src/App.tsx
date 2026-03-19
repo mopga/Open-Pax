@@ -47,12 +47,41 @@ function App() {
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [savedGames, setSavedGames] = useState<any[]>([]);
   const [showSavesMenu, setShowSavesMenu] = useState(false);
+  const [advisorMaximized, setAdvisorMaximized] = useState(false);
+  const [advisorSize, setAdvisorSize] = useState({ width: 400, height: 500 });
+  const advisorRef = useRef<HTMLDivElement>(null);
   const historyEndRef = useRef<HTMLDivElement>(null);
+  const [isResizing, setIsResizing] = useState(false);
 
   // Прокрутка истории вниз
   useEffect(() => {
     historyEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [history]);
+
+  // Resize handler for advisor panel
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing || !advisorRef.current) return;
+      const rect = advisorRef.current.getBoundingClientRect();
+      const newWidth = Math.max(300, Math.min(800, e.clientX - rect.left));
+      const newHeight = Math.max(300, Math.min(700, window.innerHeight - rect.top - 20));
+      setAdvisorSize({ width: newWidth, height: newHeight });
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
 
   // Загрузка сохраненных карт
   useEffect(() => {
@@ -773,7 +802,24 @@ function App() {
 
           {/* Floating Advisor Panel */}
           {showAdvisor && (
-            <div className="floating-advisor-panel">
+            <div
+              ref={advisorRef}
+              className={`floating-advisor-panel ${advisorMaximized ? 'maximized' : ''}`}
+              style={{
+                width: advisorMaximized ? '90%' : `${advisorSize.width}px`,
+                height: advisorMaximized ? '80vh' : `${advisorSize.height}px`,
+                left: advisorMaximized ? '5%' : '20px',
+                bottom: advisorMaximized ? '10vh' : '80px',
+              }}
+            >
+              {/* Resize handle */}
+              {!advisorMaximized && (
+                <div
+                  className="resize-handle"
+                  onMouseDown={() => setIsResizing(true)}
+                />
+              )}
+
               <div className="floating-advisor-header">
                 <div className="advisor-tabs">
                   <button
@@ -797,7 +843,16 @@ function App() {
                     📋 Подсказки
                   </button>
                 </div>
-                <button className="btn-close" onClick={() => setShowAdvisor(false)}>×</button>
+                <div className="header-buttons">
+                  <button
+                    className="btn-maximize"
+                    onClick={() => setAdvisorMaximized(!advisorMaximized)}
+                    title={advisorMaximized ? 'Свернуть' : 'Развернуть'}
+                  >
+                    {advisorMaximized ? '−' : '□'}
+                  </button>
+                  <button className="btn-close" onClick={() => setShowAdvisor(false)}>×</button>
+                </div>
               </div>
 
               {/* Advisor Tab */}

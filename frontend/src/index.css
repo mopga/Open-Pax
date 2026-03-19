@@ -722,8 +722,9 @@ body {
   position: fixed;
   bottom: 80px;
   left: 20px;
-  width: 350px;
-  max-height: 450px;
+  width: 400px;
+  height: 500px;
+  max-height: 80vh;
   background: #111118;
   border: 1px solid #667eea;
   border-radius: 12px;
@@ -731,6 +732,39 @@ body {
   z-index: 1000;
   display: flex;
   flex-direction: column;
+  transition: width 0.2s, height 0.2s;
+}
+
+.floating-advisor-panel.maximized {
+  border-color: #8b9aff;
+  box-shadow: 0 15px 60px rgba(102, 126, 234, 0.3);
+}
+
+/* Resize Handle */
+.resize-handle {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 20px;
+  height: 20px;
+  cursor: se-resize;
+  background: linear-gradient(
+    135deg,
+    transparent 50%,
+    #667eea 50%,
+    #667eea 60%,
+    transparent 60%,
+    transparent 70%,
+    #667eea 70%,
+    #667eea 80%,
+    transparent 80%
+  );
+  border-radius: 0 0 12px 0;
+  opacity: 0.6;
+}
+
+.resize-handle:hover {
+  opacity: 1;
 }
 
 .floating-advisor-header {
@@ -741,12 +775,39 @@ body {
   border-bottom: 1px solid #2a2a3a;
   background: #1a1a24;
   border-radius: 12px 12px 0 0;
+  flex-shrink: 0;
 }
 
 .floating-advisor-header h4 {
   color: #f093fb;
   font-size: 1rem;
   margin: 0;
+}
+
+.header-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.btn-maximize {
+  width: 28px;
+  height: 28px;
+  background: #252530;
+  border: 1px solid #333;
+  border-radius: 6px;
+  color: #888;
+  cursor: pointer;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.btn-maximize:hover {
+  background: #333;
+  color: #667eea;
+  border-color: #667eea;
 }
 
 /* Advisor Tabs */
@@ -781,8 +842,12 @@ body {
   flex: 1;
   padding: 12px;
   overflow-y: auto;
-  max-height: 320px;
   background: #0a0a0f;
+  min-height: 200px;
+}
+
+.maximized .floating-advisor-messages {
+  min-height: 400px;
 }
 
 .advisor-message {
