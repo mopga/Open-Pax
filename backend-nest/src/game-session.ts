@@ -60,7 +60,8 @@ export interface PendingAction {
     events: string[];
     objects: any[];
     turn: number;
-    date: string;
+    periodStart: string;  // Date before processing this action
+    periodEnd: string;    // Date after processing this action
   };
 }
 
@@ -792,22 +793,27 @@ export class GameSession {
       // Persist turn number to DB
       gameRepository.updateTurn(this.id, this.currentTurn + 1);
 
+      // Update action with result (before advancing date)
+      action.status = 'completed';
+      const periodStart = this.currentDate;
+      action.result = {
+        narration: turnResult.narration,
+        countryResponse: turnResult.countryResponse,
+        events: turnResult.events,
+        objects: playerRegion.objects,
+        turn: this.currentTurn,
+        periodStart,
+        periodEnd: '', // Will be set after date advance
+      };
+
       // Advance turn and date
       this.currentTurn++;
       const date = new Date(this.currentDate);
       date.setDate(date.getDate() + timeJump);
       this.currentDate = date.toISOString().split('T')[0];
 
-      // Update action with result
-      action.status = 'completed';
-      action.result = {
-        narration: turnResult.narration,
-        countryResponse: turnResult.countryResponse,
-        events: turnResult.events,
-        objects: playerRegion.objects,
-        turn: this.currentTurn - 1,
-        date: this.currentDate,
-      };
+      // Now set periodEnd (after advancing)
+      action.result.periodEnd = this.currentDate;
 
       console.log('[GameSession] Action processed, new date:', this.currentDate);
       return action;

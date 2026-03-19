@@ -16,6 +16,23 @@ const pointsToPath = (points: { x: number; y: number }[]): string => {
   return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
 };
 
+// Вспомогательная функция: форматирование диапазона дат
+const formatDateRange = (start: string, end: string): string => {
+  try {
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+
+    const months = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
+
+    const startStr = `${startDate.getDate()} ${months[startDate.getMonth()]} ${startDate.getFullYear()}`;
+    const endStr = `${endDate.getDate()} ${months[endDate.getMonth()]} ${endDate.getFullYear()}`;
+
+    return `${startStr} — ${endStr}`;
+  } catch {
+    return `${start} — ${end}`;
+  }
+};
+
 // Интерфейс для карты из localStorage
 interface LocalMap {
   id: string;
@@ -39,7 +56,15 @@ function App() {
   const [pendingActions, setPendingActions] = useState<{ id: string; text: string }[]>([]);
   const [jumpDays, setJumpDays] = useState<number>(30);
   const [showJumpMenu, setShowJumpMenu] = useState(false);
-  const [history, setHistory] = useState<{ turn: number; action: string; result: string; events?: string[]; date?: string }[]>([]);
+  const [history, setHistory] = useState<{
+    turn: number;
+    action: string;
+    result: string;
+    events?: string[];
+    periodStart?: string;
+    periodEnd?: string;
+    date?: string; // Legacy fallback
+  }[]>([]);
   const [loading, setLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestions, setSuggestions] = useState<any[]>([]);
@@ -894,7 +919,7 @@ function App() {
                       // Process all queued actions sequentially
                       const result = await gameApi.processAllActions(currentGame.id, 30);
 
-                      // Add each processed action result to history
+                      // Add each processed action result to history with date range
                       for (const action of result.actions) {
                         if (action.result) {
                           setHistory(prev => [...prev, {
@@ -902,18 +927,19 @@ function App() {
                             action: action.text,
                             result: action.result.narration,
                             events: action.result.events,
-                            date: action.result.date,
+                            periodStart: action.result.periodStart,
+                            periodEnd: action.result.periodEnd,
                           }]);
                         }
                       }
 
-                      // Update game turn/date
+                      // Update game turn/date from last action
                       const lastAction = result.actions[result.actions.length - 1];
                       if (lastAction?.result) {
                         setCurrentGame(prev => prev ? {
                           ...prev,
                           currentTurn: (lastAction.result as any).turn + 1,
-                          currentDate: (lastAction.result as any).date,
+                          currentDate: (lastAction.result as any).periodEnd,
                         } : prev);
                       }
 
@@ -938,7 +964,13 @@ function App() {
                 <div key={i} className="history-item">
                   <div className="history-header">
                     <span className="history-turn">Ход {item.turn}</span>
-                    {item.date && <span className="history-date">📅 {item.date}</span>}
+                    {item.periodStart && item.periodEnd ? (
+                      <span className="history-date">
+                        📅 {formatDateRange(item.periodStart, item.periodEnd)}
+                      </span>
+                    ) : item.date && (
+                      <span className="history-date">📅 {item.date}</span>
+                    )}
                   </div>
                   <div className="history-action">→ {item.action}</div>
                   <div className="history-result">{item.result}</div>

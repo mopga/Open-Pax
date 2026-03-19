@@ -219,7 +219,8 @@ export const gameApi = {
       events: string[];
       objects: any[];
       turn: number;
-      date: string;
+      periodStart: string;
+      periodEnd: string;
     };
   }> => {
     return fetchApi(`/games/${gameId}/actions/process`, {
