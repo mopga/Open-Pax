@@ -119,6 +119,25 @@
 3. **API Endpoint**
    - `POST /api/worlds/generate` — generates world state from template
 
+#### Phase 4: CountryPanel + TimeJumpModal
+**Simplified UI: country name + time menu with integrated suggestions.**
+
+1. **CountryPanel Component** (`frontend/src/components/Game/CountryPanel.tsx`)
+   - Displays: country code, name, ideology, status badge, current date
+   - Time jump button with gradient styling
+   - Minimal design focusing on country identity
+
+2. **TimeJumpModal Component** (`frontend/src/components/Game/TimeJumpModal.tsx`)
+   - Date display showing current → new date
+   - Text input for custom action
+   - Suggestions grid (from actions.md)
+   - Period buttons: 1 week, 1 month, 3 months, 6 months, 1 year
+   - Cancel/Submit buttons
+   - Modal overlay with blur backdrop
+
+3. **Frontend Types**
+   - Added `CountryState` interface (matches backend BalanceAgent output)
+
 ---
 
 #### Previous Changes (2026-03-18)
