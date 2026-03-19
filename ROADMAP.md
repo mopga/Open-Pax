@@ -1,0 +1,312 @@
+# Open-Pax — Technical Roadmap
+
+## Структура проекта
+
+```
+open-pax/
+├── frontend/                        # React + TypeScript + Vite
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── Editor/
+│   │   │   │   └── MapEditor.tsx    # Редактор карт
+│   │   │   ├── Map/
+│   │   │   │   └── MapView.tsx      # Компонент карты
+│   │   │   └── WorldBuilder/
+│   │   │       └── CreateWorld.tsx   # Мастер создания мира
+│   │   ├── services/
+│   │   │   └── api.ts               # API клиент
+│   │   ├── types/
+│   │   │   └── index.ts             # TypeScript типы
+│   │   ├── App.tsx                  # Главное приложение
+│   │   └── index.css                # Стили
+│   ├── package.json
+│   └── vite.config.ts
+│
+├── backend-nest/                     # Node.js + Express + TypeScript
+│   ├── src/
+│   │   ├── index.ts                 # API сервер (Express)
+│   │   ├── database.ts              # SQLite база данных
+│   │   ├── models.ts                # TypeScript модели
+│   │   ├── agents.ts                # AI агенты
+│   │   ├── npc-agents.ts            # NPC агенты для стран
+│   │   ├── llm.ts                   # MiniMax LLM провайдер
+│   │   ├── prompt-builder.ts        # Построение промптов
+│   │   ├── turn-controller.ts       # Управление ходами
+│   │   ├── game-session.ts          # GameSession класс (per-game state)
+│   │   ├── session-registry.ts      # SessionRegistry (управление сессиями)
+│   │   ├── prompts/                  # Шаблоны промптов
+│   │   │   ├── base.txt
+│   │   │   ├── narration.txt
+│   │   │   └── advisor.txt
+│   │   └── repositories/             # Data Access Layer
+│   │       ├── index.ts
+│   │       ├── game.repository.ts    # CRUD для игр
+│   │       ├── map.repository.ts      # CRUD для карт
+│   │       └── world.repository.ts    # CRUD для миров
+│   ├── data/                        # SQLite база (runtime)
+│   ├── .env                         # Конфигурация (API ключ)
+│   └── package.json
+│
+└── README.md
+```
+
+---
+
+## Архитектура
+
+### GameSession (per-game state)
+
+Каждая игра инкапсулирована в объекте `GameSession`:
+
+- `regions: Map<string, RegionState>` — состояние всех регионов
+- `players`, `currentTurn`, `currentDate` — игровые данные
+- `applyTurn()` — обработка хода
+- `save()` / `loadFromSave()` — сохранение/загрузка
+- `syncRegionsToDB()` — синхронизация регионов в БД
+
+### SessionRegistry
+
+Управляет всеми активными сессиями:
+
+- `sessions: Map<gameId, GameSession>`
+- Автоматически восстанавливает активные игры при рестарте сервера
+
+### UI Flow (Pending Actions)
+
+1. Игрок открывает панель "Подсказки" (📋)
+2. Генерирует подсказки или добавляет действия вручную
+3. Действия попадают в очередь "Pending Actions"
+4. При Submit All — все действия отправляются на сервер
+5. Time-skip (→) продвигает время
+
+---
+
+## API Endpoints
+
+### Maps
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/maps` | Создать карту |
+| GET | `/api/maps` | Список карт |
+| GET | `/api/maps/:id` | Получить карту |
+| DELETE | `/api/maps/:id` | Удалить карту |
+
+### Worlds
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/worlds/from-map` | Создать мир из карты |
+| GET | `/api/worlds/:id` | Получить мир |
+
+### Games
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/games` | Начать игру |
+| GET | `/api/games/:id` | Получить состояние игры |
+| POST | `/api/games/:id/action` | Отправить действия |
+| GET | `/api/games/:id/suggestions` | Получить подсказки |
+| GET | `/api/games/:id/advisor` | Получить совет |
+| POST | `/api/games/:id/save` | Сохранить игру |
+| POST | `/api/games/:id/load` | Загрузить сохранение |
+
+### Saves
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/saves` | Список сохранений |
+| DELETE | `/api/saves/:id` | Удалить сохранение |
+
+---
+
+## Roadmap Phases
+
+### Phase 1: Pending Actions UI ✅
+
+**Статус:** Завершено (be47e28)
+
+**Функционал:**
+- Очередь действий в интерфейсе
+- Панель подсказок с добавлением/удалением действий
+- Кнопка Submit All
+- Resizable панель
+
+**Файлы:**
+- `frontend/src/App.tsx` — UI компоненты
+- `frontend/src/index.css` — стили
+
+---
+
+### Phase 2: Backend Queue Processing ⏳
+
+**Статус:** Запланирован
+
+**Цель:** Бэкенд обрабатывает действия по одному
+
+**Задачи:**
+1. Добавить `queueAction()` и `processNextAction()` в `GameSession`
+2. Изменить API для поддержки queue-only vs process режима
+3. Реализовать последовательную обработку с продвижением даты
+4. Возвращать отдельный результат для каждого действия
+
+**Expected API changes:**
+```
+POST /api/games/:id/actions/queue — добавить в очередь (без обработки)
+POST /api/games/:id/actions/process — обработать одно действие
+GET /api/games/:id/actions/queue — получить очередь
+```
+
+---
+
+### Phase 3: Event Display Redesign
+
+**Статус:** Запланирован
+
+**Цель:** Каждое действие = отдельный блок с датой
+
+**UI Mockup:**
+```
+┌─ Январь 1951 ────────────────────────┐
+│ Действие: Создать СЭЗ                   │
+│ Результат: ...                          │
+└─────────────────────────────────────────┘
+
+┌─ Февраль 1951 ────────────────────────┐
+│ Действие: Укрепить ПВО                  │
+│ Результат: ...                          │
+└─────────────────────────────────────────┘
+
+┌─ Мировые события ─────────────────────┐
+│ 🇺🇸 USA: Наблюдает за ситуацией       │
+│ 🇩🇪 Germany: ...                      │
+└───────────────────────────────────────┘
+```
+
+---
+
+### Phase 4: Time-Skip Integration
+
+**Статус:** Запланирован
+
+**Цель:** Time-skip запускает обработку очереди
+
+**Flow:**
+1. Клик на time-skip (→)
+2. Dropdown с выбором периода (1 неделя, 1 месяц, 3 месяца)
+3. Подтверждение
+4. Если есть pending actions → обработать все
+5. Если нет → просто продвинуть дату
+
+---
+
+### Phase 5: Map Layers System
+
+**Статус:** Запланирован (Hard)
+
+**Возможности:**
+- Слои: политическая карта, экономика, военные силы
+- Переключение между слоями на лету
+- Heatmap для статистики
+
+---
+
+### Phase 6: World Presets
+
+**Статус:** Запланирован (Medium)
+
+**Возможности:**
+- Шаблоны миров (Cold War, WWI, Fantasy)
+- Быстрое создание типовых конфигураций
+
+---
+
+### Phase 7: Flag System
+
+**Статус:** Запланирован (Easy-Medium)
+
+**Возможности:**
+- Загрузка/выбор флагов для стран
+- Отображение флагов на карте
+
+---
+
+### Phase 8: Navigation
+
+**Статус:** Запланирован (Medium)
+
+**Возможности:**
+- Bookmarks для избранных регионов
+- Быстрый переход между странами
+- Мини-карта для навигации
+
+---
+
+## Установка и запуск
+
+### 1. Клонирование
+
+```bash
+git clone https://github.com/mopga/Open-Pax.git
+cd Open-Pax
+```
+
+### 2. Конфигурация
+
+Создайте файл `backend-nest/.env`:
+
+```env
+MINIMAX_API_KEY=ваш_ключ_minimax_здесь
+PORT=8000
+```
+
+**Где получить API ключ:**
+1. Зарегистрируйтесь на [platform.minimaxi.com](https://platform.minimaxi.com)
+2. Перейдите в раздел API Keys
+3. Создайте новый ключ
+4. Скопируйте его в файл `.env`
+
+### 3. Запуск
+
+```bash
+# Установка зависимостей
+npm run install:all
+
+# Запуск обоих серверов
+npm start
+```
+
+Скрипт запуска автоматически:
+- Установит зависимости (если нужно)
+- Запустит backend на порту 8000
+- Запустит frontend на порту 5173
+- Откроет игру в браузере
+
+### Режим разработки
+
+```bash
+npm run dev          # Backend (tsx watch)
+npm run dev:frontend # Frontend (vite)
+```
+
+---
+
+## Логи
+
+Логи сохраняются в директорию `/logs`:
+
+```
+logs/
+├── open-pax-2026-03-18-15-30-00.log
+└── open-pax-errors-2026-03-18-15-30-00.log
+```
+
+Каждый запуск создает новый файл лога с timestamp.
+
+---
+
+## Геймплей
+
+1. Создай карту в редакторе (свободное рисование)
+2. Назначь владельцев регионов (игрок, AI)
+3. Начни игру, выбрав страну
+4. Открывай панель "Подсказки" (📋)
+5. Описывай действия — добавляй в очередь или генерируй подсказки
+6. Отправляй действия и смотри результаты
+7. Используй Time-skip (→) для продвижения времени
