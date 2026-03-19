@@ -13,6 +13,7 @@ import { mapRepository, worldRepository, gameRepository } from './repositories';
 import { countryRepository } from './repositories/country.repository';
 import { svgPathToGeoJSON } from './utils/svg-to-geojson';
 import { initSessionRegistry, getSessionRegistry } from './session-registry';
+import { BalanceAgent } from './agents/balance-agent';
 import type {
   Game, GameWorld, MapRegion, MapObject, Player, Action, TurnResult,
   CreateWorldRequest, CreateGameRequest, SubmitActionRequest, MapData
@@ -124,6 +125,54 @@ app.get('/api/templates/:id', (req, res) => {
   } catch (e) {
     console.error('[Template] Error:', e);
     res.status(500).json({ error: 'Failed to load template' });
+  }
+});
+
+// ============================================================================
+// World Generation (Balance Agent)
+// ============================================================================
+
+// Generate world state from template (using Balance Agent)
+app.post('/api/worlds/generate', async (req, res) => {
+  const { templateId, playerCountryCode } = req.body;
+
+  if (!templateId || !playerCountryCode) {
+    res.status(400).json({ error: 'templateId and playerCountryCode are required' });
+    return;
+  }
+
+  // Load template
+  const fs = require('fs');
+  const path = require('path');
+  const templatePath = path.join(process.cwd(), 'data', 'templates', `${templateId}.json`);
+
+  if (!fs.existsSync(templatePath)) {
+    res.status(404).json({ error: 'Template not found' });
+    return;
+  }
+
+  try {
+    const template = JSON.parse(fs.readFileSync(templatePath, 'utf-8'));
+
+    // Generate world state via Balance Agent
+    const balanceAgent = new BalanceAgent(llmProvider);
+    const worldState = await balanceAgent.generateInitialWorldState(template);
+
+    // Convert Map to object for JSON response
+    const countriesObj: Record<string, any> = {};
+    for (const [code, state] of worldState.countries) {
+      countriesObj[code] = state;
+    }
+
+    res.json({
+      templateId,
+      date: worldState.date,
+      countries: countriesObj,
+      playerCountryCode,
+    });
+  } catch (e: any) {
+    console.error('[Generate World] Error:', e);
+    res.status(500).json({ error: 'Failed to generate world: ' + e.message });
   }
 });
 

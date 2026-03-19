@@ -89,7 +89,35 @@
 
 3. **Menu Integration**
    - Added "🌀 Новая игра (шаблон)" button
-   - New view flow: menu → select-template → select-country → game
+   - New view flow: menu → select-template → select-country
+
+#### Phase 3: Balance Agent
+**LLM-powered world state generation and balancing.**
+
+1. **BalanceAgent** (`backend-nest/src/agents/balance-agent.ts`)
+   - `generateInitialWorldState()` — generates state for all countries via LLM
+   - `generateCountryState()` — generates single country data (population, GDP, military, ideology, allies, enemies)
+   - `balanceWorld()` — ensures no single country dominates
+   - `updateWorldState()` — updates state after time jumps
+
+2. **CountryState Interface**
+   ```typescript
+   interface CountryState {
+     code: string;           // USA, RUS, CHN
+     name: string;
+     color: string;
+     population?: number;
+     gdp?: number;
+     military?: number;
+     ideology?: string;
+     allies?: string[];
+     enemies?: string[];
+     status?: 'superpower' | 'major' | 'regional' | 'minor';
+   }
+   ```
+
+3. **API Endpoint**
+   - `POST /api/worlds/generate` — generates world state from template
 
 ---
 
