@@ -60,6 +60,7 @@ export function initDatabase() {
       world_id TEXT NOT NULL,
       name TEXT NOT NULL,
       svg_path TEXT,
+      geojson TEXT,
       color TEXT DEFAULT '#888888',
       owner TEXT DEFAULT 'neutral',
       population INTEGER DEFAULT 1000000,
@@ -71,6 +72,17 @@ export function initDatabase() {
       FOREIGN KEY (world_id) REFERENCES worlds(id) ON DELETE CASCADE
     )
   `);
+
+  // Migration: Add geojson column to world_regions if it doesn't exist
+  try {
+    db.exec("ALTER TABLE world_regions ADD COLUMN geojson TEXT");
+    console.log('[Migration] Added geojson column to world_regions');
+  } catch (e: any) {
+    if (!e.message.includes('duplicate column name') && !e.message.includes('no such column')) {
+      // Ignore "duplicate column" errors or "no such column" - column already exists
+      console.log('[Migration] geojson column check:', e.message);
+    }
+  }
 
   // Games table
   db.exec(`

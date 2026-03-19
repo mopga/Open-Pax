@@ -12,7 +12,9 @@ import type {
   SubmitActionResponse,
   AdvisorResponse,
   Game,
-  World
+  World,
+  Country,
+  WorldTemplate
 } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
@@ -291,6 +293,56 @@ export const savesApi = {
 export const healthApi = {
   check: (): Promise<{ status: string; timestamp: string }> => {
     return fetchApi('/health');
+  },
+};
+
+
+// ============================================================================
+// Countries API
+// ============================================================================
+
+export const countriesApi = {
+  /**
+   * Получить все страны
+   */
+  getAll: (): Promise<{ countries: Country[] }> => {
+    return fetchApi('/countries');
+  },
+
+  /**
+   * Получить страну по коду
+   */
+  getByCode: (code: string): Promise<Country> => {
+    return fetchApi(`/countries/${code}`);
+  },
+};
+
+
+// ============================================================================
+// Templates API
+// ============================================================================
+
+export const templatesApi = {
+  /**
+   * Получить все шаблоны
+   */
+  list: (): Promise<{
+    templates: {
+      id: string;
+      name: string;
+      description: string;
+      start_date: string;
+      country_count: number;
+    }[];
+  }> => {
+    return fetchApi('/templates');
+  },
+
+  /**
+   * Получить шаблон по ID
+   */
+  get: (templateId: string): Promise<WorldTemplate> => {
+    return fetchApi(`/templates/${templateId}`);
   },
 };
 

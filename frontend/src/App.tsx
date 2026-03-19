@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { MapView } from './components/Map/MapView';
+import { MapboxMapView } from './components/Map/MapboxMapView';
 import { MapEditor, type EditorRegion, type EditorObject } from './components/Editor';
 import { CreateWorld, type WorldConfig } from './components/WorldBuilder/CreateWorld';
 import { gameApi, worldApi, mapApi, savesApi } from './services/api';
@@ -698,7 +698,7 @@ function App() {
         <div className="game-container">
           {/* Карта слева */}
           <div className="game-map">
-            <MapView
+            <MapboxMapView
               regions={regions}
               selectedRegionId={selectedRegion || undefined}
               onRegionClick={handleCountryChange}

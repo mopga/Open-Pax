@@ -278,8 +278,8 @@ export const MapView: React.FC<MapViewProps> = ({
 
               {/* Region label */}
               <text
-                x={getCentroid(region.svgPath)?.x || width/2}
-                y={getCentroid(region.svgPath)?.y || height/2}
+                x={getCentroid(region.svgPath || '')?.x || width/2}
+                y={getCentroid(region.svgPath || '')?.y || height/2}
                 fill="#ffffff"
                 fontSize={18}
                 fontWeight={700}

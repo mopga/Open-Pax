@@ -31,6 +31,24 @@ export enum GameStatus {
 // Core Models
 // ============================================================================
 
+// Country (from countries.json)
+export interface Country {
+  code: string;
+  name: string;
+  color: string;
+}
+
+// World Template
+export interface WorldTemplate {
+  id: string;
+  name: string;
+  description: string;
+  country_codes: string[];
+  base_prompt: string;
+  start_date: string;
+  countries?: Country[];
+}
+
 export interface MapObject {
   id: string;
   type: "army" | "factory" | "university" | "city";
@@ -45,7 +63,8 @@ export interface MapObject {
 export interface Region {
   id: string;
   name: string;
-  svgPath: string;  // SVG path d attribute
+  svgPath?: string;  // SVG path d attribute (fallback)
+  geojson?: string;  // GeoJSON polygon (for Mapbox)
   color: string;    // Current color (hex)
   owner: string;    // Player ID or "neutral"
   population: number;

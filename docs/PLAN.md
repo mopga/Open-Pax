@@ -32,7 +32,51 @@
 - `npc-agents.ts` — NPC агенты с личностями (aggressive, diplomatic, neutral, isolationist)
 - `llm.ts` — MiniMax LLM провайдер
 
-### 🆕 Latest Changes (2026-03-18)
+### 🆕 Latest Changes (2026-03-19)
+
+#### Phase 7: Mapbox GL JS Migration
+**Mapbox GL JS** for world-scale visualization with real geographic data.
+
+1. **MapboxMapView Component** (`frontend/src/components/Map/MapboxMapView.tsx`)
+   - Mapbox GL JS integration with layers: fill, line, symbol, circle
+   - Environment variable: `VITE_MAPBOX_TOKEN`
+   - Supports selection, hover, changed regions highlighting
+   - Object markers as custom HTML elements
+   - Mercator 2D projection
+
+2. **SVG to GeoJSON Conversion** (`backend-nest/src/utils/svg-to-geojson.ts`)
+   - Converts SVG paths to GeoJSON polygons for Mapbox
+   - Maps SVG coordinates to lng/lat (x→lng, y→lat)
+
+3. **Database Migration**
+   - Added `geojson` column to `world_regions` table
+   - ALTER TABLE migration for existing databases
+
+#### Phase 8: Countries & World Templates
+**Real country data with World Templates (scenarios) on Mapbox base map.**
+
+1. **Countries Registry** (`backend-nest/data/countries.json`)
+   - ~200 countries with code, name, color
+   - Runtime-loaded via `backend-nest/src/utils/countries.ts`
+
+2. **World Templates** (`backend-nest/data/templates/`)
+   - `cold_war_1951.json` — Cold War scenario
+   - `modern_world.json` — Modern world scenario
+   - Each template: id, name, description, country_codes[], base_prompt, start_date
+
+3. **API Endpoints**
+   - `GET /api/countries` — list all countries
+   - `GET /api/countries/:code` — get country by code
+   - `GET /api/templates` — list templates
+   - `GET /api/templates/:id` — get template with countries
+
+4. **Frontend Types & API**
+   - `Country` and `WorldTemplate` types
+   - `countriesApi` and `templatesApi` services
+
+---
+
+#### Previous Changes (2026-03-18)
 
 1. **Map Zoom/Pan** — зум колесом мыши и перетаскивание
    - Zoom levels: 0.2x - 5x

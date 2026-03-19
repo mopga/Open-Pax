@@ -1,0 +1,8 @@
+{
+  "id": "modern_world",
+  "name": "Modern World",
+  "description": "Современный мир с реальными странами, блоками и альянсами. NATO, EU, Shanghai Cooperation Organization, BRICS и другие объединения влияют на геополитику.",
+  "country_codes": ["USA", "RUS", "CHN", "GBR", "FRA", "DEU", "ITA", "ESP", "POL", "NLD", "BEL", "SWE", "NOR", "DNK", "FIN", "IRL", "AUT", "CHE", "PRT", "GRC", "ROU", "BGR", "HUN", "CZE", "SVK", "HRV", "SVN", "BIH", "SRB", "MNE", "ALB", "MKD", "UKR", "BLR", "MDA", "LTU", "LVA", "EST", "JPN", "KOR", "PRK", "IND", "PAK", "BGD", "LKA", "NPL", "BTN", "IDN", "MYS", "SGP", "THA", "VNM", "PHL", "MMR", "KHM", "LAO", "AUS", "NZL", "PNG", "CAN", "MEX", "BRA", "ARG", "CHL", "COL", "PER", "VEN", "ECU", "BOL", "PRY", "URY", "GTM", "CUB", "DOM", "HTI", "HND", "NIC", "CRI", "PAN", "EGY", "LBY", "DZA", "TUN", "MAR", "SDN", "ETH", "KEN", "TZA", "UGA", "NGA", "ZAF", "MOZ", "AGO", "COD", "GHA", "CIV", "CMR", "SAU", "IRN", "IRQ", "TUR", "SYR", "JOR", "LBN", "ISR", "PSE", "ARE", "KWT", "QAT", "OMN", "YEM", "BHR"],
+  "base_prompt": "Современный мир 2024 года. Мир характеризуется глобализацией, цифровой экономикой и новыми вызовами безопасности. США остаются единственной сверхдержавой, но Китай стремительно растет. Россия восстановила влияние на постсоветском пространстве. Европейский союз пытается играть большую роль. NATO и EU расширились на восток. Ближний Восток переживает региональную нестабильность. Африка демонстрирует быстрый экономический рост. Азия стала центром мировой экономики. Каждая страна имеет свои реальные географические, экономические и культурные особенности. Возможны любые исторические развилки.",
+  "start_date": "2024-01-01"
+}

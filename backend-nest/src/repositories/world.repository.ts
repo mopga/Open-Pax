@@ -20,6 +20,7 @@ export interface RegionRecord {
   id: string;
   name: string;
   svgPath: string;
+  geojson?: string;
   color: string;
   owner: string;
   population: number;
@@ -66,6 +67,7 @@ export const worldRepository = {
       id: row.id,
       name: row.name,
       svgPath: row.svg_path,
+      geojson: row.geojson,
       color: row.color,
       owner: row.owner,
       population: row.population,
@@ -77,16 +79,17 @@ export const worldRepository = {
     }));
   },
 
-  addRegion: (region: { id: string; worldId: string; name: string; svgPath?: string; color?: string; owner?: string; population?: number; gdp?: number; militaryPower?: number }) => {
+  addRegion: (region: { id: string; worldId: string; name: string; svgPath?: string; geojson?: string; color?: string; owner?: string; population?: number; gdp?: number; militaryPower?: number }) => {
     const stmt = db.prepare(`
-      INSERT INTO world_regions (id, world_id, name, svg_path, color, owner, population, gdp, military_power)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO world_regions (id, world_id, name, svg_path, geojson, color, owner, population, gdp, military_power)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       region.id,
       region.worldId,
       region.name,
       region.svgPath || '',
+      region.geojson || null,
       region.color || '#888888',
       region.owner || 'neutral',
       region.population || 1000000,
@@ -97,7 +100,7 @@ export const worldRepository = {
   },
 
   updateRegion: (regionId: string, updates: Partial<{
-    name: string; color: string; owner: string; population: number; gdp: number; militaryPower: number; objects: any[]
+    name: string; color: string; owner: string; population: number; gdp: number; militaryPower: number; objects: any[]; geojson: string
   }>) => {
     const fields: string[] = [];
     const values: any[] = [];
@@ -109,6 +112,7 @@ export const worldRepository = {
     if (updates.gdp !== undefined) { fields.push('gdp = ?'); values.push(updates.gdp); }
     if (updates.militaryPower !== undefined) { fields.push('military_power = ?'); values.push(updates.militaryPower); }
     if (updates.objects !== undefined) { fields.push('objects = ?'); values.push(JSON.stringify(updates.objects)); }
+    if (updates.geojson !== undefined) { fields.push('geojson = ?'); values.push(updates.geojson); }
 
     if (fields.length === 0) return;
 
@@ -149,6 +153,7 @@ export const worldRepository = {
           worldId: world.id,
           name: region.name,
           svgPath: region.svgPath,
+          geojson: region.geojson,
           color: region.color,
           owner: region.owner,
           population: region.population,

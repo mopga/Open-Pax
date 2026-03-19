@@ -10,6 +10,8 @@ import { MiniMaxProvider } from './llm';
 import { initDatabase } from './database';
 import db from './database';
 import { mapRepository, worldRepository, gameRepository } from './repositories';
+import { countryRepository } from './repositories/country.repository';
+import { svgPathToGeoJSON } from './utils/svg-to-geojson';
 import { initSessionRegistry, getSessionRegistry } from './session-registry';
 import type {
   Game, GameWorld, MapRegion, MapObject, Player, Action, TurnResult,
@@ -50,6 +52,79 @@ const pointsToPath = (points: { x: number; y: number }[]): string => {
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// ============================================================================
+// Countries Endpoints
+// ============================================================================
+
+app.get('/api/countries', (_req, res) => {
+  const countries = countryRepository.getAll();
+  res.json({ countries });
+});
+
+app.get('/api/countries/:code', (req, res) => {
+  const country = countryRepository.findByCode(req.params.code);
+  if (!country) {
+    res.status(404).json({ error: 'Country not found' });
+    return;
+  }
+  res.json(country);
+});
+
+// ============================================================================
+// Templates Endpoints
+// ============================================================================
+
+app.get('/api/templates', (_req, res) => {
+  const fs = require('fs');
+  const path = require('path');
+  const templatesDir = path.join(process.cwd(), 'data', 'templates');
+
+  let templates: any[] = [];
+  try {
+    if (fs.existsSync(templatesDir)) {
+      const files = fs.readdirSync(templatesDir).filter((f: string) => f.endsWith('.json'));
+      templates = files.map((file: string) => {
+        const content = JSON.parse(fs.readFileSync(path.join(templatesDir, file), 'utf-8'));
+        return {
+          id: content.id,
+          name: content.name,
+          description: content.description,
+          start_date: content.start_date,
+          country_count: content.country_codes?.length || 0,
+        };
+      });
+    }
+  } catch (e) {
+    console.error('[Templates] Error reading templates:', e);
+  }
+
+  res.json({ templates });
+});
+
+app.get('/api/templates/:id', (req, res) => {
+  const fs = require('fs');
+  const path = require('path');
+  const templatePath = path.join(process.cwd(), 'data', 'templates', `${req.params.id}.json`);
+
+  try {
+    if (!fs.existsSync(templatePath)) {
+      res.status(404).json({ error: 'Template not found' });
+      return;
+    }
+
+    const template = JSON.parse(fs.readFileSync(templatePath, 'utf-8'));
+    const countries = countryRepository.findByCodes(template.country_codes || []);
+
+    res.json({
+      ...template,
+      countries,
+    });
+  } catch (e) {
+    console.error('[Template] Error:', e);
+    res.status(500).json({ error: 'Failed to load template' });
+  }
 });
 
 // ============================================================================
@@ -230,10 +305,14 @@ app.post('/api/worlds/from-map', (req, res) => {
       gdp = 80 + Math.floor(Math.random() * 80);
     }
 
+    // Convert SVG path to GeoJSON for Mapbox
+    const geojson = svgPathToGeoJSON(r.path, { width: map.width || 2000, height: map.height || 1500 });
+
     return {
       id: regionId,
       name: r.name,
       svgPath: r.path,
+      geojson: geojson ? JSON.stringify(geojson) : undefined,
       color: r.color,
       owner,
       population,
