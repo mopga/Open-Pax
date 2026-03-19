@@ -115,7 +115,19 @@ export class BalanceAgent {
     try {
       const result = await this.provider.generate(system, user, { temperature: 0.7 });
 
-      let parsed = JSON.parse(result.content);
+      // Strip markdown code fences if present
+      let jsonContent = result.content.trim();
+      if (jsonContent.startsWith('```json')) {
+        jsonContent = jsonContent.slice(7);
+      } else if (jsonContent.startsWith('```')) {
+        jsonContent = jsonContent.slice(3);
+      }
+      if (jsonContent.endsWith('```')) {
+        jsonContent = jsonContent.slice(0, -3);
+      }
+      jsonContent = jsonContent.trim();
+
+      let parsed = JSON.parse(jsonContent);
 
       // Ensure arrays and strings
       return {
