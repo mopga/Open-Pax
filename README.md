@@ -96,8 +96,8 @@ npm start
 |-------|-----|--------|
 | 1 | Pending Actions UI | ✅ Готово |
 | 2 | Sequential Processing | ✅ Готово |
-| 3 | Event Display | ⏳ Следующий |
-| 4 | Time-Skip Integration | 📋 Запланировано |
+| 3 | Event Display | ✅ Готово |
+| 4 | Time-Skip Integration | ⏳ Следующий |
 
 [Полная дорожная карта →](./ROADMAP.md)
 
