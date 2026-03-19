@@ -95,8 +95,8 @@ npm start
 | Phase | Что | Статус |
 |-------|-----|--------|
 | 1 | Pending Actions UI | ✅ Готово |
-| 2 | Sequential Processing | ⏳ Следующий |
-| 3 | Event Display | 📋 Запланировано |
+| 2 | Sequential Processing | ✅ Готово |
+| 3 | Event Display | ⏳ Следующий |
 | 4 | Time-Skip Integration | 📋 Запланировано |
 
 [Полная дорожная карта →](./ROADMAP.md)

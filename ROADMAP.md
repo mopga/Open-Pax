@@ -102,11 +102,19 @@ open-pax/
 |--------|----------|-------------|
 | POST | `/api/games` | Начать игру |
 | GET | `/api/games/:id` | Получить состояние игры |
-| POST | `/api/games/:id/action` | Отправить действия |
+| POST | `/api/games/:id/action` | Отправить действия (legacy) |
 | GET | `/api/games/:id/suggestions` | Получить подсказки |
 | GET | `/api/games/:id/advisor` | Получить совет |
 | POST | `/api/games/:id/save` | Сохранить игру |
 | POST | `/api/games/:id/load` | Загрузить сохранение |
+
+### Pending Actions Queue (Phase 2)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/games/:id/actions/queue` | Добавить действие в очередь |
+| GET | `/api/games/:id/actions/queue` | Получить очередь действий |
+| POST | `/api/games/:id/actions/process` | Обработать одно действие |
+| POST | `/api/games/:id/actions/process-all` | Обработать все действия |
 
 ### Saves
 | Method | Endpoint | Description |
@@ -131,6 +139,30 @@ open-pax/
 **Файлы:**
 - `frontend/src/App.tsx` — UI компоненты
 - `frontend/src/index.css` — стили
+
+---
+
+### Phase 2: Backend Queue Processing ✅
+
+**Статус:** Завершено (abfce48)
+
+**Цель:** Бэкенд обрабатывает действия по одному
+
+**Функционал:**
+- `PendingAction` interface и queue state в GameSession
+- `queueAction(text)` — добавляет в очередь без обработки
+- `processNextAction(jumpDays)` — обрабатывает одно действие
+- `processAllPendingActions(jumpDays)` — обрабатывает все
+- Новые API endpoints для queue operations
+- Каждое действие продвигает дату отдельно
+
+**Backend файлы:**
+- `backend-nest/src/game-session.ts` — queue methods
+- `backend-nest/src/index.ts` — new API endpoints
+
+**Frontend файлы:**
+- `frontend/src/services/api.ts` — queue API methods
+- `frontend/src/App.tsx` — integrated queue flow
 
 ---
 
