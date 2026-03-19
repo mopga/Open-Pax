@@ -74,6 +74,23 @@
    - `Country` and `WorldTemplate` types
    - `countriesApi` and `templatesApi` services
 
+#### Phase 2: Country Selection UI
+**Template and Country selector components for new game flow.**
+
+1. **TemplateSelector Component** (`frontend/src/components/Game/TemplateSelector.tsx`)
+   - Displays available world templates
+   - Loads templates from API
+   - Navigates to CountrySelector on selection
+
+2. **CountrySelector Component** (`frontend/src/components/Game/CountrySelector.tsx`)
+   - Displays countries from selected template
+   - Shows country color, name, and code
+   - Triggers game creation on country selection
+
+3. **Menu Integration**
+   - Added "🌀 Новая игра (шаблон)" button
+   - New view flow: menu → select-template → select-country → game
+
 ---
 
 #### Previous Changes (2026-03-18)

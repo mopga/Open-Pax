@@ -1421,3 +1421,143 @@ body {
     height: 50vh;
   }
 }
+
+/* Template Selector */
+.template-selector,
+.country-selector {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.selector-header {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.selector-header h2 {
+  font-size: 1.8rem;
+  color: #fff;
+}
+
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 20px;
+}
+
+.template-card {
+  background: #1a1a24;
+  border: 1px solid #2a2a3a;
+  border-radius: 12px;
+  padding: 20px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.template-card:hover {
+  border-color: #667eea;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(102, 126, 234, 0.15);
+}
+
+.template-name {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 10px;
+}
+
+.template-description {
+  font-size: 0.9rem;
+  color: #888;
+  margin-bottom: 15px;
+  line-height: 1.5;
+}
+
+.template-meta {
+  display: flex;
+  gap: 20px;
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.template-info {
+  background: #1a1a24;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 30px;
+}
+
+.template-info p {
+  color: #aaa;
+  line-height: 1.6;
+  margin-bottom: 15px;
+}
+
+.start-date {
+  color: #667eea;
+  font-weight: 600;
+}
+
+/* Country Selector */
+.country-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 15px;
+}
+
+.country-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #1a1a24;
+  border: 1px solid #2a2a3a;
+  border-radius: 10px;
+  padding: 15px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.country-card:hover {
+  border-color: #667eea;
+  transform: translateY(-2px);
+}
+
+.country-color {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.2);
+  flex-shrink: 0;
+}
+
+.country-name {
+  font-size: 0.95rem;
+  color: #fff;
+  font-weight: 500;
+}
+
+.country-code {
+  font-size: 0.75rem;
+  color: #555;
+  margin-left: auto;
+}
+
+.loading {
+  text-align: center;
+  padding: 60px 20px;
+  color: #666;
+  font-size: 1.1rem;
+}
+
+.error {
+  text-align: center;
+  padding: 30px;
+  color: #e74c3c;
+  background: rgba(231, 76, 60, 0.1);
+  border-radius: 10px;
+  margin-bottom: 20px;
+}

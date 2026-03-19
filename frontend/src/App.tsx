@@ -7,8 +7,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { MapboxMapView } from './components/Map/MapboxMapView';
 import { MapEditor, type EditorRegion, type EditorObject } from './components/Editor';
 import { CreateWorld, type WorldConfig } from './components/WorldBuilder/CreateWorld';
+import { TemplateSelector } from './components/Game/TemplateSelector';
+import { CountrySelector } from './components/Game/CountrySelector';
 import { gameApi, worldApi, mapApi, savesApi } from './services/api';
-import type { Region, World, Game } from './types';
+import type { Region, World, Game, WorldTemplate } from './types';
 
 // Вспомогательная функция: точки в SVG path
 const pointsToPath = (points: { x: number; y: number }[]): string => {
@@ -45,10 +47,12 @@ interface LocalMap {
 
 function App() {
   // Состояние
-  type ViewType = 'menu' | 'select-map' | 'create-world' | 'game' | 'editor';
+  type ViewType = 'menu' | 'select-template' | 'select-country' | 'select-map' | 'create-world' | 'game' | 'editor';
   const [currentView, setCurrentView] = useState<ViewType>('menu');
   const [savedMaps, setSavedMaps] = useState<LocalMap[]>([]);
   const [selectedMapForWorld, setSelectedMapForWorld] = useState<LocalMap | null>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState<WorldTemplate | null>(null);
+  const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
   const [currentWorld, setCurrentWorld] = useState<World | null>(null);
   const [currentGame, setCurrentGame] = useState<Game | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
@@ -617,7 +621,10 @@ function App() {
       )}
 
       <div className="menu-actions">
-        <button className="btn-primary" onClick={() => setCurrentView('editor')}>
+        <button className="btn-primary" onClick={() => setCurrentView('select-template')}>
+          🌍 Новая игра (шаблон)
+        </button>
+        <button className="btn-secondary" onClick={() => setCurrentView('editor')}>
           ➕ Создать новую карту
         </button>
       </div>
@@ -1158,6 +1165,29 @@ function App() {
   return (
     <div className="app">
       {currentView === 'menu' && renderMenu()}
+      {currentView === 'select-template' && (
+        <TemplateSelector
+          onSelect={(template) => {
+            setSelectedTemplate(template);
+            setCurrentView('select-country');
+          }}
+          onBack={() => setCurrentView('menu')}
+        />
+      )}
+      {currentView === 'select-country' && selectedTemplate && (
+        <CountrySelector
+          template={selectedTemplate}
+          onSelect={(countryCode) => {
+            setSelectedCountry(countryCode);
+            // For now, just log - we'll create game with template + country later
+            console.log('[DEBUG] Selected country:', countryCode, 'from template:', selectedTemplate.id);
+            // TODO: Create game from template
+            alert('Template: ' + selectedTemplate.name + '\nCountry: ' + countryCode + '\n\nGame creation from templates coming soon!');
+            setCurrentView('menu');
+          }}
+          onBack={() => setCurrentView('select-template')}
+        />
+      )}
       {currentView === 'game' && renderGame()}
       {currentView === 'editor' && renderEditor()}
       {currentView === 'create-world' && renderCreateWorld()}
