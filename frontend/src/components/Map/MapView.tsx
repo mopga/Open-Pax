@@ -17,7 +17,7 @@ interface MapViewProps {
 }
 
 // Типы объектов на карте
-const OBJECT_ICONS: Record<string, { color: string; shape: 'circle' | 'rect' | 'triangle'; size: number }> = {
+const OBJECT_ICONS: Record<string, { color: string; shape: 'circle' | 'rect' | 'triangle' | 'letter'; size: number }> = {
   army: { color: '#ff4444', shape: 'circle', size: 10 },
   fleet: { color: '#4488ff', shape: 'circle', size: 12 },
   missile: { color: '#ff8800', shape: 'triangle', size: 10 },
@@ -28,6 +28,7 @@ const OBJECT_ICONS: Record<string, { color: string; shape: 'circle' | 'rect' | '
   grouping: { color: '#ff44aa', shape: 'circle', size: 14 },
   factory: { color: '#ffaa00', shape: 'rect', size: 12 },
   university: { color: '#44ff44', shape: 'circle', size: 10 },
+  city: { color: '#ffffff', shape: 'letter', size: 14 },
 };
 
 export const MapView: React.FC<MapViewProps> = ({
@@ -100,29 +101,57 @@ export const MapView: React.FC<MapViewProps> = ({
   // Рендер объекта (always on top)
   const renderObject = (obj: MapObject, regionColor?: string) => {
     const icon = OBJECT_ICONS[obj.type] || { color: '#ffffff', shape: 'circle' as const, size: 8 };
+    const borderColor = regionColor || icon.color;
 
     return (
       <g key={obj.id} transform={`translate(${obj.x}, ${obj.y})`}>
         {/* Glow effect */}
-        <circle r={icon.size + 4} fill={icon.color} fillOpacity={0.3} />
-
-        {/* White outline for visibility */}
-        <circle r={icon.size + 1} fill="none" stroke="#ffffff" strokeWidth={2.5} />
-
-        {icon.shape === 'circle' && (
-          <circle r={icon.size} fill={icon.color} stroke="#ffffff" strokeWidth={2} />
+        {icon.shape !== 'letter' && (
+          <circle r={icon.size + 4} fill={icon.color} fillOpacity={0.3} />
         )}
-        {icon.shape === 'rect' && (
-          <rect x={-icon.size/2} y={-icon.size/2} width={icon.size} height={icon.size}
-            fill={icon.color} stroke="#ffffff" strokeWidth={2} rx={2} />
+
+        {/* Letter-based city marker (like paxhistoria) */}
+        {icon.shape === 'letter' && (
+          <>
+            {/* White circle with colored border */}
+            <circle r={icon.size} fill="#ffffff" stroke={borderColor} strokeWidth={3} />
+            {/* Letter inside */}
+            <text
+              x={0}
+              y={1}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fontSize={12}
+              fontWeight="bold"
+              fill={borderColor}
+            >
+              {obj.name.charAt(0).toUpperCase()}
+            </text>
+          </>
         )}
-        {icon.shape === 'triangle' && (
-          <polygon points={`0,-${icon.size} ${icon.size},${icon.size} -${icon.size},${icon.size}`}
-            fill={icon.color} stroke="#ffffff" strokeWidth={2} />
+
+        {/* Regular shapes (not letter) */}
+        {icon.shape !== 'letter' && (
+          <>
+            {/* White outline for visibility */}
+            <circle r={icon.size + 1} fill="none" stroke="#ffffff" strokeWidth={2.5} />
+
+            {icon.shape === 'circle' && (
+              <circle r={icon.size} fill={icon.color} stroke="#ffffff" strokeWidth={2} />
+            )}
+            {icon.shape === 'rect' && (
+              <rect x={-icon.size/2} y={-icon.size/2} width={icon.size} height={icon.size}
+                fill={icon.color} stroke="#ffffff" strokeWidth={2} rx={2} />
+            )}
+            {icon.shape === 'triangle' && (
+              <polygon points={`0,-${icon.size} ${icon.size},${icon.size} -${icon.size},${icon.size}`}
+                fill={icon.color} stroke="#ffffff" strokeWidth={2} />
+            )}
+          </>
         )}
 
         {/* Label with background for visibility */}
-        {obj.name && (
+        {obj.name && icon.shape !== 'letter' && (
           <g>
             <rect x={-40} y={icon.size + 2} width={80} height={14} fill="#000" fillOpacity={0.7} rx={3} />
             <text y={icon.size + 12} fill="#ffffff" fontSize={9}
@@ -223,16 +252,16 @@ export const MapView: React.FC<MapViewProps> = ({
                 <path
                   d={region.svgPath}
                   fill={region.color}
-                  fillOpacity={0.4}
+                  fillOpacity={0.5}
                   style={{ filter: 'blur(15px)' }}
                 />
               )}
               <path
                 d={region.svgPath}
                 fill={region.color}
-                fillOpacity={isSelected ? 0.9 : isHovered ? 0.75 : 0.5}
-                stroke={isSelected ? '#ffffff' : isHovered ? '#aaaaaa' : '#333333'}
-                strokeWidth={isSelected ? 3 : isHovered ? 2 : 1}
+                fillOpacity={isSelected ? 1.0 : isHovered ? 0.95 : 0.85}
+                stroke={isSelected ? '#ffffff' : isHovered ? '#666666' : '#1a1a1a'}
+                strokeWidth={isSelected ? 3 : isHovered ? 2 : 2}
                 style={{
                   cursor: onRegionClick ? 'pointer' : 'default',
                   transition: 'all 0.15s ease',
@@ -251,14 +280,14 @@ export const MapView: React.FC<MapViewProps> = ({
               <text
                 x={getCentroid(region.svgPath)?.x || width/2}
                 y={getCentroid(region.svgPath)?.y || height/2}
-                fill={isSelected || isHovered ? '#ffffff' : '#cccccc'}
-                fontSize={14}
-                fontWeight={isSelected ? 700 : 500}
+                fill="#ffffff"
+                fontSize={18}
+                fontWeight={700}
                 textAnchor="middle"
                 pointerEvents="none"
                 style={{
-                  textShadow: '0 0 8px #000, 0 0 4px #000',
-                  opacity: isHovered || isSelected ? 1 : 0.7,
+                  textShadow: '0 0 10px #000, 0 0 5px #000, 1px 1px 2px #000',
+                  opacity: 1,
                 }}
               >
                 {region.name}

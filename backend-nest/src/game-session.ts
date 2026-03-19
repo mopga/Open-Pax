@@ -444,19 +444,41 @@ export class GameSession {
       grouping: [/группировк(?:а|и|у|)\s/iu, /объединен/iu, /grouping/iu],
       factory: [/завод(?:а|у|ом|)\s/iu, /фабрик(?:а|и|у|)\s/iu, /предприят/iu, /factory/iu, /plant/iu],
       university: [/университет(?:а|у|ом|)\s/iu, /университет/iu, /институт(?:а|у|)\s/iu, /академи(?:я|и|)\s/iu, /university/iu, / institute/iu],
+      city: [/город(?:а|у|ом|)?\s/iu, /city/iu, /capital/iu, /столиц/iu, /посел(?:ок|ение|ий)/iu],
+    };
+
+    // Helper to calculate centroid from SVG path
+    const getCentroid = (path: string): { x: number; y: number } | null => {
+      const nums = path.match(/-?\d+\.?\d*/g);
+      if (!nums || nums.length < 2) return null;
+      const points: number[] = nums.map(Number);
+      let sumX = 0, sumY = 0, count = 0;
+      for (let i = 0; i < points.length; i += 2) {
+        sumX += points[i];
+        sumY += points[i + 1] || 0;
+        count++;
+      }
+      return count > 0 ? { x: sumX / count, y: sumY / count } : null;
     };
 
     const combinedText = text.toLowerCase();
+    const centroid = getCentroid(region.svgPath || '');
 
     for (const [objType, patterns] of Object.entries(objectPatterns)) {
       for (const pattern of patterns) {
         if (pattern.test(combinedText)) {
+          // For cities, use centroid position; for others, use random with offset
+          const baseX = centroid ? centroid.x : 500;
+          const baseY = centroid ? centroid.y : 400;
+          const offsetX = objType === 'city' ? 0 : (Math.random() - 0.5) * 200;
+          const offsetY = objType === 'city' ? 0 : (Math.random() - 0.5) * 150;
+
           const newObject = {
             id: uuid().slice(0, 8),
             type: objType,
-            name: `${objType.charAt(0).toUpperCase() + objType.slice(1)} ${region.objects.length + 1}`,
-            x: 400 + Math.random() * 200,
-            y: 300 + Math.random() * 150,
+            name: `${region.name} ${objType === 'city' ? 'гор.' : objType.charAt(0).toUpperCase() + objType.slice(1)} ${(region.objects?.length || 0) + 1}`,
+            x: baseX + offsetX,
+            y: baseY + offsetY,
             level: 1,
           };
 
