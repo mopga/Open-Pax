@@ -257,6 +257,21 @@ open-pax/
 
 ---
 
+## Performance Improvements
+
+### 1. Loading Indicator ✅ (Low priority)
+- Add visible loading state on "Submit All" button during LLM processing
+- Show progress: "Думаю... X из Y" with spinner
+- Prevent double-submit while processing
+
+### 2. LLM Response Caching (Medium)
+- Cache LLM responses by action hash
+- Skip LLM call if same action was processed recently (within 5 min)
+- Store cached responses in memory or Redis
+- Invalidated on world prompt change
+
+---
+
 ### Phase 7: Flag System
 
 **Статус:** Запланирован (Easy-Medium)
