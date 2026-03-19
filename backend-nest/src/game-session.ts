@@ -49,6 +49,21 @@ export interface TurnResultRecord {
   events: string[];
 }
 
+export interface PendingAction {
+  id: string;
+  text: string;
+  createdAt: string;
+  status: 'pending' | 'processing' | 'completed';
+  result?: {
+    narration: string;
+    countryResponse: string;
+    events: string[];
+    objects: any[];
+    turn: number;
+    date: string;
+  };
+}
+
 export interface WorldChanges {
   regionOwners?: Record<string, string>;
   regionColors?: Record<string, string>;
@@ -83,6 +98,9 @@ export class GameSession {
   private actions: ActionRecord[] = [];
   private results: TurnResultRecord[] = [];
   private status: 'waiting' | 'playing' | 'finished' = 'playing';
+
+  // Pending actions queue (Phase 2)
+  private pendingActions: PendingAction[] = [];
 
   constructor(gameId: string, worldId: string, provider: MiniMaxProvider) {
     this.id = gameId;
@@ -642,5 +660,177 @@ export class GameSession {
   async getSuggestions(): Promise<any[]> {
     const gameData = this.buildGameData();
     return this.gameController.getSuggestionsWithPrompts(gameData);
+  }
+
+  // =========================================================================
+  // Pending Actions Queue (Phase 2)
+  // =========================================================================
+
+  /**
+   * Add action to pending queue (without processing)
+   */
+  queueAction(text: string): PendingAction {
+    const action: PendingAction = {
+      id: uuid().slice(0, 8),
+      text,
+      createdAt: new Date().toISOString(),
+      status: 'pending',
+    };
+    this.pendingActions.push(action);
+    console.log('[GameSession] Queued action:', action.id, 'text:', text.substring(0, 50));
+    return action;
+  }
+
+  /**
+   * Get all pending actions
+   */
+  getPendingActions(): PendingAction[] {
+    return this.pendingActions;
+  }
+
+  /**
+   * Clear completed actions from queue
+   */
+  clearCompletedActions(): void {
+    this.pendingActions = this.pendingActions.filter(a => a.status !== 'completed');
+  }
+
+  /**
+   * Process ONE action from the queue (for sequential processing)
+   * Called when time-skip happens or when explicitly processing
+   */
+  async processNextAction(jumpDays: number = 30): Promise<PendingAction | null> {
+    // Find next pending action
+    const action = this.pendingActions.find(a => a.status === 'pending');
+    if (!action) {
+      console.log('[GameSession] No pending actions to process');
+      return null;
+    }
+
+    action.status = 'processing';
+    console.log('[GameSession] Processing action:', action.id, 'text:', action.text.substring(0, 50));
+
+    try {
+      // Call the existing applyTurn logic but for a single action
+      const player = this.players[0];
+      if (!player) throw new Error('No player in session');
+
+      const playerRegion = this.regions.get(player.regionId);
+      if (!playerRegion) throw new Error('Player region not found');
+
+      const timeJump = jumpDays || 30;
+
+      // Build game data for prompt engine
+      const gameData = this.buildGameData();
+
+      // Process turn with prompts (single action)
+      const promptResult = await this.gameController.processTurnWithPrompts(
+        gameData,
+        [action.text], // Single action as array
+        timeJump
+      );
+
+      // Apply world changes from simulation
+      if (promptResult.worldChanges) {
+        this.applyWorldChanges(promptResult.worldChanges);
+      }
+
+      // Detect and create objects
+      const createdObjects = this.detectAndCreateObjects(
+        playerRegion,
+        action.text + ' ' + promptResult.convertedActions.map((a: any) => a.text).join(' ')
+      );
+
+      // Process NPC turns (for this period)
+      const npcEvents = await this.processNPCTurns();
+
+      // Apply random events
+      const randomEvents = this.applyRandomEvents();
+
+      // Record action
+      const actionRecord: ActionRecord = {
+        id: action.id,
+        playerId: player.id,
+        turn: this.currentTurn,
+        text: action.text,
+        createdAt: action.createdAt,
+      };
+      this.actions.push(actionRecord);
+
+      // Persist action to DB
+      gameRepository.addAction({
+        id: actionRecord.id,
+        gameId: this.id,
+        playerId: player.id,
+        turn: this.currentTurn,
+        text: action.text,
+      });
+
+      // Create turn result
+      const turnResult: TurnResultRecord = {
+        id: uuid().slice(0, 8),
+        turn: this.currentTurn,
+        narration: promptResult.narration,
+        countryResponse: promptResult.convertedActions.map((a: any) => a.text).join('\n'),
+        events: [...npcEvents, ...randomEvents, ...createdObjects.map(o => o.text)],
+      };
+      this.results.push(turnResult);
+
+      // Persist turn result to DB
+      gameRepository.addTurnResult({
+        id: turnResult.id,
+        gameId: this.id,
+        turn: this.currentTurn,
+        narration: turnResult.narration,
+        countryResponse: turnResult.countryResponse,
+        events: turnResult.events,
+      });
+
+      // Persist ALL region changes to DB
+      await this.syncRegionsToDB();
+
+      // Persist turn number to DB
+      gameRepository.updateTurn(this.id, this.currentTurn + 1);
+
+      // Advance turn and date
+      this.currentTurn++;
+      const date = new Date(this.currentDate);
+      date.setDate(date.getDate() + timeJump);
+      this.currentDate = date.toISOString().split('T')[0];
+
+      // Update action with result
+      action.status = 'completed';
+      action.result = {
+        narration: turnResult.narration,
+        countryResponse: turnResult.countryResponse,
+        events: turnResult.events,
+        objects: playerRegion.objects,
+        turn: this.currentTurn - 1,
+        date: this.currentDate,
+      };
+
+      console.log('[GameSession] Action processed, new date:', this.currentDate);
+      return action;
+
+    } catch (e) {
+      console.error('[GameSession] Error processing action:', e);
+      action.status = 'pending'; // Reset status on error
+      throw e;
+    }
+  }
+
+  /**
+   * Process all pending actions sequentially
+   */
+  async processAllPendingActions(jumpDays: number = 30): Promise<PendingAction[]> {
+    const processed: PendingAction[] = [];
+    let action = await this.processNextAction(jumpDays);
+
+    while (action) {
+      processed.push(action);
+      action = await this.processNextAction(jumpDays);
+    }
+
+    return processed;
   }
 }

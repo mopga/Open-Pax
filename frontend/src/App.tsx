@@ -799,11 +799,19 @@ function App() {
                           <div
                             key={ai}
                             className="suggestion-action"
-                            onClick={() => {
-                              // Add to pending actions
+                            onClick={async () => {
+                              if (!currentGame) return;
+                              const text = a.content;
+                              // Add to backend queue
+                              try {
+                                await gameApi.queueAction(currentGame.id, text);
+                              } catch (e) {
+                                console.error('Failed to queue suggestion:', e);
+                              }
+                              // Add to local pending actions
                               setPendingActions(prev => [...prev, {
                                 id: `suggestion-${Date.now()}-${ai}`,
-                                text: a.content
+                                text
                               }]);
                             }}
                           >
@@ -850,11 +858,19 @@ function App() {
                   />
                   <button
                     className="btn-add-pending"
-                    onClick={() => {
-                      if (newActionText.trim()) {
+                    onClick={async () => {
+                      if (newActionText.trim() && currentGame) {
+                        const text = newActionText.trim();
+                        // Add to backend queue
+                        try {
+                          await gameApi.queueAction(currentGame.id, text);
+                        } catch (e) {
+                          console.error('Failed to queue action:', e);
+                        }
+                        // Add to local state
                         setPendingActions(prev => [...prev, {
                           id: `manual-${Date.now()}`,
-                          text: newActionText.trim()
+                          text
                         }]);
                         setNewActionText('');
                       }
@@ -873,13 +889,37 @@ function App() {
                   disabled={pendingActions.length === 0 || loading}
                   onClick={async () => {
                     if (!currentGame || pendingActions.length === 0) return;
-                    const actions = pendingActions.map(a => a.text);
                     setLoading(true);
                     try {
-                      await handleSubmitActions(actions);
+                      // Process all queued actions sequentially
+                      const result = await gameApi.processAllActions(currentGame.id, 30);
+
+                      // Add each processed action result to history
+                      for (const action of result.actions) {
+                        if (action.result) {
+                          setHistory(prev => [...prev, {
+                            turn: action.result.turn,
+                            action: action.text,
+                            result: action.result.narration,
+                            events: action.result.events,
+                            date: action.result.date,
+                          }]);
+                        }
+                      }
+
+                      // Update game turn/date
+                      const lastAction = result.actions[result.actions.length - 1];
+                      if (lastAction?.result) {
+                        setCurrentGame(prev => prev ? {
+                          ...prev,
+                          currentTurn: (lastAction.result as any).turn + 1,
+                          currentDate: (lastAction.result as any).date,
+                        } : prev);
+                      }
+
                       setPendingActions([]);
                     } catch (e) {
-                      console.error(e);
+                      console.error('Failed to process actions:', e);
                     }
                     setLoading(false);
                   }}

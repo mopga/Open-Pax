@@ -179,6 +179,67 @@ export const gameApi = {
       method: 'POST',
     });
   },
+
+  // =========================================================================
+  // Pending Actions Queue (Phase 2)
+  // =========================================================================
+
+  /**
+   * Add action to queue (without processing)
+   */
+  queueAction: (gameId: string, text: string): Promise<{
+    id: string;
+    text: string;
+    status: string;
+    createdAt: string;
+  }> => {
+    return fetchApi(`/games/${gameId}/actions/queue`, {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    });
+  },
+
+  /**
+   * Get pending actions
+   */
+  getPendingActions: (gameId: string): Promise<{ pendingActions: any[] }> => {
+    return fetchApi(`/games/${gameId}/actions/queue`);
+  },
+
+  /**
+   * Process one action from queue
+   */
+  processNextAction: (gameId: string, jumpDays?: number): Promise<{
+    id: string;
+    text: string;
+    status: string;
+    result?: {
+      narration: string;
+      countryResponse: string;
+      events: string[];
+      objects: any[];
+      turn: number;
+      date: string;
+    };
+  }> => {
+    return fetchApi(`/games/${gameId}/actions/process`, {
+      method: 'POST',
+      body: JSON.stringify({ jump_days: jumpDays || 30 }),
+    });
+  },
+
+  /**
+   * Process all pending actions
+   */
+  processAllActions: (gameId: string, jumpDays?: number): Promise<{
+    processedCount: number;
+    actions: any[];
+  }> => {
+    return fetchApi(`/games/${gameId}/actions/process-all`, {
+      method: 'POST',
+      body: JSON.stringify({ jump_days: jumpDays || 30 }),
+    });
+  },
 };
 
 // ============================================================================

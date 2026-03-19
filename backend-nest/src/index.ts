@@ -419,6 +419,115 @@ app.post('/api/saves/:id/load', (req, res) => {
 });
 
 // ============================================================================
+// Pending Actions Queue (Phase 2)
+// ============================================================================
+
+// Add action to queue (no processing)
+app.post('/api/games/:id/actions/queue', (req, res) => {
+  const gameId = req.params.id;
+  const { text } = req.body;
+
+  if (!text) {
+    res.status(400).json({ error: 'Action text is required' });
+    return;
+  }
+
+  try {
+    const session = getSessionRegistry().getSessionOrThrow(gameId);
+    const action = session.queueAction(text);
+
+    console.log('[QUEUE] Action added:', action.id);
+    res.json({
+      id: action.id,
+      text: action.text,
+      status: action.status,
+      createdAt: action.createdAt,
+    });
+  } catch (e: any) {
+    console.error('[QUEUE] Error:', e);
+    if (e.message.includes('not found')) {
+      res.status(404).json({ error: e.message });
+    } else {
+      res.status(500).json({ error: 'Failed to queue action' });
+    }
+  }
+});
+
+// Get pending actions
+app.get('/api/games/:id/actions/queue', (req, res) => {
+  const gameId = req.params.id;
+
+  try {
+    const session = getSessionRegistry().getSessionOrThrow(gameId);
+    const pendingActions = session.getPendingActions();
+
+    res.json({ pendingActions });
+  } catch (e: any) {
+    console.error('[QUEUE GET] Error:', e);
+    if (e.message.includes('not found')) {
+      res.status(404).json({ error: e.message });
+    } else {
+      res.status(500).json({ error: 'Failed to get pending actions' });
+    }
+  }
+});
+
+// Process one action from queue
+app.post('/api/games/:id/actions/process', async (req, res) => {
+  const gameId = req.params.id;
+  const { jump_days = 30 } = req.body;
+
+  try {
+    const session = getSessionRegistry().getSessionOrThrow(gameId);
+    const action = await session.processNextAction(jump_days);
+
+    if (!action) {
+      res.json({ message: 'No pending actions to process', action: null });
+      return;
+    }
+
+    console.log('[PROCESS] Action processed:', action.id);
+    res.json({
+      id: action.id,
+      text: action.text,
+      status: action.status,
+      result: action.result,
+    });
+  } catch (e: any) {
+    console.error('[PROCESS] Error:', e);
+    if (e.message.includes('not found')) {
+      res.status(404).json({ error: e.message });
+    } else {
+      res.status(500).json({ error: 'Failed to process action' });
+    }
+  }
+});
+
+// Process all pending actions
+app.post('/api/games/:id/actions/process-all', async (req, res) => {
+  const gameId = req.params.id;
+  const { jump_days = 30 } = req.body;
+
+  try {
+    const session = getSessionRegistry().getSessionOrThrow(gameId);
+    const processed = await session.processAllPendingActions(jump_days);
+
+    console.log('[PROCESS ALL] Actions processed:', processed.length);
+    res.json({
+      processedCount: processed.length,
+      actions: processed,
+    });
+  } catch (e: any) {
+    console.error('[PROCESS ALL] Error:', e);
+    if (e.message.includes('not found')) {
+      res.status(404).json({ error: e.message });
+    } else {
+      res.status(500).json({ error: 'Failed to process actions' });
+    }
+  }
+});
+
+// ============================================================================
 // Start Server
 // ============================================================================
 
