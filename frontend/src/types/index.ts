@@ -94,6 +94,7 @@ export interface Game {
   world: World;
   players: Player[];
   currentTurn: number;
+  currentDate?: string;
   maxTurns: number;
   status: GameStatus;
 }

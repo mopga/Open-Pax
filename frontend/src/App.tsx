@@ -515,6 +515,16 @@ function App() {
   );
 
   // Рендер игры
+  // Format date for display
+  const formatDate = (dateStr: string): string => {
+    const months = [
+      'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+      'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'
+    ];
+    const date = new Date(dateStr);
+    return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;
+  };
+
   const renderGame = () => {
     if (!currentWorld) return null;
 
@@ -522,23 +532,76 @@ function App() {
     const currentRegion = regions.find(r => r.id === selectedRegion);
 
     return (
-      <div className="game-container">
-        {/* Карта слева */}
-        <div className="game-map">
-          <MapView
-            regions={regions}
-            selectedRegionId={selectedRegion || undefined}
-            onRegionClick={handleCountryChange}
-            changedRegionIds={changedRegions}
-          />
+      <div className="game-wrapper">
+        {/* Timeline Bar */}
+        <div className="timeline-bar">
+          <div className="timeline-left">
+            <button className="btn-back-menu" onClick={() => setCurrentView('menu')}>
+              ← Меню
+            </button>
+          </div>
+          <div className="timeline-center">
+            <span className="turn-badge">ХОД {currentGame?.currentTurn || 1}</span>
+          </div>
+          <div className="timeline-right">
+            <div className="timeline-date">
+              <span className="date-display">📅 {formatDate(currentGame?.currentDate || '1951-01-01')}</span>
+              <button
+                className="btn-time-skip"
+                onClick={() => setShowJumpMenu(!showJumpMenu)}
+                title="Тайм-скип"
+              >
+                →
+              </button>
+              {showJumpMenu && (
+                <div className="time-skip-dropdown">
+                  <div className="dropdown-header">Тайм-скип</div>
+                  <button onClick={() => { setJumpDays(7); setShowJumpMenu(false); }}>1 неделя</button>
+                  <button onClick={() => { setJumpDays(30); setShowJumpMenu(false); }}>1 месяц</button>
+                  <button onClick={() => { setJumpDays(90); setShowJumpMenu(false); }}>3 месяца</button>
+                  <button onClick={() => { setJumpDays(180); setShowJumpMenu(false); }}>6 месяцев</button>
+                  <button onClick={() => { setJumpDays(365); setShowJumpMenu(false); }}>1 год</button>
+                  <div className="dropdown-divider"></div>
+                  <div className="custom-jump">
+                    <input
+                      type="number"
+                      min="1"
+                      max="365"
+                      value={jumpDays > 365 ? jumpDays : ''}
+                      placeholder="?"
+                      onChange={(e) => setJumpDays(parseInt(e.target.value) || 30)}
+                    />
+                    <span>дней</span>
+                    <button
+                      className="btn-confirm-jump"
+                      onClick={() => setShowJumpMenu(false)}
+                    >
+                      ✓
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
-        {/* Панель справа */}
-        <div className="game-panel">
-          {/* Turn counter */}
-          <div className="turn-header">
-            <span className="turn-number">ХОД {currentGame?.currentTurn || 1}</span>
+        <div className="game-container">
+          {/* Карта слева */}
+          <div className="game-map">
+            <MapView
+              regions={regions}
+              selectedRegionId={selectedRegion || undefined}
+              onRegionClick={handleCountryChange}
+              changedRegionIds={changedRegions}
+            />
           </div>
+
+          {/* Панель справа */}
+          <div className="game-panel">
+            {/* Turn counter - moved to timeline bar */}
+            <div className="turn-header" style={{ display: 'none' }}>
+              <span className="turn-number">ХОД {currentGame?.currentTurn || 1}</span>
+            </div>
 
           {/* Country selector - locked to player's region */}
           <div className="country-selector">
@@ -609,26 +672,6 @@ function App() {
               ))}
             </div>
 
-            {/* Date jump selector */}
-            <div className="jump-section">
-              <button
-                className="btn-jump-toggle"
-                onClick={() => setShowJumpMenu(!showJumpMenu)}
-              >
-                Перемотать время: {jumpDays} дней ▼
-              </button>
-              {showJumpMenu && (
-                <div className="jump-menu">
-                  <button onClick={() => { setJumpDays(1); setShowJumpMenu(false); }}>1 день</button>
-                  <button onClick={() => { setJumpDays(7); setShowJumpMenu(false); }}>1 неделя</button>
-                  <button onClick={() => { setJumpDays(30); setShowJumpMenu(false); }}>1 месяц</button>
-                  <button onClick={() => { setJumpDays(90); setShowJumpMenu(false); }}>3 месяца</button>
-                  <button onClick={() => { setJumpDays(180); setShowJumpMenu(false); }}>6 месяцев</button>
-                  <button onClick={() => { setJumpDays(365); setShowJumpMenu(false); }}>1 год</button>
-                </div>
-              )}
-            </div>
-
             <button
               className="btn-turn"
               onClick={() => {
@@ -675,10 +718,12 @@ function App() {
                     if (save && confirm(`Загрузить "${save.name}" (Ход ${save.current_turn})?`)) {
                       await gameApi.loadSave(save.id);
                       // Reload game
-                      const game = await gameApi.get(currentGame.id);
-                      setCurrentGame(game);
-                      setHistory([]);
-                      alert('Игра загружена!');
+                      if (currentGame) {
+                        const game = await gameApi.get(currentGame.id);
+                        setCurrentGame(game);
+                        setHistory([]);
+                        alert('Игра загружена!');
+                      }
                     }
                   } catch (e) {
                     console.error(e);
@@ -711,7 +756,7 @@ function App() {
                 setShowAdvisor(true);
                 setAdvisorMode('advisor');
                 // Auto-generate initial advice
-                if (!advisorTips) {
+                if (!advisorTips && currentGame) {
                   (async () => {
                     try {
                       const tips = await gameApi.getAdvisor(currentGame.id, currentGame.players[0].id);
@@ -741,7 +786,7 @@ function App() {
                     className={`advisor-tab ${advisorMode === 'suggestions' ? 'active' : ''}`}
                     onClick={async () => {
                       setAdvisorMode('suggestions');
-                      if (suggestions.length === 0) {
+                      if (suggestions.length === 0 && currentGame) {
                         try {
                           const data = await gameApi.getSuggestions(currentGame.id);
                           setSuggestions(data.suggestions || []);
@@ -854,6 +899,7 @@ function App() {
           }}>
             ← В меню
           </button>
+        </div>
         </div>
       </div>
     );
