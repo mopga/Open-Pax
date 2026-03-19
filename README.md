@@ -99,6 +99,7 @@ npm start
 | 3 | Event Display | ✅ Готово |
 | 4 | Time-Skip Integration | ✅ Готово |
 | 5 | Map Visual Improvements | ✅ Готово |
+| 6 | World Presets & Custom Prompts | ✅ Готово |
 
 [Полная дорожная карта →](./ROADMAP.md)
 

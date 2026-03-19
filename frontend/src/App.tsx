@@ -76,6 +76,8 @@ function App() {
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const historyEndRef = useRef<HTMLDivElement>(null);
   const [isResizing, setIsResizing] = useState(false);
+  const [showPromptEditor, setShowPromptEditor] = useState(false);
+  const [editingPrompt, setEditingPrompt] = useState('');
 
   // Прокрутка истории вниз
   useEffect(() => {
@@ -785,6 +787,16 @@ function App() {
               >
                 📂 Загрузить
               </button>
+              <button
+                className="btn-edit-prompt"
+                onClick={() => {
+                  setEditingPrompt(currentWorld?.basePrompt || '');
+                  setShowPromptEditor(true);
+                }}
+                title="Редактировать промпт мира"
+              >
+                📝 Промпт
+              </button>
           </div>
 
           {/* Events from last turn */}
@@ -1054,6 +1066,55 @@ function App() {
           }}>
             ← В меню
           </button>
+
+          {/* Prompt Editor Modal */}
+          {showPromptEditor && (
+            <div className="prompt-editor-modal">
+              <div className="prompt-editor-overlay" onClick={() => setShowPromptEditor(false)} />
+              <div className="prompt-editor-content">
+                <div className="prompt-editor-header">
+                  <h3>📝 Редактирование промпта мира</h3>
+                  <button className="btn-close-prompt" onClick={() => setShowPromptEditor(false)}>×</button>
+                </div>
+                <p className="prompt-editor-desc">
+                  Этот промпт определяет историю вашего мира, поведение NPC стран и возможные события.
+                  Изменения вступят в силу для будущих ходов.
+                </p>
+                <textarea
+                  className="prompt-editor-textarea"
+                  value={editingPrompt}
+                  onChange={(e) => setEditingPrompt(e.target.value)}
+                  placeholder="Опишите ключевые особенности вашего мира..."
+                  rows={10}
+                />
+                <div className="prompt-editor-footer">
+                  <span className="char-count">{editingPrompt.length} символов</span>
+                  <div className="prompt-editor-actions">
+                    <button className="btn-cancel-prompt" onClick={() => setShowPromptEditor(false)}>
+                      Отмена
+                    </button>
+                    <button
+                      className="btn-save-prompt"
+                      onClick={async () => {
+                        if (!currentWorld) return;
+                        try {
+                          await worldApi.updatePrompt(currentWorld.id, editingPrompt);
+                          setCurrentWorld({ ...currentWorld, basePrompt: editingPrompt });
+                          setShowPromptEditor(false);
+                          alert('Промпт мира обновлён!');
+                        } catch (e) {
+                          console.error(e);
+                          alert('Ошибка сохранения промпта');
+                        }
+                      }}
+                    >
+                      💾 Сохранить
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
         </div>
       </div>

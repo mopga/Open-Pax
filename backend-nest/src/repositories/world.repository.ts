@@ -117,6 +117,29 @@ export const worldRepository = {
     stmt.run(...values);
   },
 
+  update: (worldId: string, updates: Partial<{
+    name: string;
+    description: string;
+    startDate: string;
+    basePrompt: string;
+    historicalAccuracy: number;
+  }>) => {
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
+    if (updates.description !== undefined) { fields.push('description = ?'); values.push(updates.description); }
+    if (updates.startDate !== undefined) { fields.push('start_date = ?'); values.push(updates.startDate); }
+    if (updates.basePrompt !== undefined) { fields.push('base_prompt = ?'); values.push(updates.basePrompt); }
+    if (updates.historicalAccuracy !== undefined) { fields.push('historical_accuracy = ?'); values.push(updates.historicalAccuracy); }
+
+    if (fields.length === 0) return;
+
+    values.push(worldId);
+    const stmt = db.prepare(`UPDATE worlds SET ${fields.join(', ')} WHERE id = ?`);
+    stmt.run(...values);
+  },
+
   createWithRegions: (world: { id: string; name: string; description?: string; startDate?: string; basePrompt?: string; historicalAccuracy?: number }, regions: any[]) => {
     const createWorld = db.transaction(() => {
       worldRepository.create(world);

@@ -176,11 +176,30 @@ export const CreateWorld: React.FC<CreateWorldProps> = ({
               value={basePrompt}
               onChange={(e) => setBasePrompt(e.target.value)}
               placeholder="Опишите ключевые отличия вашего мира от реальной истории..."
-              rows={4}
+              rows={5}
+              style={{ minHeight: '120px' }}
             />
+            <div className="prompt-meta">
+              <span className="char-count">{basePrompt.length} символов</span>
+            </div>
             <p className="hint">
-              Пример: "В 1951 году США захватили Венесуэлу и Кубу. СССР ввело войска в Польшу, оккупировав половину Европы..."
+              Промпт определяет: историю до начала игры, поведение NPC стран, возможные события и реакции мира.
             </p>
+            <details className="prompt-examples">
+              <summary>Примеры описаний</summary>
+              <div className="example-item" onClick={() => setBasePrompt('Мир разделен на два лагеря: демократии Запада и коммунисты Востока. Гонка вооружений идет полным ходом. США и СССР соперничают за влияние во всем мире.')}>
+                <strong>Cold War:</strong> "Мир разделен на два лагеря..."
+              </div>
+              <div className="example-item" onClick={() => setBasePrompt('Мир разделен на три силы: демократии, коммунисты и нейтральный блок. Холодная война ведется между всеми тремя центрами силы.')}>
+                <strong>Three Powers:</strong> "Мир разделен на три силы..."
+              </div>
+              <div className="example-item" onClick={() => setBasePrompt('В 1951 году Вторая мировая война не закончилась. Германия оккупировала всю Европу. Британия стала последним оплотом сопротивления.')}>
+                <strong>WWII Alternate:</strong> "В 1951 году Вторая мировая..."
+              </div>
+              <div className="example-item" onClick={() => setBasePrompt('Технологии развились раньше — уже в 1951 году существует интернет, а искусственный интеллект становится реальностью.')}>
+                <strong>Tech Revolution:</strong> "Технологии развились раньше..."
+              </div>
+            </details>
           </div>
         </div>
 
@@ -418,6 +437,56 @@ export const CreateWorld: React.FC<CreateWorldProps> = ({
           color: #666;
           margin-top: 8px;
           font-style: italic;
+        }
+
+        .prompt-meta {
+          display: flex;
+          justify-content: flex-end;
+          margin-top: 4px;
+        }
+
+        .char-count {
+          font-size: 11px;
+          color: #555;
+        }
+
+        .prompt-examples {
+          margin-top: 12px;
+          padding: 10px;
+          background: #1a1a2e;
+          border-radius: 6px;
+          border: 1px solid #333;
+        }
+
+        .prompt-examples summary {
+          cursor: pointer;
+          font-size: 13px;
+          color: #888;
+          user-select: none;
+        }
+
+        .prompt-examples summary:hover {
+          color: #aaa;
+        }
+
+        .example-item {
+          margin-top: 10px;
+          padding: 8px 10px;
+          background: #252540;
+          border-radius: 4px;
+          font-size: 12px;
+          color: #aaa;
+          cursor: pointer;
+          transition: background 0.2s;
+        }
+
+        .example-item:hover {
+          background: #2a2a4a;
+          color: #fff;
+        }
+
+        .example-item strong {
+          color: #4a9eff;
         }
 
         .map-preview-container {

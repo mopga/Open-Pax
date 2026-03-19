@@ -108,6 +108,16 @@ export const worldApi = {
       body: JSON.stringify(region),
     });
   },
+
+  /**
+   * Обновить промпт мира
+   */
+  updatePrompt: (worldId: string, basePrompt: string): Promise<{ success: boolean; basePrompt: string }> => {
+    return fetchApi(`/worlds/${worldId}/prompt`, {
+      method: 'PATCH',
+      body: JSON.stringify({ basePrompt }),
+    });
+  },
 };
 
 

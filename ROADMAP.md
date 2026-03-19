@@ -233,13 +233,27 @@ open-pax/
 
 ---
 
-### Phase 6: World Presets
+### Phase 6: World Presets with Custom Prompts ✅
 
-**Статус:** Запланирован (Medium)
+**Статус:** Завершено
 
-**Возможности:**
-- Шаблоны миров (Cold War, WWI, Fantasy)
-- Быстрое создание типовых конфигураций
+**Цель:** Пользователь может задать кастомный промпт мира, определяющий события и поведение NPC
+
+**Функционал:**
+- Улучшенный редактор промпта в CreateWorld с примерами и подсказками
+- In-game редактор промпта (кнопка "📝 Промпт" в игре)
+- API endpoint `PATCH /api/worlds/:id/prompt` для обновления промпта
+- Промпт хранится в базе и используется для NPC поведения
+
+**Backend файлы:**
+- `backend-nest/src/index.ts` — PATCH /api/worlds/:id/prompt endpoint
+- `backend-nest/src/repositories/world.repository.ts` — update method
+
+**Frontend файлы:**
+- `frontend/src/components/WorldBuilder/CreateWorld.tsx` — улучшенный редактор с примерами
+- `frontend/src/App.tsx` — in-game редактор промпта
+- `frontend/src/services/api.ts` — worldApi.updatePrompt method
+- `frontend/src/index.css` — стили для модального окна
 
 ---
 

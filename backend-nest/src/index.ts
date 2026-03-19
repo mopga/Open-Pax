@@ -145,6 +145,24 @@ app.get('/api/worlds/:id', (req, res) => {
   });
 });
 
+// Update world basePrompt
+app.patch('/api/worlds/:id/prompt', (req, res) => {
+  const world = worldRepository.findById(req.params.id);
+  if (!world) {
+    res.status(404).json({ error: 'World not found' });
+    return;
+  }
+
+  const { basePrompt } = req.body;
+  if (typeof basePrompt !== 'string') {
+    res.status(400).json({ error: 'basePrompt must be a string' });
+    return;
+  }
+
+  worldRepository.update(req.params.id, { basePrompt });
+  res.json({ success: true, basePrompt });
+});
+
 app.post('/api/worlds/:id/regions', (req, res) => {
   const world = worldRepository.findById(req.params.id);
   if (!world) {
