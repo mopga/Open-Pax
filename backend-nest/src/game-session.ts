@@ -839,4 +839,21 @@ export class GameSession {
 
     return processed;
   }
+
+  /**
+   * Advance date without processing actions (for time-skip without pending actions)
+   */
+  advanceDate(jumpDays: number = 30): { newDate: string; newTurn: number } {
+    const periodStart = this.currentDate;
+    this.currentTurn++;
+    const date = new Date(this.currentDate);
+    date.setDate(date.getDate() + jumpDays);
+    this.currentDate = date.toISOString().split('T')[0];
+
+    // Persist to DB
+    gameRepository.updateTurn(this.id, this.currentTurn);
+
+    console.log('[GameSession] Advanced date:', periodStart, '->', this.currentDate);
+    return { newDate: this.currentDate, newTurn: this.currentTurn };
+  }
 }

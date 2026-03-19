@@ -241,6 +241,23 @@ export const gameApi = {
       body: JSON.stringify({ jump_days: jumpDays || 30 }),
     });
   },
+
+  /**
+   * Time-skip: process pending actions OR just advance date
+   */
+  timeSkip: (gameId: string, jumpDays?: number): Promise<{
+    type: 'actions_processed' | 'date_advanced';
+    processedCount?: number;
+    actions?: any[];
+    newDate?: string;
+    newTurn?: number;
+    jumpDays?: number;
+  }> => {
+    return fetchApi(`/games/${gameId}/time-skip`, {
+      method: 'POST',
+      body: JSON.stringify({ jump_days: jumpDays || 30 }),
+    });
+  },
 };
 
 // ============================================================================

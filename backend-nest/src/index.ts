@@ -528,6 +528,51 @@ app.post('/api/games/:id/actions/process-all', async (req, res) => {
 });
 
 // ============================================================================
+// Time-Skip (Phase 4)
+// ============================================================================
+
+// Time-skip: process pending actions if any, otherwise just advance date
+app.post('/api/games/:id/time-skip', async (req, res) => {
+  const gameId = req.params.id;
+  const { jump_days = 30 } = req.body;
+
+  try {
+    const session = getSessionRegistry().getSessionOrThrow(gameId);
+    const pendingActions = session.getPendingActions();
+
+    if (pendingActions.length > 0) {
+      // Process all pending actions
+      const processed = await session.processAllPendingActions(jump_days);
+
+      console.log('[TIME-SKIP] Processed pending actions:', processed.length);
+      res.json({
+        type: 'actions_processed',
+        processedCount: processed.length,
+        actions: processed,
+      });
+    } else {
+      // Just advance date without processing
+      const result = session.advanceDate(jump_days);
+
+      console.log('[TIME-SKIP] Advanced date only');
+      res.json({
+        type: 'date_advanced',
+        newDate: result.newDate,
+        newTurn: result.newTurn,
+        jumpDays: jump_days,
+      });
+    }
+  } catch (e: any) {
+    console.error('[TIME-SKIP] Error:', e);
+    if (e.message.includes('not found')) {
+      res.status(404).json({ error: e.message });
+    } else {
+      res.status(500).json({ error: 'Failed to time-skip' });
+    }
+  }
+});
+
+// ============================================================================
 // Start Server
 // ============================================================================
 

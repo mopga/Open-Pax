@@ -520,6 +520,64 @@ function App() {
     setLoading(false);
   };
 
+  // Time-skip handler (Phase 4)
+  const handleTimeSkip = async (days: number) => {
+    if (!currentGame) return;
+
+    setShowJumpMenu(false);
+    setLoading(true);
+
+    try {
+      const result = await gameApi.timeSkip(currentGame.id, days);
+
+      if (result.type === 'actions_processed') {
+        // Add each processed action to history
+        for (const action of result.actions || []) {
+          if (action.result) {
+            setHistory(prev => [...prev, {
+              turn: action.result.turn,
+              action: action.text,
+              result: action.result.narration,
+              events: action.result.events,
+              periodStart: action.result.periodStart,
+              periodEnd: action.result.periodEnd,
+            }]);
+          }
+        }
+
+        // Update game state from last action
+        const lastAction = result.actions?.[result.actions.length - 1];
+        if (lastAction?.result) {
+          setCurrentGame(prev => prev ? {
+            ...prev,
+            currentTurn: (lastAction.result as any).turn + 1,
+            currentDate: (lastAction.result as any).periodEnd,
+          } : prev);
+        }
+      } else if (result.type === 'date_advanced') {
+        // Just update date - add a time-skip entry to history
+        const startDate = currentGame.currentDate || '1951-01-01';
+        setHistory(prev => [...prev, {
+          turn: currentGame.currentTurn,
+          action: `⏭️ Time-skip`,
+          result: `Продвинуто на ${days} дней`,
+          periodStart: startDate,
+          periodEnd: result.newDate,
+        }]);
+
+        setCurrentGame(prev => prev ? {
+          ...prev,
+          currentTurn: result.newTurn!,
+          currentDate: result.newDate,
+        } : prev);
+      }
+    } catch (e) {
+      console.error('Time-skip failed:', e);
+    }
+
+    setLoading(false);
+  };
+
   // Выбрать страну
   const handleCountryChange = (regionId: string) => {
     setSelectedRegion(regionId);
@@ -606,11 +664,11 @@ function App() {
               {showJumpMenu && (
                 <div className="time-skip-dropdown">
                   <div className="dropdown-header">Тайм-скип</div>
-                  <button onClick={() => { setJumpDays(7); setShowJumpMenu(false); }}>1 неделя</button>
-                  <button onClick={() => { setJumpDays(30); setShowJumpMenu(false); }}>1 месяц</button>
-                  <button onClick={() => { setJumpDays(90); setShowJumpMenu(false); }}>3 месяца</button>
-                  <button onClick={() => { setJumpDays(180); setShowJumpMenu(false); }}>6 месяцев</button>
-                  <button onClick={() => { setJumpDays(365); setShowJumpMenu(false); }}>1 год</button>
+                  <button onClick={() => handleTimeSkip(7)}>1 неделя</button>
+                  <button onClick={() => handleTimeSkip(30)}>1 месяц</button>
+                  <button onClick={() => handleTimeSkip(90)}>3 месяца</button>
+                  <button onClick={() => handleTimeSkip(180)}>6 месяцев</button>
+                  <button onClick={() => handleTimeSkip(365)}>1 год</button>
                   <div className="dropdown-divider"></div>
                   <div className="custom-jump">
                     <input
@@ -624,7 +682,7 @@ function App() {
                     <span>дней</span>
                     <button
                       className="btn-confirm-jump"
-                      onClick={() => setShowJumpMenu(false)}
+                      onClick={() => handleTimeSkip(jumpDays)}
                     >
                       ✓
                     </button>
