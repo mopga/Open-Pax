@@ -36,20 +36,19 @@ function App() {
   const [currentGame, setCurrentGame] = useState<Game | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
   const [changedRegions, setChangedRegions] = useState<string[]>([]);
-  const [playerActions, setPlayerActions] = useState<string[]>(['']);
+  const [pendingActions, setPendingActions] = useState<{ id: string; text: string }[]>([]);
   const [jumpDays, setJumpDays] = useState<number>(30);
   const [showJumpMenu, setShowJumpMenu] = useState(false);
   const [history, setHistory] = useState<{ turn: number; action: string; result: string; events?: string[]; date?: string }[]>([]);
   const [loading, setLoading] = useState(false);
-  const [showAdvisor, setShowAdvisor] = useState(false);
-  const [advisorMode, setAdvisorMode] = useState<'advisor' | 'suggestions'>('advisor');
-  const [advisorTips, setAdvisorTips] = useState<string>('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [newActionText, setNewActionText] = useState('');
   const [savedGames, setSavedGames] = useState<any[]>([]);
   const [showSavesMenu, setShowSavesMenu] = useState(false);
-  const [advisorMaximized, setAdvisorMaximized] = useState(false);
-  const [advisorSize, setAdvisorSize] = useState({ width: 400, height: 500 });
-  const advisorRef = useRef<HTMLDivElement>(null);
+  const [suggestionsMaximized, setSuggestionsMaximized] = useState(false);
+  const [suggestionsSize, setSuggestionsSize] = useState({ width: 400, height: 500 });
+  const suggestionsRef = useRef<HTMLDivElement>(null);
   const historyEndRef = useRef<HTMLDivElement>(null);
   const [isResizing, setIsResizing] = useState(false);
 
@@ -58,14 +57,14 @@ function App() {
     historyEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [history]);
 
-  // Resize handler for advisor panel
+  // Resize handler for suggestions panel
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing || !advisorRef.current) return;
-      const rect = advisorRef.current.getBoundingClientRect();
+      if (!isResizing || !suggestionsRef.current) return;
+      const rect = suggestionsRef.current.getBoundingClientRect();
       const newWidth = Math.max(300, Math.min(800, e.clientX - rect.left));
       const newHeight = Math.max(300, Math.min(700, window.innerHeight - rect.top - 20));
-      setAdvisorSize({ width: newWidth, height: newHeight });
+      setSuggestionsSize({ width: newWidth, height: newHeight });
     };
 
     const handleMouseUp = () => {
@@ -412,7 +411,6 @@ function App() {
         date: `${jumpDays} дней`,
       }]);
       setCurrentGame({ ...currentGame, currentTurn: turn + 1 });
-      setPlayerActions(['']);
       setLoading(false);
       return;
     }
@@ -494,8 +492,6 @@ function App() {
       }]);
     }
 
-    // Очистить список действий
-    setPlayerActions(['']);
     setLoading(false);
   };
 
@@ -658,64 +654,8 @@ function App() {
             </div>
           )}
 
-          {/* Actions input */}
-          <div className="action-section">
-            <div className="actions-header">
-              <span>Ваши действия:</span>
-              <button
-                className="btn-add-action"
-                onClick={() => setPlayerActions([...playerActions, ''])}
-              >
-                + Добавить действие
-              </button>
-            </div>
-
-            <div className="actions-list">
-              {playerActions.map((action, index) => (
-                <div key={index} className="action-item">
-                  <div className="action-label">Действие {index + 1}</div>
-                  <div className="action-input-row">
-                    <textarea
-                      value={action}
-                      onChange={(e) => {
-                        const newActions = [...playerActions];
-                        newActions[index] = e.target.value;
-                        setPlayerActions(newActions);
-                      }}
-                      placeholder="Опишите ваше действие..."
-                      rows={2}
-                    />
-                    {playerActions.length > 1 && (
-                      <button
-                        className="btn-remove-action"
-                        onClick={() => {
-                          const newActions = playerActions.filter((_, i) => i !== index);
-                          setPlayerActions(newActions);
-                        }}
-                      >
-                        ×
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <button
-              className="btn-turn"
-              onClick={() => {
-                const actions = playerActions.filter(a => a.trim());
-                if (actions.length > 0) {
-                  handleSubmitActions(actions);
-                }
-              }}
-              disabled={loading || !playerActions.some(a => a.trim())}
-            >
-              {loading ? 'Думаю...' : `Ход (+${playerActions.filter(a => a.trim()).length}) →`}
-            </button>
-
-            {/* Save/Load buttons */}
-            <div className="save-load-section">
+          {/* Save/Load buttons */}
+          <div className="save-load-section">
               <button
                 className="btn-save"
                 onClick={async () => {
@@ -762,7 +702,6 @@ function App() {
               >
                 📂 Загрузить
               </button>
-            </div>
           </div>
 
           {/* Events from last turn */}
@@ -777,43 +716,42 @@ function App() {
             </div>
           )}
 
-          {/* Floating Advisor Button */}
-          {!showAdvisor && (
+          {/* Floating Suggestions Button */}
+          {!showSuggestions && (
             <button
               className="floating-advisor-btn"
               onClick={() => {
-                setShowAdvisor(true);
-                setAdvisorMode('advisor');
-                // Auto-generate initial advice
-                if (!advisorTips && currentGame) {
+                setShowSuggestions(true);
+                // Load suggestions if not loaded
+                if (suggestions.length === 0 && currentGame) {
                   (async () => {
                     try {
-                      const tips = await gameApi.getAdvisor(currentGame.id, currentGame.players[0].id);
-                      setAdvisorTips((tips.tips || []).join('\n'));
+                      const data = await gameApi.getSuggestions(currentGame.id);
+                      setSuggestions(data.suggestions || []);
                     } catch (e) { console.error(e); }
                   })();
                 }
               }}
-              title="Советник"
+              title="Подсказки"
             >
-              💡
+              📋
             </button>
           )}
 
-          {/* Floating Advisor Panel */}
-          {showAdvisor && (
+          {/* Floating Suggestions Panel */}
+          {showSuggestions && (
             <div
-              ref={advisorRef}
-              className={`floating-advisor-panel ${advisorMaximized ? 'maximized' : ''}`}
+              ref={suggestionsRef}
+              className={`floating-advisor-panel ${suggestionsMaximized ? 'maximized' : ''}`}
               style={{
-                width: advisorMaximized ? '90%' : `${advisorSize.width}px`,
-                height: advisorMaximized ? '80vh' : `${advisorSize.height}px`,
-                left: advisorMaximized ? '5%' : '20px',
-                bottom: advisorMaximized ? '10vh' : '80px',
+                width: suggestionsMaximized ? '90%' : `${suggestionsSize.width}px`,
+                height: suggestionsMaximized ? '80vh' : `${suggestionsSize.height}px`,
+                left: suggestionsMaximized ? '5%' : '20px',
+                bottom: suggestionsMaximized ? '10vh' : '80px',
               }}
             >
               {/* Resize handle */}
-              {!advisorMaximized && (
+              {!suggestionsMaximized && (
                 <div
                   className="resize-handle"
                   onMouseDown={() => setIsResizing(true)}
@@ -821,80 +759,39 @@ function App() {
               )}
 
               <div className="floating-advisor-header">
-                <div className="advisor-tabs">
-                  <button
-                    className={`advisor-tab ${advisorMode === 'advisor' ? 'active' : ''}`}
-                    onClick={() => setAdvisorMode('advisor')}
-                  >
-                    💡 Советник
-                  </button>
-                  <button
-                    className={`advisor-tab ${advisorMode === 'suggestions' ? 'active' : ''}`}
-                    onClick={async () => {
-                      setAdvisorMode('suggestions');
-                      if (suggestions.length === 0 && currentGame) {
-                        try {
-                          const data = await gameApi.getSuggestions(currentGame.id);
-                          setSuggestions(data.suggestions || []);
-                        } catch (e) { console.error(e); }
-                      }
-                    }}
-                  >
-                    📋 Подсказки
-                  </button>
-                </div>
+                <div className="panel-title">📋 Подсказки</div>
                 <div className="header-buttons">
                   <button
                     className="btn-maximize"
-                    onClick={() => setAdvisorMaximized(!advisorMaximized)}
-                    title={advisorMaximized ? 'Свернуть' : 'Развернуть'}
+                    onClick={() => setSuggestionsMaximized(!suggestionsMaximized)}
+                    title={suggestionsMaximized ? 'Свернуть' : 'Развернуть'}
                   >
-                    {advisorMaximized ? '−' : '□'}
+                    {suggestionsMaximized ? '−' : '□'}
                   </button>
-                  <button className="btn-close" onClick={() => setShowAdvisor(false)}>×</button>
+                  <button className="btn-close" onClick={() => setShowSuggestions(false)}>×</button>
                 </div>
               </div>
 
-              {/* Advisor Tab */}
-              {advisorMode === 'advisor' && (
-                <>
-                  <div className="floating-advisor-messages">
-                    {advisorTips ? (
-                      advisorTips.split('\n').map((line, i) => (
-                        <div key={i} className="advisor-message">
-                          {line || <br/>}
-                        </div>
-                      ))
-                    ) : (
-                      <div className="advisor-message loading">Загрузка совета...</div>
-                    )}
-                  </div>
-                  <div className="floating-advisor-input">
-                    <button
-                      className="btn-refresh-advice"
-                      onClick={async () => {
-                        if (!currentGame) return;
-                        setAdvisorTips('Загрузка...');
-                        try {
-                          const tips = await gameApi.getAdvisor(currentGame.id, currentGame.players[0].id);
-                          setAdvisorTips((tips.tips || []).join('\n'));
-                        } catch (e) {
-                          console.error(e);
-                          setAdvisorTips('Ошибка получения совета');
-                        }
-                      }}
-                    >
-                      🔄 Новый совет
-                    </button>
-                  </div>
-                </>
-              )}
+              {/* Suggestions Content */}
+              <div className="suggestions-content">
+                {/* Generate Button */}
+                <button
+                  className="btn-generate-suggestions"
+                  onClick={async () => {
+                    if (!currentGame) return;
+                    try {
+                      const data = await gameApi.getSuggestions(currentGame.id);
+                      setSuggestions(data.suggestions || []);
+                    } catch (e) { console.error(e); }
+                  }}
+                >
+                  🔄 Сгенерировать подсказки
+                </button>
 
-              {/* Suggestions Tab */}
-              {advisorMode === 'suggestions' && (
-                <div className="floating-advisor-messages suggestions-list">
-                  {suggestions.length > 0 ? (
-                    suggestions.map((s, i) => (
+                {/* Suggestions List */}
+                {suggestions.length > 0 && (
+                  <div className="suggestions-list">
+                    {suggestions.map((s, i) => (
                       <div key={i} className="suggestion-item">
                         <div className="suggestion-topic">📌 {s.topic}</div>
                         <div className="suggestion-description">{s.description}</div>
@@ -903,20 +800,93 @@ function App() {
                             key={ai}
                             className="suggestion-action"
                             onClick={() => {
-                              // Add action to player's actions
-                              setPlayerActions(prev => [...prev, a.content]);
+                              // Add to pending actions
+                              setPendingActions(prev => [...prev, {
+                                id: `suggestion-${Date.now()}-${ai}`,
+                                text: a.content
+                              }]);
                             }}
                           >
-                            → {a.title}: {a.content}
+                            + {a.title}: {a.content}
                           </div>
                         ))}
                       </div>
-                    ))
+                    ))}
+                  </div>
+                )}
+
+                {/* Pending Actions Section */}
+                <div className="pending-actions-section">
+                  <div className="pending-header">Ожидают обработки:</div>
+                  {pendingActions.length === 0 ? (
+                    <div className="pending-empty">Нет действий</div>
                   ) : (
-                    <div className="advisor-message loading">Загрузка подсказок...</div>
+                    <div className="pending-list">
+                      {pendingActions.map((action, index) => (
+                        <div key={action.id} className="pending-item">
+                          <span className="pending-number">{index + 1}.</span>
+                          <span className="pending-text">{action.text}</span>
+                          <button
+                            className="btn-remove-pending"
+                            onClick={() => {
+                              setPendingActions(prev => prev.filter(a => a.id !== action.id));
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
-              )}
+
+                {/* Manual Action Input */}
+                <div className="manual-action-input">
+                  <textarea
+                    value={newActionText}
+                    onChange={(e) => setNewActionText(e.target.value)}
+                    placeholder="Опишите действие вручную..."
+                    rows={2}
+                  />
+                  <button
+                    className="btn-add-pending"
+                    onClick={() => {
+                      if (newActionText.trim()) {
+                        setPendingActions(prev => [...prev, {
+                          id: `manual-${Date.now()}`,
+                          text: newActionText.trim()
+                        }]);
+                        setNewActionText('');
+                      }
+                    }}
+                    disabled={!newActionText.trim()}
+                  >
+                    + Добавить
+                  </button>
+                </div>
+              </div>
+
+              {/* Submit Button */}
+              <div className="suggestions-footer">
+                <button
+                  className="btn-submit-actions"
+                  disabled={pendingActions.length === 0 || loading}
+                  onClick={async () => {
+                    if (!currentGame || pendingActions.length === 0) return;
+                    const actions = pendingActions.map(a => a.text);
+                    setLoading(true);
+                    try {
+                      await handleSubmitActions(actions);
+                      setPendingActions([]);
+                    } catch (e) {
+                      console.error(e);
+                    }
+                    setLoading(false);
+                  }}
+                >
+                  {loading ? 'Думаю...' : `Отправить ${pendingActions.length} действие(й) →`}
+                </button>
+              </div>
             </div>
           )}
 
