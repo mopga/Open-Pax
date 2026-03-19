@@ -115,6 +115,7 @@ open-pax/
 | GET | `/api/games/:id/actions/queue` | Получить очередь действий |
 | POST | `/api/games/:id/actions/process` | Обработать одно действие |
 | POST | `/api/games/:id/actions/process-all` | Обработать все действия |
+| POST | `/api/games/:id/time-skip` | Time-skip с выбором периода |
 
 ### Saves
 | Method | Endpoint | Description |
@@ -185,18 +186,28 @@ open-pax/
 
 ---
 
-### Phase 4: Time-Skip Integration
+### Phase 4: Time-Skip Integration ✅
 
-**Статус:** Запланирован
+**Статус:** Завершено (94220d0)
 
 **Цель:** Time-skip запускает обработку очереди
 
-**Flow:**
-1. Клик на time-skip (→)
-2. Dropdown с выбором периода (1 неделя, 1 месяц, 3 месяца)
-3. Подтверждение
-4. Если есть pending actions → обработать все
-5. Если нет → просто продвинуть дату
+**Функционал:**
+- `advanceDate(jumpDays)` в GameSession - продвигает дату без обработки действий
+- `POST /api/games/:id/time-skip` endpoint
+  - Если есть pending actions → обрабатывает все последовательно
+  - Если нет pending actions → просто продвигает дату
+  - Возвращает `{ type: 'actions_processed' | 'date_advanced', ... }`
+- `handleTimeSkip()` на фронтенде
+- Dropdown кнопки вызывают time-skip напрямую
+
+**Backend файлы:**
+- `backend-nest/src/game-session.ts` — advanceDate method
+- `backend-nest/src/index.ts` — /time-skip endpoint
+
+**Frontend файлы:**
+- `frontend/src/App.tsx` — handleTimeSkip, dropdown handlers
+- `frontend/src/services/api.ts` — timeSkip method
 
 ---
 
