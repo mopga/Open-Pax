@@ -10,7 +10,7 @@ import { CreateWorld, type WorldConfig } from './components/WorldBuilder/CreateW
 import { TemplateSelector } from './components/Game/TemplateSelector';
 import { CountrySelector } from './components/Game/CountrySelector';
 import { gameApi, worldApi, mapApi, savesApi } from './services/api';
-import type { Region, World, Game, WorldTemplate } from './types';
+import type { Region, World, Game, WorldTemplate, GameStatus } from './types';
 
 // Вспомогательная функция: точки в SVG path
 const pointsToPath = (points: { x: number; y: number }[]): string => {
@@ -56,6 +56,7 @@ function App() {
   const [generatedWorld, setGeneratedWorld] = useState<{
     date: string;
     countries: Record<string, any>;
+    regions: Record<string, Region>;
     playerCountryCode: string;
   } | null>(null);
   const [currentWorld, setCurrentWorld] = useState<World | null>(null);
@@ -1193,8 +1194,37 @@ function App() {
               );
               setGeneratedWorld(worldData);
 
-              // For now, just show game view with the generated data
-              // TODO: Create proper game session with Mapbox integration
+              // Create World object from generated data for the map
+              const world: World = {
+                id: `template-${selectedTemplate.id}-${Date.now()}`,
+                name: selectedTemplate.name,
+                description: selectedTemplate.description,
+                startDate: worldData.date,
+                basePrompt: selectedTemplate.base_prompt,
+                historicalAccuracy: 0.8,
+                regions: worldData.regions || {},
+                blocs: {},
+              };
+              setCurrentWorld(world);
+              setSelectedRegion(countryCode);
+
+              // Create a basic game session
+              const gameId = `game-${Date.now()}`;
+              setCurrentGame({
+                id: gameId,
+                world,
+                players: [{
+                  id: `player-${countryCode}`,
+                  name: 'Player',
+                  regionId: countryCode,
+                  color: worldData.countries[countryCode]?.color || '#888888',
+                }],
+                currentTurn: 1,
+                currentDate: worldData.date,
+                maxTurns: 100,
+                status: 'playing' as GameStatus,
+              });
+
               console.log('[DEBUG] Generated world:', worldData);
 
               // Show game view

@@ -154,20 +154,60 @@ app.post('/api/worlds/generate', async (req, res) => {
   try {
     const template = JSON.parse(fs.readFileSync(templatePath, 'utf-8'));
 
+    // Load countries GeoJSON for map display
+    const geojsonPath = path.join(process.cwd(), 'data', 'geojson', 'countries.geojson');
+    let geojsonFeatures: Record<string, any> = {};
+    if (fs.existsSync(geojsonPath)) {
+      const geojsonData = JSON.parse(fs.readFileSync(geojsonPath, 'utf-8'));
+      for (const feature of geojsonData.features || []) {
+        const code = feature.properties?.code;
+        if (code) {
+          geojsonFeatures[code] = feature;
+        }
+      }
+    }
+
     // Generate world state via Balance Agent
     const balanceAgent = new BalanceAgent(llmProvider);
     const worldState = await balanceAgent.generateInitialWorldState(template);
 
     // Convert Map to object for JSON response
     const countriesObj: Record<string, any> = {};
+    const regionsObj: Record<string, any> = {};
+
     for (const [code, state] of worldState.countries) {
       countriesObj[code] = state;
+
+      // Create region with GeoJSON for map display
+      const geojson = geojsonFeatures[code];
+      if (geojson) {
+        regionsObj[code] = {
+          id: code,
+          name: state.name,
+          color: state.color || '#888888',
+          geojson: JSON.stringify(geojson),
+          owner: code === playerCountryCode ? 'player' : 'npc',
+          population: state.population || 0,
+          gdp: state.gdp || 0,
+          militaryPower: state.military || 0,
+          objects: [],
+          borders: [],
+          status: 'active',
+          metadata: {
+            ideology: state.ideology,
+            allies: state.allies,
+            enemies: state.enemies,
+            status: state.status,
+          },
+        };
+      }
     }
 
     res.json({
       templateId,
       date: worldState.date,
       countries: countriesObj,
+      regions: regionsObj,
       playerCountryCode,
     });
   } catch (e: any) {

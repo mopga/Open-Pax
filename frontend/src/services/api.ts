@@ -128,6 +128,7 @@ export const worldApi = {
     templateId: string;
     date: string;
     countries: Record<string, any>;
+    regions: Record<string, any>;
     playerCountryCode: string;
   }> => {
     return fetchApi('/worlds/generate', {
