@@ -190,6 +190,22 @@ Military_power = base_strength * equipment_level * training * tech_modifier
 
 ---
 
+#### Phase 6: Actions Panel + Game Flow (2026-03-20)
+**Rename Suggestions → Actions and connect template selection to game creation.**
+
+1. **Rename Suggestions → Actions**
+   - Floating panel: "📋 Подсказки" → "⚡ Действия"
+   - State: `suggestions` → `actions`
+   - `showSuggestions` → `showActions`
+
+2. **Template → Game Flow**
+   - `worldApi.generateFromTemplate()` - calls Balance Agent
+   - Stores generated world state in `generatedWorld`
+   - Shows loading state during generation (~5 min for 41 countries)
+   - TODO: Create proper game session with Mapbox integration
+
+---
+
 #### Previous Changes (2026-03-18)
 
 1. **Map Zoom/Pan** — зум колесом мыши и перетаскивание

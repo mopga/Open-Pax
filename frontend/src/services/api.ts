@@ -120,6 +120,21 @@ export const worldApi = {
       body: JSON.stringify({ basePrompt }),
     });
   },
+
+  /**
+   * Создать мир из шаблона (через Balance Agent)
+   */
+  generateFromTemplate: (templateId: string, playerCountryCode: string): Promise<{
+    templateId: string;
+    date: string;
+    countries: Record<string, any>;
+    playerCountryCode: string;
+  }> => {
+    return fetchApi('/worlds/generate', {
+      method: 'POST',
+      body: JSON.stringify({ templateId, playerCountryCode }),
+    });
+  },
 };
 
 

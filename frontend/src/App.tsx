@@ -53,6 +53,11 @@ function App() {
   const [selectedMapForWorld, setSelectedMapForWorld] = useState<LocalMap | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<WorldTemplate | null>(null);
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
+  const [generatedWorld, setGeneratedWorld] = useState<{
+    date: string;
+    countries: Record<string, any>;
+    playerCountryCode: string;
+  } | null>(null);
   const [currentWorld, setCurrentWorld] = useState<World | null>(null);
   const [currentGame, setCurrentGame] = useState<Game | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
@@ -70,14 +75,14 @@ function App() {
     date?: string; // Legacy fallback
   }[]>([]);
   const [loading, setLoading] = useState(false);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [showActions, setShowActions] = useState(false);
+  const [actions, setActions] = useState<any[]>([]);
   const [newActionText, setNewActionText] = useState('');
   const [savedGames, setSavedGames] = useState<any[]>([]);
   const [showSavesMenu, setShowSavesMenu] = useState(false);
-  const [suggestionsMaximized, setSuggestionsMaximized] = useState(false);
-  const [suggestionsSize, setSuggestionsSize] = useState({ width: 400, height: 500 });
-  const suggestionsRef = useRef<HTMLDivElement>(null);
+  const [actionsMaximized, setActionsMaximized] = useState(false);
+  const [actionsSize, setActionsSize] = useState({ width: 400, height: 500 });
+  const actionsRef = useRef<HTMLDivElement>(null);
   const historyEndRef = useRef<HTMLDivElement>(null);
   const [isResizing, setIsResizing] = useState(false);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
@@ -88,14 +93,14 @@ function App() {
     historyEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [history]);
 
-  // Resize handler for suggestions panel
+  // Resize handler for actions panel
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing || !suggestionsRef.current) return;
-      const rect = suggestionsRef.current.getBoundingClientRect();
+      if (!isResizing || !actionsRef.current) return;
+      const rect = actionsRef.current.getBoundingClientRect();
       const newWidth = Math.max(300, Math.min(800, e.clientX - rect.left));
       const newHeight = Math.max(300, Math.min(700, window.innerHeight - rect.top - 20));
-      setSuggestionsSize({ width: newWidth, height: newHeight });
+      setActionsSize({ width: newWidth, height: newHeight });
     };
 
     const handleMouseUp = () => {
@@ -818,42 +823,42 @@ function App() {
             </div>
           )}
 
-          {/* Floating Suggestions Button */}
-          {!showSuggestions && (
+          {/* Floating Actions Button */}
+          {!showActions && (
             <button
               className="floating-advisor-btn"
               onClick={() => {
-                setShowSuggestions(true);
-                // Load suggestions if not loaded
-                if (suggestions.length === 0 && currentGame) {
+                setShowActions(true);
+                // Load actions if not loaded
+                if (actions.length === 0 && currentGame) {
                   (async () => {
                     try {
                       const data = await gameApi.getSuggestions(currentGame.id);
-                      setSuggestions(data.suggestions || []);
+                      setActions(data.suggestions || []);
                     } catch (e) { console.error(e); }
                   })();
                 }
               }}
-              title="Подсказки"
+              title="Действия"
             >
-              📋
+              ⚡
             </button>
           )}
 
-          {/* Floating Suggestions Panel */}
-          {showSuggestions && (
+          {/* Floating Actions Panel */}
+          {showActions && (
             <div
-              ref={suggestionsRef}
-              className={`floating-advisor-panel ${suggestionsMaximized ? 'maximized' : ''}`}
+              ref={actionsRef}
+              className={`floating-advisor-panel ${actionsMaximized ? 'maximized' : ''}`}
               style={{
-                width: suggestionsMaximized ? '90%' : `${suggestionsSize.width}px`,
-                height: suggestionsMaximized ? '80vh' : `${suggestionsSize.height}px`,
-                left: suggestionsMaximized ? '5%' : '20px',
-                bottom: suggestionsMaximized ? '10vh' : '80px',
+                width: actionsMaximized ? '90%' : `${actionsSize.width}px`,
+                height: actionsMaximized ? '80vh' : `${actionsSize.height}px`,
+                left: actionsMaximized ? '5%' : '20px',
+                bottom: actionsMaximized ? '10vh' : '80px',
               }}
             >
               {/* Resize handle */}
-              {!suggestionsMaximized && (
+              {!actionsMaximized && (
                 <div
                   className="resize-handle"
                   onMouseDown={() => setIsResizing(true)}
@@ -861,20 +866,20 @@ function App() {
               )}
 
               <div className="floating-advisor-header">
-                <div className="panel-title">📋 Подсказки</div>
+                <div className="panel-title">⚡ Действия</div>
                 <div className="header-buttons">
                   <button
                     className="btn-maximize"
-                    onClick={() => setSuggestionsMaximized(!suggestionsMaximized)}
-                    title={suggestionsMaximized ? 'Свернуть' : 'Развернуть'}
+                    onClick={() => setActionsMaximized(!actionsMaximized)}
+                    title={actionsMaximized ? 'Свернуть' : 'Развернуть'}
                   >
-                    {suggestionsMaximized ? '−' : '□'}
+                    {actionsMaximized ? '−' : '□'}
                   </button>
-                  <button className="btn-close" onClick={() => setShowSuggestions(false)}>×</button>
+                  <button className="btn-close" onClick={() => setShowActions(false)}>×</button>
                 </div>
               </div>
 
-              {/* Suggestions Content */}
+              {/* Actions Content */}
               <div className="suggestions-content">
                 {/* Generate Button */}
                 <button
@@ -883,17 +888,17 @@ function App() {
                     if (!currentGame) return;
                     try {
                       const data = await gameApi.getSuggestions(currentGame.id);
-                      setSuggestions(data.suggestions || []);
+                      setActions(data.suggestions || []);
                     } catch (e) { console.error(e); }
                   }}
                 >
-                  🔄 Сгенерировать подсказки
+                  🔄 Сгенерировать действия
                 </button>
 
-                {/* Suggestions List */}
-                {suggestions.length > 0 && (
+                {/* Actions List */}
+                {actions.length > 0 && (
                   <div className="suggestions-list">
-                    {suggestions.map((s, i) => (
+                    {actions.map((s, i) => (
                       <div key={i} className="suggestion-item">
                         <div className="suggestion-topic">📌 {s.topic}</div>
                         <div className="suggestion-description">{s.description}</div>
@@ -1177,13 +1182,30 @@ function App() {
       {currentView === 'select-country' && selectedTemplate && (
         <CountrySelector
           template={selectedTemplate}
-          onSelect={(countryCode) => {
+          onSelect={async (countryCode) => {
             setSelectedCountry(countryCode);
-            // For now, just log - we'll create game with template + country later
-            console.log('[DEBUG] Selected country:', countryCode, 'from template:', selectedTemplate.id);
-            // TODO: Create game from template
-            alert('Template: ' + selectedTemplate.name + '\nCountry: ' + countryCode + '\n\nGame creation from templates coming soon!');
-            setCurrentView('menu');
+            setLoading(true);
+            try {
+              // Generate world state from template using Balance Agent
+              const worldData = await worldApi.generateFromTemplate(
+                selectedTemplate.id,
+                countryCode
+              );
+              setGeneratedWorld(worldData);
+
+              // For now, just show game view with the generated data
+              // TODO: Create proper game session with Mapbox integration
+              console.log('[DEBUG] Generated world:', worldData);
+
+              // Show game view
+              setCurrentView('game');
+            } catch (e) {
+              console.error('[Game] Failed to generate world:', e);
+              alert('Failed to generate world. Please try again.');
+              setCurrentView('menu');
+            } finally {
+              setLoading(false);
+            }
           }}
           onBack={() => setCurrentView('select-template')}
         />
