@@ -13,7 +13,7 @@
 
 ---
 
-## Current State (as of 2026-03-18)
+## Current State (as of 2026-03-20)
 
 ### ✅ Implemented
 
@@ -142,6 +142,51 @@
 **Flat Mercator projection instead of globe view.**
 
 - Added `projection: 'mercator'` to MapboxMapView
+
+---
+
+## Architectural Improvements (Based on Review)
+
+### 1. Deterministic Simulation Engine
+**Problem**: LLM currently handles both game logic AND narration, making it a "chatbot" not a strategy game.
+
+**Solution**: Split responsibilities:
+- **LLM**: Generates flavor text, events, narration only
+- **Simulation Core**: Deterministic formulas for GDP, military, population changes
+
+```
+GDP_change = base_production * (1 + trade_bonus) - military_spending - events_modifier
+Military_power = base_strength * equipment_level * training * tech_modifier
+```
+
+### 2. UI Enhancements
+**Missing**: KPI panels, event log/journal, country statistics graphs
+
+**Add**:
+- CountryPanel with real metrics (GDP chart, army count, population trend)
+- Event log panel (scrollable history)
+- Turn summary (brief, not walls of text)
+
+### 3. Simplify LLM Output
+**Problem**: Players don't read long descriptions
+
+**Solution**:
+- LLM generates 2-3 sentence narration max
+- Bullet-point event summaries
+- Optional "detailed view" toggle
+
+### 4. CI/CD Setup
+**Missing**: No GitHub Actions for build/test
+
+**Add** (future):
+- `/.github/workflows/build.yml` — build check on PR
+- Test runner for backend API
+
+### 5. Map Layers (Future)
+- Political borders layer
+- Alliance indicators (colored borders)
+- Conflict zones (red tint)
+- Economic hot-spots (trade routes)
 
 ---
 
