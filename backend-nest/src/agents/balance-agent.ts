@@ -32,6 +32,7 @@ export interface WorldState {
 
 export class BalanceAgent {
   private provider: MiniMaxProvider;
+  private readonly BATCH_SIZE = 6; // Concurrent LLM calls - balanced for rate limits
 
   constructor(provider: MiniMaxProvider) {
     this.provider = provider;
@@ -39,6 +40,7 @@ export class BalanceAgent {
 
   /**
    * Generate initial state for all countries in a template
+   * Uses parallel batch processing for speed (~2-3 min instead of 11+ min)
    */
   async generateInitialWorldState(
     template: {
@@ -49,25 +51,45 @@ export class BalanceAgent {
       start_date: string;
     }
   ): Promise<WorldState> {
-    console.log('[BalanceAgent] Generating initial world state for template:', template.name);
+    console.log('[BalanceAgent] Generating initial world state for template:', template.name, '(batch size:', this.BATCH_SIZE, ')');
 
     const countries = new Map<string, CountryState>();
 
-    // Generate state for each country via LLM
-    for (const code of template.country_codes) {
-      const country = getCountry(code);
-      if (!country) {
-        console.warn('[BalanceAgent] Country not found:', code);
-        continue;
+    // Get valid countries (filter out missing ones upfront)
+    const validCountries = template.country_codes
+      .map(code => getCountry(code))
+      .filter((c): c is Country => c !== null && c !== undefined);
+
+    const total = validCountries.length;
+    console.log('[BalanceAgent] Processing', total, 'countries in parallel batches');
+
+    // Process in batches
+    for (let i = 0; i < validCountries.length; i += this.BATCH_SIZE) {
+      const batch = validCountries.slice(i, i + this.BATCH_SIZE);
+      const batchNum = Math.floor(i / this.BATCH_SIZE) + 1;
+      const totalBatches = Math.ceil(total / this.BATCH_SIZE);
+
+      console.log(`[BalanceAgent] Batch ${batchNum}/${totalBatches} (${batch.length} countries)...`);
+
+      // Generate state for batch in parallel
+      const results = await Promise.all(
+        batch.map(country =>
+          this.generateCountryState(country, template.start_date, template.base_prompt)
+        )
+      );
+
+      // Store results
+      for (const state of results) {
+        countries.set(state.code, state);
       }
 
-      const state = await this.generateCountryState(country, template.start_date, template.base_prompt);
-      countries.set(code, state);
+      console.log(`[BalanceAgent] Batch ${batchNum}/${totalBatches} complete (${countries.size}/${total} countries done)`);
     }
 
     // Balance the world (adjust if one country is too dominant)
     await this.balanceWorld(countries);
 
+    console.log('[BalanceAgent] World generation complete:', countries.size, 'countries');
     return {
       date: template.start_date,
       countries,
