@@ -126,6 +126,7 @@ export const worldApi = {
    */
   generateFromTemplate: (templateId: string, playerCountryCode: string): Promise<{
     templateId: string;
+    worldId: string;
     date: string;
     countries: Record<string, any>;
     regions: Record<string, any>;

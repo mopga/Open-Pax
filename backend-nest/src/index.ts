@@ -203,8 +203,35 @@ app.post('/api/worlds/generate', async (req, res) => {
       }
     }
 
+    // Create world ID and save to database
+    const worldId = uuid().slice(0, 8);
+    worldRepository.create({
+      id: worldId,
+      name: `${template.name} - ${new Date().toLocaleDateString()}`,
+      description: template.description || template.base_prompt?.substring(0, 200) || '',
+      startDate: worldState.date,
+      basePrompt: template.base_prompt,
+      historicalAccuracy: 0.8,
+    });
+
+    // Save each region to database
+    for (const [code, region] of Object.entries(regionsObj)) {
+      worldRepository.addRegion({
+        id: code,
+        worldId,
+        name: region.name,
+        geojson: region.geojson,
+        color: region.color,
+        owner: region.owner,
+        population: region.population,
+        gdp: region.gdp,
+        militaryPower: region.militaryPower,
+      });
+    }
+
     res.json({
       templateId,
+      worldId, // Return worldId for creating game session
       date: worldState.date,
       countries: countriesObj,
       regions: regionsObj,

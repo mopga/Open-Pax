@@ -1187,45 +1187,27 @@ function App() {
             setSelectedCountry(countryCode);
             setLoading(true);
             try {
-              // Generate world state from template using Balance Agent
+              // Generate world state from template using Balance Agent (also saves to DB)
               const worldData = await worldApi.generateFromTemplate(
                 selectedTemplate.id,
                 countryCode
               );
               setGeneratedWorld(worldData);
 
-              // Create World object from generated data for the map
-              const world: World = {
-                id: `template-${selectedTemplate.id}-${Date.now()}`,
-                name: selectedTemplate.name,
-                description: selectedTemplate.description,
-                startDate: worldData.date,
-                basePrompt: selectedTemplate.base_prompt,
-                historicalAccuracy: 0.8,
-                regions: worldData.regions || {},
-                blocs: {},
-              };
-              setCurrentWorld(world);
-              setSelectedRegion(countryCode);
-
-              // Create a basic game session
-              const gameId = `game-${Date.now()}`;
-              setCurrentGame({
-                id: gameId,
-                world,
-                players: [{
-                  id: `player-${countryCode}`,
-                  name: 'Player',
-                  regionId: countryCode,
-                  color: worldData.countries[countryCode]?.color || '#888888',
-                }],
-                currentTurn: 1,
-                currentDate: worldData.date,
-                maxTurns: 100,
-                status: 'playing' as GameStatus,
+              // Create real game session via API
+              const gameResponse = await gameApi.create({
+                world_id: worldData.worldId,
+                player_name: 'Player',
+                player_region_id: countryCode,
               });
 
-              console.log('[DEBUG] Generated world:', worldData);
+              // Load the created game to get full state
+              const game = await gameApi.get(gameResponse.game_id);
+              setCurrentGame(game);
+              setCurrentWorld(game.world);
+              setSelectedRegion(countryCode);
+
+              console.log('[DEBUG] Generated world:', worldData, 'Game:', game);
 
               // Show game view
               setCurrentView('game');
