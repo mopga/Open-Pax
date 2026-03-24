@@ -199,12 +199,14 @@ export class GameSession {
 
   /**
    * Reconstruct session from DB state (used when loading from DB)
+   * Fully restores session including game controller for AI to work
    */
   reconstructFromDB(data: {
     currentTurn: number;
     currentDate: string;
     players: PlayerInfo[];
     regionStates?: [string, RegionState][];
+    basePrompt?: string;
   }): void {
     this.currentTurn = data.currentTurn;
     this.currentDate = data.currentDate;
@@ -234,7 +236,27 @@ export class GameSession {
     }
 
     // Re-initialize game controller with current state
-    // Note: We need the provider, which should be passed during construction
+    this.gameController.initPromptEngine(this.buildGameData());
+
+    // Load world for base prompt
+    const world = worldRepository.findById(this.worldId);
+    const basePrompt = data.basePrompt || world?.base_prompt || '';
+    this.gameController.setupWorld(basePrompt);
+
+    // Re-add player country
+    const player = this.players[0];
+    if (player) {
+      const playerRegion = this.regions.get(player.regionId);
+      this.gameController.addCountry(player.regionId, playerRegion?.name || 'Unknown');
+    }
+
+    // Re-setup NPC countries
+    const regionConfigs = Array.from(this.regions.values())
+      .filter(r => r.owner.startsWith('ai-'))
+      .map(r => ({ id: r.id, name: r.name, owner: r.owner }));
+    this.gameController.setupNPCCountries(regionConfigs);
+
+    console.log('[GameSession] Reconstructed session from DB, turn:', this.currentTurn);
   }
 
   /**
