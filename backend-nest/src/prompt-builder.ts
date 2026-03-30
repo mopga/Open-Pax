@@ -9,6 +9,7 @@ import { buildSimulationPrompt, parseSimulationResponse } from './prompts/simula
 import { buildAdvisorPrompt, parseAdvisorResponse } from './prompts/advisor';
 import { buildSuggestionsPrompt, parseSuggestionsResponse } from './prompts/suggestions';
 import { buildConverterPrompt, parseConverterResponse } from './prompts/converter';
+import { buildNarrationPrompt, parseNarrationResponse } from './prompts/narration';
 import { MiniMaxProvider } from './llm';
 
 interface GameData {
@@ -317,6 +318,29 @@ export class PromptEngine {
     const response = await this.llm.generate(prompt, '', { temperature: 0.8 });
 
     return parseSuggestionsResponse(response.content);
+  }
+
+  async generateNarration(
+    facts: string[],
+    jumpDays: number,
+    currentDate: string,
+    playerPolity: string,
+    language: string = 'russian'
+  ): Promise<string> {
+    const targetDate = this.calculateTargetDate(currentDate, jumpDays);
+
+    const prompt = buildNarrationPrompt({
+      facts,
+      jumpDays,
+      currentDate,
+      targetDate,
+      playerPolity,
+      language,
+    });
+
+    const response = await this.llm.generate(prompt, '', { temperature: 0.7 });
+
+    return parseNarrationResponse(response.content);
   }
 
   private calculateTargetDate(startDate: string, days: number): string {

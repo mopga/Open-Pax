@@ -11,6 +11,7 @@ import { GameController } from './agents';
 import { PromptEngine } from './prompt-builder';
 import { worldRepository, gameRepository } from './repositories';
 import db from './database';
+import { SimulationEngine, ActionParser, type ValidatedAction, type SimulationDelta, type DeterministicEvent } from './core/simulation';
 
 export interface RegionState {
   id: string;
@@ -22,8 +23,8 @@ export interface RegionState {
   militaryPower: number;
   objects: any[];
   svgPath?: string;
-  borders?: string[];
-  status?: string;
+  borders: string[];
+  status: 'active' | 'occupied' | 'destroyed' | 'independent';
 }
 
 export interface PlayerInfo {
@@ -91,6 +92,10 @@ export class GameSession {
   private gameController: GameController;
   private promptEngine: PromptEngine;
 
+  // Deterministic simulation engine (NO LLM)
+  private simulationEngine: SimulationEngine | null = null;
+  private actionParser: ActionParser;
+
   // Game state
   private players: PlayerInfo[] = [];
   private currentTurn: number = 1;
@@ -108,6 +113,16 @@ export class GameSession {
     this.worldId = worldId;
     this.gameController = new GameController(provider);
     this.promptEngine = new PromptEngine(provider);
+    this.actionParser = new ActionParser();
+  }
+
+  /**
+   * Initialize simulation engine with current regions
+   */
+  private initSimulationEngine(): void {
+    if (!this.simulationEngine) {
+      this.simulationEngine = new SimulationEngine(this.regions);
+    }
   }
 
   /**
@@ -163,7 +178,7 @@ export class GameSession {
         objects: region.objects || [],
         svgPath: region.svgPath,
         borders: region.borders,
-        status: region.status,
+        status: (region.status || 'active') as 'active' | 'occupied' | 'destroyed' | 'independent',
       });
     }
 
@@ -230,7 +245,7 @@ export class GameSession {
           objects: region.objects || [],
           svgPath: region.svgPath,
           borders: region.borders,
-          status: region.status,
+          status: (region.status || 'active') as 'active' | 'occupied' | 'destroyed' | 'independent',
         });
       }
     }
@@ -310,6 +325,7 @@ export class GameSession {
 
   /**
    * Apply a turn - main game logic entry point
+   * Uses SimulationEngine for deterministic calculations, LLM only for narration
    */
   async applyTurn(playerAction: string, jumpDays: number): Promise<{
     turn: number;
@@ -326,29 +342,68 @@ export class GameSession {
 
     const timeJump = jumpDays || 30;
 
-    // Build game data for prompt engine
-    const gameData = this.buildGameData();
+    // Initialize simulation engine
+    this.initSimulationEngine();
 
-    // Process turn with prompts (time-rewind.md)
-    const promptResult = await this.gameController.processTurnWithPrompts(
-      gameData,
-      playerAction.split(' | '),
-      timeJump
-    );
+    // Parse player action into ValidatedAction
+    const actions = playerAction.split(' | ').map(text => this.actionParser.parse(text, this.regions)).filter((a): a is ValidatedAction => a !== null);
 
-    // Apply world changes from simulation
-    if (promptResult.worldChanges) {
-      this.applyWorldChanges(promptResult.worldChanges);
+    // Process player actions through simulation engine
+    const allNarrativeFacts: string[] = [];
+    const allEvents: DeterministicEvent[] = [];
+
+    for (const action of actions) {
+      // Validate action
+      const validation = this.simulationEngine!.validateAction(action, player.id);
+      if (!validation.valid) {
+        console.warn('[GameSession] Invalid action:', validation.reason);
+        continue;
+      }
+
+      // Apply action through simulation engine
+      const delta = this.simulationEngine!.applyAction(action, timeJump);
+
+      // Collect facts and events
+      allNarrativeFacts.push(...delta.narrativeFacts);
+      allEvents.push(...delta.events);
+
+      // Apply delta to regions
+      this.applySimulationDelta(delta);
     }
 
-    // Detect and create objects
-    const createdObjects = this.detectAndCreateObjects(playerRegion, playerAction + ' ' + promptResult.convertedActions.map((a: any) => a.text).join(' '));
+    // Process NPC turns through simulation engine
+    const npcIds = new Set<string>();
+    for (const region of this.regions.values()) {
+      if (region.owner.startsWith('ai-')) {
+        npcIds.add(region.owner);
+      }
+    }
 
-    // Process NPC turns
-    const npcEvents = await this.processNPCTurns();
+    for (const npcId of npcIds) {
+      const npcDelta = this.simulationEngine!.processNPCTurn(npcId, timeJump);
+      allNarrativeFacts.push(...npcDelta.narrativeFacts);
+      allEvents.push(...npcDelta.events);
+      this.applySimulationDelta(npcDelta);
+    }
+
+    // Apply natural changes
+    const naturalDelta = this.simulationEngine!.applyAction({
+      type: 'develop', // Dummy action to trigger natural growth
+      sourceRegionId: player.regionId,
+      description: 'natural changes',
+      cost: { gdp: 0, population: 0, militaryPower: 0 },
+      expectedOutcome: { successProbability: 1, expectedCaptures: [], expectedLosses: { gdp: 0, population: 0, militaryPower: 0 }, duration: timeJump },
+    }, timeJump);
+    // Don't add natural changes' narrative facts as they're automatic
 
     // Apply random events
     const randomEvents = this.applyRandomEvents();
+
+    // Generate narration from facts (LLM only for this)
+    const narration = await this.generateNarration(allNarrativeFacts, timeJump);
+
+    // Detect and create objects
+    const createdObjects = this.detectAndCreateObjects(playerRegion, playerAction);
 
     // Record action
     const actionRecord: ActionRecord = {
@@ -373,9 +428,9 @@ export class GameSession {
     const turnResult: TurnResultRecord = {
       id: uuid().slice(0, 8),
       turn: this.currentTurn,
-      narration: promptResult.narration,
-      countryResponse: promptResult.convertedActions.map((a: any) => a.text).join('\n'),
-      events: [...npcEvents, ...randomEvents, ...createdObjects.map(o => o.text)],
+      narration,
+      countryResponse: actions.map(a => a.description).join('\n'),
+      events: [...allEvents.map(e => e.headline), ...randomEvents, ...createdObjects.map(o => o.text)],
     };
     this.results.push(turnResult);
 
@@ -446,6 +501,82 @@ export class GameSession {
         const region = this.regions.get(regionId);
         if (region) region.population = pop;
       }
+    }
+  }
+
+  /**
+   * Apply SimulationDelta to regions
+   */
+  private applySimulationDelta(delta: SimulationDelta): void {
+    // Apply region changes
+    for (const change of delta.regionChanges) {
+      const region = this.regions.get(change.regionId);
+      if (region) {
+        if (change.newOwner) region.owner = change.newOwner;
+        if (change.newColor) region.color = change.newColor;
+        if (change.status) region.status = change.status as any;
+      }
+    }
+
+    // Apply GDP changes
+    for (const [regionId, change] of Object.entries(delta.gdpChanges)) {
+      const region = this.regions.get(regionId);
+      if (region) {
+        region.gdp = Math.max(1, region.gdp + change);
+      }
+    }
+
+    // Apply population changes
+    for (const [regionId, change] of Object.entries(delta.populationChanges)) {
+      const region = this.regions.get(regionId);
+      if (region) {
+        region.population = Math.max(1000, region.population + change);
+      }
+    }
+
+    // Apply military changes
+    for (const [regionId, change] of Object.entries(delta.militaryChanges)) {
+      const region = this.regions.get(regionId);
+      if (region) {
+        region.militaryPower = Math.max(0, region.militaryPower + change);
+      }
+    }
+
+    // Add new objects
+    for (const obj of delta.newObjects) {
+      const region = this.regions.get(obj.owner || '');
+      if (region) {
+        region.objects = region.objects || [];
+        region.objects.push(obj);
+      }
+    }
+  }
+
+  /**
+   * Generate narration from narrative facts using LLM
+   */
+  private async generateNarration(facts: string[], jumpDays: number): Promise<string> {
+    if (facts.length === 0) {
+      return `Мир развивался ${jumpDays} дней. Изменений не произошло.`;
+    }
+
+    try {
+      const player = this.players[0];
+      const playerRegion = this.regions.get(player?.regionId);
+      const playerPolity = playerRegion?.name || player?.name || 'Unknown';
+
+      const result = await this.promptEngine.generateNarration(
+        facts,
+        jumpDays,
+        this.currentDate,
+        playerPolity,
+        'russian'
+      );
+
+      return result || `Произошло ${facts.length} событий за ${jumpDays} дней.`;
+    } catch (e) {
+      console.error('[GameSession] Failed to generate narration:', e);
+      return `Произошло ${facts.length} событий за ${jumpDays} дней.`;
     }
   }
 
