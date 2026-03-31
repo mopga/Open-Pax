@@ -3,14 +3,15 @@
  * ==============================
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { MapboxMapView } from './components/Map/MapboxMapView';
 import { MapEditor, type EditorRegion, type EditorObject } from './components/Editor';
 import { CreateWorld, type WorldConfig } from './components/WorldBuilder/CreateWorld';
 import { TemplateSelector } from './components/Game/TemplateSelector';
 import { CountrySelector } from './components/Game/CountrySelector';
 import { gameApi, worldApi, mapApi, savesApi } from './services/api';
-import type { Region, World, Game, WorldTemplate, GameStatus } from './types';
+import type { Region, World, Game } from './types';
+import { useGameStore, useUIStore, useActionsStore, type LocalMap } from './stores';
 
 // Вспомогательная функция: точки в SVG path
 const pointsToPath = (points: { x: number; y: number }[]): string => {
@@ -35,59 +36,38 @@ const formatDateRange = (start: string, end: string): string => {
   }
 };
 
-// Интерфейс для карты из localStorage
-interface LocalMap {
-  id: string;
-  name: string;
-  width?: number;
-  height?: number;
-  regions: { id: string; name: string; color: string; path: string }[];
-  objects?: { id: string; type: string; name: string; x: number; y: number; regionId?: string }[];
-}
-
 function App() {
-  // Состояние
-  type ViewType = 'menu' | 'select-template' | 'select-country' | 'select-map' | 'create-world' | 'game' | 'editor';
-  const [currentView, setCurrentView] = useState<ViewType>('menu');
-  const [savedMaps, setSavedMaps] = useState<LocalMap[]>([]);
-  const [selectedMapForWorld, setSelectedMapForWorld] = useState<LocalMap | null>(null);
-  const [selectedTemplate, setSelectedTemplate] = useState<WorldTemplate | null>(null);
-  const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
-  const [generatedWorld, setGeneratedWorld] = useState<{
-    date: string;
-    countries: Record<string, any>;
-    regions: Record<string, Region>;
-    playerCountryCode: string;
-  } | null>(null);
-  const [currentWorld, setCurrentWorld] = useState<World | null>(null);
-  const [currentGame, setCurrentGame] = useState<Game | null>(null);
-  const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
-  const [changedRegions, setChangedRegions] = useState<string[]>([]);
-  const [pendingActions, setPendingActions] = useState<{ id: string; text: string }[]>([]);
-  const [jumpDays, setJumpDays] = useState<number>(30);
-  const [showJumpMenu, setShowJumpMenu] = useState(false);
-  const [history, setHistory] = useState<{
-    turn: number;
-    action: string;
-    result: string;
-    events?: string[];
-    periodStart?: string;
-    periodEnd?: string;
-    date?: string; // Legacy fallback
-  }[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [showActions, setShowActions] = useState(false);
-  const [actions, setActions] = useState<any[]>([]);
-  const [newActionText, setNewActionText] = useState('');
-  const [savedGames, setSavedGames] = useState<any[]>([]);
-  const [showSavesMenu, setShowSavesMenu] = useState(false);
-  const [actionsMaximized, setActionsMaximized] = useState(false);
-  const [actionsSize, setActionsSize] = useState({ width: 400, height: 500 });
+  // Stores
+  const {
+    currentGame, currentWorld, selectedRegion, history, pendingActions, changedRegions,
+    generatedWorld, selectedCountry,
+    setCurrentGame, setCurrentWorld, setSelectedRegion, setHistory, addHistory,
+    setPendingActions, addPendingAction, removePendingAction, clearPendingActions,
+    setChangedRegions, clearChangedRegions, setGeneratedWorld, setSelectedCountry,
+    reset: resetGame
+  } = useGameStore();
+
+  const {
+    currentView, loading, showJumpMenu, jumpDays, showSavesMenu,
+    showPromptEditor, editingPrompt,
+    showActions, actionsMaximized, actionsSize, isResizing,
+    selectedMapForWorld, savedMaps, selectedTemplate,
+    setCurrentView, setLoading, setShowJumpMenu, setJumpDays, setShowSavesMenu,
+    setShowPromptEditor, setEditingPrompt,
+    setShowActions, setActionsMaximized, setActionsSize, setIsResizing,
+    setSelectedMapForWorld, setSavedMaps, addSavedMap, setSelectedTemplate,
+    resetUI
+  } = useUIStore();
+
+  const {
+    suggestions, newActionText,
+    setSuggestions, setNewActionText, clearSuggestions,
+    reset: resetActions
+  } = useActionsStore();
+
+  // Refs (not in store - DOM refs)
   const actionsRef = useRef<HTMLDivElement>(null);
   const historyEndRef = useRef<HTMLDivElement>(null);
-  const [isResizing, setIsResizing] = useState(false);
-  const [showPromptEditor, setShowPromptEditor] = useState(false);
-  const [editingPrompt, setEditingPrompt] = useState('');
 
   // Прокрутка истории вниз
   useEffect(() => {
@@ -117,7 +97,7 @@ function App() {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isResizing]);
+  }, [isResizing, setActionsSize, setIsResizing]);
 
   // Загрузка сохраненных карт
   useEffect(() => {
@@ -159,7 +139,7 @@ function App() {
     };
 
     loadMaps();
-  }, []);
+  }, [setSavedMaps]);
 
   // Сохранить карту локально
   const handleSaveMapLocal = (regions: EditorRegion[], mapName: string, objects?: EditorObject[]): LocalMap => {
@@ -182,7 +162,7 @@ function App() {
       })),
     };
     localStorage.setItem(mapData.id, JSON.stringify(mapData));
-    setSavedMaps(prev => [...prev, mapData]);
+    addSavedMap(mapData);
     return mapData;
   };
 
@@ -196,7 +176,6 @@ function App() {
       path: pointsToPath(r.points),
     }));
 
-    // Пробуем сохранить на сервере
     let serverMapId = null;
     try {
       const mapData = {
@@ -220,14 +199,11 @@ function App() {
       console.warn('Failed to save map to server:', e);
     }
 
-    // Сохраняем локально (с серверным ID если получилось)
     const localMap = handleSaveMapLocal(regions, mapName, objects);
     if (serverMapId) {
-      // Обновляем localStorage с серверным ID
       const updatedMap = { ...localMap, id: `server_${serverMapId}` };
       localStorage.removeItem(localMap.id);
       localStorage.setItem(updatedMap.id, JSON.stringify(updatedMap));
-      // Обновляем state
       setSavedMaps(prev => prev.filter(m => m.id !== localMap.id).concat(updatedMap));
     }
 
@@ -245,7 +221,6 @@ function App() {
   const handleCreateWorld = async (config: WorldConfig) => {
     setLoading(true);
 
-    // Проверяем что карта сохранена на сервере
     if (!selectedMapForWorld?.id.startsWith('server_')) {
       alert('Сначала сохраните карту на сервере (кнопка "Сохранить" в редакторе карт)!');
       setLoading(false);
@@ -253,9 +228,7 @@ function App() {
     }
 
     const mapId = selectedMapForWorld.id.replace('server_', '');
-    console.log('[DEBUG] Creating world from map:', mapId);
 
-    // Prepare initial owners
     const initialOwners = config.regions
       .filter(r => r.owner !== 'neutral')
       .map(r => ({ id: r.id, owner: r.owner }));
@@ -271,14 +244,10 @@ function App() {
         initialOwners,
       });
 
-      // Применяем начальное распределение владельцев
       const world = await worldApi.get(result.world_id);
-
-      // Get objects from the selected map (localStorage)
       const mapObjects = selectedMapForWorld?.objects || [];
 
       const regions: Region[] = Object.values(world.regions || {}).map((r: any) => {
-        // Find objects that belong to this region
         const regionObjects = mapObjects
           .filter((o: any) => o.regionId === r.id)
           .map((o: any) => ({
@@ -312,31 +281,23 @@ function App() {
         regions: regions.reduce((acc: any, r) => { acc[r.id] = r; return acc; }, {}),
       } as World);
 
-      // Find player region from WORLD (not config!) - regions have new IDs after world creation
       const playerRegionInWorld = regions.find(r => r.owner === 'player');
       const initialPlayerRegionId = playerRegionInWorld?.id || regions[0]?.id || null;
-      console.log('[DEBUG] Player region ID from world:', initialPlayerRegionId, 'owner:', playerRegionInWorld?.owner);
 
-      // Создаем игру - сервер сам определит правильный regionId на основе initialOwners
       if (result.world_id && initialPlayerRegionId) {
         try {
-          console.log('[DEBUG] Creating game with:', { world_id: result.world_id, player_region_id: initialPlayerRegionId });
           const gameResponse = await gameApi.create({
             world_id: result.world_id,
             player_name: 'Player',
             player_region_id: initialPlayerRegionId,
           });
-          console.log('[DEBUG] Game created, response:', gameResponse);
           const game = await gameApi.get(gameResponse.game_id);
-          console.log('[DEBUG] Game fetched:', game);
           setCurrentGame(game);
 
-          // Use player's actual regionId from game (may differ from initial)
           const playerRegionId = game.players[0]?.regionId || initialPlayerRegionId;
           setSelectedRegion(playerRegionId);
         } catch (e) {
           console.error('[DEBUG] Failed to create game via API:', e);
-          // Fallback to local game
           setCurrentGame({
             id: 'local_' + Date.now(),
             world: { ...world, regions: regions.reduce((acc: any, r) => { acc[r.id] = r; return acc; }, {}) } as World,
@@ -352,7 +313,6 @@ function App() {
       setCurrentView('game');
     } catch (e) {
       console.error('[DEBUG] Failed to create world via API:', e);
-      // Используем локальные данные (fallback для офлайн режима)
       const mapObjects = selectedMapForWorld?.objects || [];
       const regions: Region[] = selectedMapForWorld?.regions.map(r => {
         const regionObjects = mapObjects
@@ -383,7 +343,6 @@ function App() {
         };
       }) || [];
 
-      // Apply owner from config to regions
       const regionsWithOwner = regions.map(r => {
         const ownerConfig = config.regions.find(cr => cr.id === r.id);
         return {
@@ -403,12 +362,10 @@ function App() {
         blocs: {},
       });
 
-      // Find player region from config
       const playerConfigRegion = config.regions.find(cr => cr.owner === 'player');
       const playerRegionId = playerConfigRegion?.id || regions[0]?.id || null;
       setSelectedRegion(playerRegionId);
 
-      // Создаем локальную игру
       if (playerRegionId) {
         setCurrentGame({
           id: 'local_' + Date.now(),
@@ -428,7 +385,6 @@ function App() {
   // Отправить действия (несколько)
   const handleSubmitActions = async (actions: string[]) => {
     if (!currentGame || actions.length === 0 || !selectedRegion) {
-      console.log('Debug: currentGame=', currentGame, 'actions=', actions, 'selectedRegion=', selectedRegion);
       return;
     }
 
@@ -437,24 +393,19 @@ function App() {
     const turn = currentGame.currentTurn;
     const actionsText = actions.join(' | ');
 
-    console.log('[DEBUG] Submitting actions:', { gameId: currentGame.id, actions: actionsText, jumpDays, playerId: currentGame.players[0]?.id });
-
-    // Для локальных игр (id начинается с local_) не делаем API вызов
     if (currentGame.id.startsWith('local_')) {
-      setHistory(prev => [...prev, {
+      addHistory({
         turn,
         action: actionsText,
         result: `Мир отреагировал на ${actions.length} действий за ${jumpDays} дней...`,
         date: `${jumpDays} дней`,
-      }]);
+      });
       setCurrentGame({ ...currentGame, currentTurn: turn + 1 });
       setLoading(false);
       return;
     }
 
     try {
-      console.log('[DEBUG] Making API call to submit action...');
-      // Отправляем все действия и jumpDays на сервер
       const result = await gameApi.submitAction({
         game_id: currentGame.id,
         player_id: currentGame.players[0].id,
@@ -462,15 +413,14 @@ function App() {
         jump_days: jumpDays,
       } as any);
 
-      setHistory(prev => [...prev, {
+      addHistory({
         turn,
         action: actionsText,
         result: result.narration,
         events: result.events || [],
         date: `${jumpDays} дней`,
-      }]);
+      });
 
-      // Update region objects if any were created
       if (result.objects && currentWorld && selectedRegion) {
         const updatedRegions = { ...currentWorld.regions };
         const region = updatedRegions[selectedRegion];
@@ -486,18 +436,15 @@ function App() {
       const updatedGame = await gameApi.get(currentGame.id);
       setCurrentGame(updatedGame);
 
-      // Also update currentWorld with new region data (for owner changes, colors, etc.)
       const changed: string[] = [];
       if (updatedGame.world && currentWorld) {
         const newRegions = { ...currentWorld.regions };
-        // Handle both array (from API) and object (from local)
         const gameRegions = Array.isArray(updatedGame.world.regions)
           ? updatedGame.world.regions
           : Object.values(updatedGame.world.regions);
         gameRegions.forEach((r: any) => {
           if (newRegions[r.id]) {
             const oldRegion = newRegions[r.id];
-            // Check if anything changed
             if (oldRegion.owner !== r.owner || oldRegion.color !== r.color) {
               changed.push(r.id);
             }
@@ -513,20 +460,19 @@ function App() {
         });
         setCurrentWorld({ ...currentWorld, regions: newRegions });
 
-        // Highlight changed regions briefly
         if (changed.length > 0) {
           setChangedRegions(changed);
-          setTimeout(() => setChangedRegions([]), 3000);
+          setTimeout(() => clearChangedRegions(), 3000);
         }
       }
     } catch (e) {
       console.error('Failed to submit action:', e);
-      setHistory(prev => [...prev, {
+      addHistory({
         turn,
         action: actionsText,
         result: 'Мир отреагировал на ваши действия...',
         date: `${jumpDays} дней`,
-      }]);
+      });
     }
 
     setLoading(false);
@@ -543,21 +489,19 @@ function App() {
       const result = await gameApi.timeSkip(currentGame.id, days);
 
       if (result.type === 'actions_processed') {
-        // Add each processed action to history
         for (const action of result.actions || []) {
           if (action.result) {
-            setHistory(prev => [...prev, {
+            addHistory({
               turn: action.result.turn,
               action: action.text,
               result: action.result.narration,
               events: action.result.events,
               periodStart: action.result.periodStart,
               periodEnd: action.result.periodEnd,
-            }]);
+            });
           }
         }
 
-        // Update game state from last action
         const lastAction = result.actions?.[result.actions.length - 1];
         if (lastAction?.result) {
           setCurrentGame(prev => prev ? {
@@ -567,15 +511,14 @@ function App() {
           } : prev);
         }
       } else if (result.type === 'date_advanced') {
-        // Just update date - add a time-skip entry to history
         const startDate = currentGame.currentDate || '1951-01-01';
-        setHistory(prev => [...prev, {
+        addHistory({
           turn: currentGame.currentTurn,
           action: `⏭️ Time-skip`,
           result: `Продвинуто на ${days} дней`,
           periodStart: startDate,
           periodEnd: result.newDate,
-        }]);
+        });
 
         setCurrentGame(prev => prev ? {
           ...prev,
@@ -637,7 +580,6 @@ function App() {
     </div>
   );
 
-  // Рендер игры
   // Format date for display
   const formatDate = (dateStr: string): string => {
     const months = [
@@ -721,39 +663,38 @@ function App() {
 
           {/* Панель справа */}
           <div className="game-panel">
-            {/* Turn counter - moved to timeline bar */}
             <div className="turn-header" style={{ display: 'none' }}>
               <span className="turn-number">ХОД {currentGame?.currentTurn || 1}</span>
             </div>
 
-          {/* Country selector - locked to player's region */}
-          <div className="country-selector">
-            <label>Ваша страна:</label>
-            <div className="country-locked">
-              {currentGame?.players[0] && (
-                <span style={{ color: currentRegion?.color || '#fff' }}>
-                  {currentRegion?.name || 'Неизвестно'}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Current country info */}
-          {currentRegion && (
-            <div className="country-info">
-              <div className="country-name" style={{ color: currentRegion.color }}>
-                {currentRegion.name}
-              </div>
-              <div className="country-stats">
-                <span>👥 {currentRegion.population?.toLocaleString() || '1,000,000'}</span>
-                <span>💰 {currentRegion.gdp || 100}</span>
-                <span>⚔️ {currentRegion.militaryPower || 100}</span>
+            {/* Country selector - locked to player's region */}
+            <div className="country-selector">
+              <label>Ваша страна:</label>
+              <div className="country-locked">
+                {currentGame?.players[0] && (
+                  <span style={{ color: currentRegion?.color || '#fff' }}>
+                    {currentRegion?.name || 'Неизвестно'}
+                  </span>
+                )}
               </div>
             </div>
-          )}
 
-          {/* Save/Load buttons */}
-          <div className="save-load-section">
+            {/* Current country info */}
+            {currentRegion && (
+              <div className="country-info">
+                <div className="country-name" style={{ color: currentRegion.color }}>
+                  {currentRegion.name}
+                </div>
+                <div className="country-stats">
+                  <span>👥 {currentRegion.population?.toLocaleString() || '1,000,000'}</span>
+                  <span>💰 {currentRegion.gdp || 100}</span>
+                  <span>⚔️ {currentRegion.militaryPower || 100}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Save/Load buttons */}
+            <div className="save-load-section">
               <button
                 className="btn-save"
                 onClick={async () => {
@@ -781,10 +722,9 @@ function App() {
                       alert('Нет сохранённых игр');
                       return;
                     }
-                    const save = data.saves[0]; // Load most recent
+                    const save = data.saves[0];
                     if (save && confirm(`Загрузить "${save.name}" (Ход ${save.current_turn})?`)) {
                       await gameApi.loadSave(save.id);
-                      // Reload game
                       if (currentGame) {
                         const game = await gameApi.get(currentGame.id);
                         setCurrentGame(game);
@@ -810,325 +750,315 @@ function App() {
               >
                 📝 Промпт
               </button>
-          </div>
-
-          {/* Events from last turn */}
-          {history.length > 0 && history[history.length - 1].events && (
-            <div className="events-section">
-              <h4>📌 События</h4>
-              <div className="events-list">
-                {(history[history.length - 1].events || []).map((event, i) => (
-                  <div key={i} className="event-item">{event}</div>
-                ))}
-              </div>
             </div>
-          )}
 
-          {/* Floating Actions Button */}
-          {!showActions && (
-            <button
-              className="floating-advisor-btn"
-              onClick={() => {
-                setShowActions(true);
-                // Load actions if not loaded
-                if (actions.length === 0 && currentGame) {
-                  (async () => {
-                    try {
-                      const data = await gameApi.getSuggestions(currentGame.id);
-                      setActions(data.suggestions || []);
-                    } catch (e) { console.error(e); }
-                  })();
-                }
-              }}
-              title="Действия"
-            >
-              ⚡
-            </button>
-          )}
-
-          {/* Floating Actions Panel */}
-          {showActions && (
-            <div
-              ref={actionsRef}
-              className={`floating-advisor-panel ${actionsMaximized ? 'maximized' : ''}`}
-              style={{
-                width: actionsMaximized ? '90%' : `${actionsSize.width}px`,
-                height: actionsMaximized ? '80vh' : `${actionsSize.height}px`,
-                left: actionsMaximized ? '5%' : '20px',
-                bottom: actionsMaximized ? '10vh' : '80px',
-              }}
-            >
-              {/* Resize handle */}
-              {!actionsMaximized && (
-                <div
-                  className="resize-handle"
-                  onMouseDown={() => setIsResizing(true)}
-                />
-              )}
-
-              <div className="floating-advisor-header">
-                <div className="panel-title">⚡ Действия</div>
-                <div className="header-buttons">
-                  <button
-                    className="btn-maximize"
-                    onClick={() => setActionsMaximized(!actionsMaximized)}
-                    title={actionsMaximized ? 'Свернуть' : 'Развернуть'}
-                  >
-                    {actionsMaximized ? '−' : '□'}
-                  </button>
-                  <button className="btn-close" onClick={() => setShowActions(false)}>×</button>
+            {/* Events from last turn */}
+            {history.length > 0 && history[history.length - 1].events && (
+              <div className="events-section">
+                <h4>📌 События</h4>
+                <div className="events-list">
+                  {(history[history.length - 1].events || []).map((event, i) => (
+                    <div key={i} className="event-item">{event}</div>
+                  ))}
                 </div>
               </div>
+            )}
 
-              {/* Actions Content */}
-              <div className="suggestions-content">
-                {/* Generate Button */}
-                <button
-                  className="btn-generate-suggestions"
-                  onClick={async () => {
-                    if (!currentGame) return;
-                    try {
-                      const data = await gameApi.getSuggestions(currentGame.id);
-                      setActions(data.suggestions || []);
-                    } catch (e) { console.error(e); }
-                  }}
-                >
-                  🔄 Сгенерировать действия
-                </button>
+            {/* Floating Actions Button */}
+            {!showActions && (
+              <button
+                className="floating-advisor-btn"
+                onClick={() => {
+                  setShowActions(true);
+                  if (suggestions.length === 0 && currentGame) {
+                    (async () => {
+                      try {
+                        const data = await gameApi.getSuggestions(currentGame.id);
+                        setSuggestions(data.suggestions || []);
+                      } catch (e) { console.error(e); }
+                    })();
+                  }
+                }}
+                title="Действия"
+              >
+                ⚡
+              </button>
+            )}
 
-                {/* Actions List */}
-                {actions.length > 0 && (
-                  <div className="suggestions-list">
-                    {actions.map((s, i) => (
-                      <div key={i} className="suggestion-item">
-                        <div className="suggestion-topic">📌 {s.topic}</div>
-                        <div className="suggestion-description">{s.description}</div>
-                        {s.actions?.map((a: any, ai: number) => (
-                          <div
-                            key={ai}
-                            className="suggestion-action"
-                            onClick={async () => {
-                              if (!currentGame) return;
-                              const text = a.content;
-                              // Add to backend queue
-                              try {
-                                await gameApi.queueAction(currentGame.id, text);
-                              } catch (e) {
-                                console.error('Failed to queue suggestion:', e);
-                              }
-                              // Add to local pending actions
-                              setPendingActions(prev => [...prev, {
-                                id: `suggestion-${Date.now()}-${ai}`,
-                                text
-                              }]);
-                            }}
-                          >
-                            + {a.title}: {a.content}
-                          </div>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
+            {/* Floating Actions Panel */}
+            {showActions && (
+              <div
+                ref={actionsRef}
+                className={`floating-advisor-panel ${actionsMaximized ? 'maximized' : ''}`}
+                style={{
+                  width: actionsMaximized ? '90%' : `${actionsSize.width}px`,
+                  height: actionsMaximized ? '80vh' : `${actionsSize.height}px`,
+                  left: actionsMaximized ? '5%' : '20px',
+                  bottom: actionsMaximized ? '10vh' : '80px',
+                }}
+              >
+                {/* Resize handle */}
+                {!actionsMaximized && (
+                  <div
+                    className="resize-handle"
+                    onMouseDown={() => setIsResizing(true)}
+                  />
                 )}
 
-                {/* Pending Actions Section */}
-                <div className="pending-actions-section">
-                  <div className="pending-header">Ожидают обработки:</div>
-                  {pendingActions.length === 0 ? (
-                    <div className="pending-empty">Нет действий</div>
-                  ) : (
-                    <div className="pending-list">
-                      {pendingActions.map((action, index) => (
-                        <div key={action.id} className="pending-item">
-                          <span className="pending-number">{index + 1}.</span>
-                          <span className="pending-text">{action.text}</span>
-                          <button
-                            className="btn-remove-pending"
-                            onClick={() => {
-                              setPendingActions(prev => prev.filter(a => a.id !== action.id));
-                            }}
-                          >
-                            ×
-                          </button>
+                <div className="floating-advisor-header">
+                  <div className="panel-title">⚡ Действия</div>
+                  <div className="header-buttons">
+                    <button
+                      className="btn-maximize"
+                      onClick={() => setActionsMaximized(!actionsMaximized)}
+                      title={actionsMaximized ? 'Свернуть' : 'Развернуть'}
+                    >
+                      {actionsMaximized ? '−' : '□'}
+                    </button>
+                    <button className="btn-close" onClick={() => setShowActions(false)}>×</button>
+                  </div>
+                </div>
+
+                {/* Actions Content */}
+                <div className="suggestions-content">
+                  {/* Generate Button */}
+                  <button
+                    className="btn-generate-suggestions"
+                    onClick={async () => {
+                      if (!currentGame) return;
+                      try {
+                        const data = await gameApi.getSuggestions(currentGame.id);
+                        setSuggestions(data.suggestions || []);
+                      } catch (e) { console.error(e); }
+                    }}
+                  >
+                    🔄 Сгенерировать действия
+                  </button>
+
+                  {/* Actions List */}
+                  {suggestions.length > 0 && (
+                    <div className="suggestions-list">
+                      {suggestions.map((s, i) => (
+                        <div key={i} className="suggestion-item">
+                          <div className="suggestion-topic">📌 {s.topic}</div>
+                          <div className="suggestion-description">{s.description}</div>
+                          {s.actions?.map((a: any, ai: number) => (
+                            <div
+                              key={ai}
+                              className="suggestion-action"
+                              onClick={async () => {
+                                if (!currentGame) return;
+                                const text = a.content;
+                                try {
+                                  await gameApi.queueAction(currentGame.id, text);
+                                } catch (e) {
+                                  console.error('Failed to queue suggestion:', e);
+                                }
+                                addPendingAction({
+                                  id: `suggestion-${Date.now()}-${ai}`,
+                                  text
+                                });
+                              }}
+                            >
+                              + {a.title}: {a.content}
+                            </div>
+                          ))}
                         </div>
                       ))}
                     </div>
                   )}
+
+                  {/* Pending Actions Section */}
+                  <div className="pending-actions-section">
+                    <div className="pending-header">Ожидают обработки:</div>
+                    {pendingActions.length === 0 ? (
+                      <div className="pending-empty">Нет действий</div>
+                    ) : (
+                      <div className="pending-list">
+                        {pendingActions.map((action, index) => (
+                          <div key={action.id} className="pending-item">
+                            <span className="pending-number">{index + 1}.</span>
+                            <span className="pending-text">{action.text}</span>
+                            <button
+                              className="btn-remove-pending"
+                              onClick={() => removePendingAction(action.id)}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Manual Action Input */}
+                  <div className="manual-action-input">
+                    <textarea
+                      value={newActionText}
+                      onChange={(e) => setNewActionText(e.target.value)}
+                      placeholder="Опишите действие вручную..."
+                      rows={2}
+                    />
+                    <button
+                      className="btn-add-pending"
+                      onClick={async () => {
+                        if (newActionText.trim() && currentGame) {
+                          const text = newActionText.trim();
+                          try {
+                            await gameApi.queueAction(currentGame.id, text);
+                          } catch (e) {
+                            console.error('Failed to queue action:', e);
+                          }
+                          addPendingAction({
+                            id: `manual-${Date.now()}`,
+                            text
+                          });
+                          setNewActionText('');
+                        }
+                      }}
+                      disabled={!newActionText.trim()}
+                    >
+                      + Добавить
+                    </button>
+                  </div>
                 </div>
 
-                {/* Manual Action Input */}
-                <div className="manual-action-input">
-                  <textarea
-                    value={newActionText}
-                    onChange={(e) => setNewActionText(e.target.value)}
-                    placeholder="Опишите действие вручную..."
-                    rows={2}
-                  />
+                {/* Submit Button */}
+                <div className="suggestions-footer">
                   <button
-                    className="btn-add-pending"
+                    className="btn-submit-actions"
+                    disabled={pendingActions.length === 0 || loading}
                     onClick={async () => {
-                      if (newActionText.trim() && currentGame) {
-                        const text = newActionText.trim();
-                        // Add to backend queue
-                        try {
-                          await gameApi.queueAction(currentGame.id, text);
-                        } catch (e) {
-                          console.error('Failed to queue action:', e);
+                      if (!currentGame || pendingActions.length === 0) return;
+                      setLoading(true);
+                      try {
+                        const result = await gameApi.processAllActions(currentGame.id, 30);
+
+                        for (const action of result.actions) {
+                          if (action.result) {
+                            addHistory({
+                              turn: action.result.turn,
+                              action: action.text,
+                              result: action.result.narration,
+                              events: action.result.events,
+                              periodStart: action.result.periodStart,
+                              periodEnd: action.result.periodEnd,
+                            });
+                          }
                         }
-                        // Add to local state
-                        setPendingActions(prev => [...prev, {
-                          id: `manual-${Date.now()}`,
-                          text
-                        }]);
-                        setNewActionText('');
+
+                        const lastAction = result.actions[result.actions.length - 1];
+                        if (lastAction?.result) {
+                          setCurrentGame(prev => prev ? {
+                            ...prev,
+                            currentTurn: (lastAction.result as any).turn + 1,
+                            currentDate: (lastAction.result as any).periodEnd,
+                          } : prev);
+                        }
+
+                        clearPendingActions();
+                      } catch (e) {
+                        console.error('Failed to process actions:', e);
                       }
+                      setLoading(false);
                     }}
-                    disabled={!newActionText.trim()}
                   >
-                    + Добавить
+                    {loading ? 'Думаю...' : `Отправить ${pendingActions.length} действие(й) →`}
                   </button>
                 </div>
               </div>
+            )}
 
-              {/* Submit Button */}
-              <div className="suggestions-footer">
-                <button
-                  className="btn-submit-actions"
-                  disabled={pendingActions.length === 0 || loading}
-                  onClick={async () => {
-                    if (!currentGame || pendingActions.length === 0) return;
-                    setLoading(true);
-                    try {
-                      // Process all queued actions sequentially
-                      const result = await gameApi.processAllActions(currentGame.id, 30);
-
-                      // Add each processed action result to history with date range
-                      for (const action of result.actions) {
-                        if (action.result) {
-                          setHistory(prev => [...prev, {
-                            turn: action.result.turn,
-                            action: action.text,
-                            result: action.result.narration,
-                            events: action.result.events,
-                            periodStart: action.result.periodStart,
-                            periodEnd: action.result.periodEnd,
-                          }]);
-                        }
-                      }
-
-                      // Update game turn/date from last action
-                      const lastAction = result.actions[result.actions.length - 1];
-                      if (lastAction?.result) {
-                        setCurrentGame(prev => prev ? {
-                          ...prev,
-                          currentTurn: (lastAction.result as any).turn + 1,
-                          currentDate: (lastAction.result as any).periodEnd,
-                        } : prev);
-                      }
-
-                      setPendingActions([]);
-                    } catch (e) {
-                      console.error('Failed to process actions:', e);
-                    }
-                    setLoading(false);
-                  }}
-                >
-                  {loading ? 'Думаю...' : `Отправить ${pendingActions.length} действие(й) →`}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* History */}
-          <div className="history-section">
-            <h4>История</h4>
-            <div className="history-list">
-              {history.map((item, i) => (
-                <div key={i} className="history-item">
-                  <div className="history-header">
-                    <span className="history-turn">Ход {item.turn}</span>
-                    {item.periodStart && item.periodEnd ? (
-                      <span className="history-date">
-                        📅 {formatDateRange(item.periodStart, item.periodEnd)}
-                      </span>
-                    ) : item.date && (
-                      <span className="history-date">📅 {item.date}</span>
+            {/* History */}
+            <div className="history-section">
+              <h4>История</h4>
+              <div className="history-list">
+                {history.map((item, i) => (
+                  <div key={i} className="history-item">
+                    <div className="history-header">
+                      <span className="history-turn">Ход {item.turn}</span>
+                      {item.periodStart && item.periodEnd ? (
+                        <span className="history-date">
+                          📅 {formatDateRange(item.periodStart, item.periodEnd)}
+                        </span>
+                      ) : item.date && (
+                        <span className="history-date">📅 {item.date}</span>
+                      )}
+                    </div>
+                    <div className="history-action">→ {item.action}</div>
+                    <div className="history-result">{item.result}</div>
+                    {item.events && item.events.length > 0 && (
+                      <div className="history-events">
+                        {item.events.map((event, ei) => (
+                          <div key={ei} className="history-event">• {event}</div>
+                        ))}
+                      </div>
                     )}
                   </div>
-                  <div className="history-action">→ {item.action}</div>
-                  <div className="history-result">{item.result}</div>
-                  {item.events && item.events.length > 0 && (
-                    <div className="history-events">
-                      {item.events.map((event, ei) => (
-                        <div key={ei} className="history-event">• {event}</div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-              <div ref={historyEndRef} />
+                ))}
+                <div ref={historyEndRef} />
+              </div>
             </div>
-          </div>
 
-          {/* Back button */}
-          <button className="btn-back" onClick={() => {
-            setCurrentView('menu');
-            setCurrentWorld(null);
-            setCurrentGame(null);
-            setHistory([]);
-          }}>
-            ← В меню
-          </button>
+            {/* Back button */}
+            <button className="btn-back" onClick={() => {
+              setCurrentView('menu');
+              setCurrentWorld(null);
+              setCurrentGame(null);
+              setHistory([]);
+            }}>
+              ← В меню
+            </button>
 
-          {/* Prompt Editor Modal */}
-          {showPromptEditor && (
-            <div className="prompt-editor-modal">
-              <div className="prompt-editor-overlay" onClick={() => setShowPromptEditor(false)} />
-              <div className="prompt-editor-content">
-                <div className="prompt-editor-header">
-                  <h3>📝 Редактирование промпта мира</h3>
-                  <button className="btn-close-prompt" onClick={() => setShowPromptEditor(false)}>×</button>
-                </div>
-                <p className="prompt-editor-desc">
-                  Этот промпт определяет историю вашего мира, поведение NPC стран и возможные события.
-                  Изменения вступят в силу для будущих ходов.
-                </p>
-                <textarea
-                  className="prompt-editor-textarea"
-                  value={editingPrompt}
-                  onChange={(e) => setEditingPrompt(e.target.value)}
-                  placeholder="Опишите ключевые особенности вашего мира..."
-                  rows={10}
-                />
-                <div className="prompt-editor-footer">
-                  <span className="char-count">{editingPrompt.length} символов</span>
-                  <div className="prompt-editor-actions">
-                    <button className="btn-cancel-prompt" onClick={() => setShowPromptEditor(false)}>
-                      Отмена
-                    </button>
-                    <button
-                      className="btn-save-prompt"
-                      onClick={async () => {
-                        if (!currentWorld) return;
-                        try {
-                          await worldApi.updatePrompt(currentWorld.id, editingPrompt);
-                          setCurrentWorld({ ...currentWorld, basePrompt: editingPrompt });
-                          setShowPromptEditor(false);
-                          alert('Промпт мира обновлён!');
-                        } catch (e) {
-                          console.error(e);
-                          alert('Ошибка сохранения промпта');
-                        }
-                      }}
-                    >
-                      💾 Сохранить
-                    </button>
+            {/* Prompt Editor Modal */}
+            {showPromptEditor && (
+              <div className="prompt-editor-modal">
+                <div className="prompt-editor-overlay" onClick={() => setShowPromptEditor(false)} />
+                <div className="prompt-editor-content">
+                  <div className="prompt-editor-header">
+                    <h3>📝 Редактирование промпта мира</h3>
+                    <button className="btn-close-prompt" onClick={() => setShowPromptEditor(false)}>×</button>
+                  </div>
+                  <p className="prompt-editor-desc">
+                    Этот промпт определяет историю вашего мира, поведение NPC стран и возможные события.
+                    Изменения вступят в силу для будущих ходов.
+                  </p>
+                  <textarea
+                    className="prompt-editor-textarea"
+                    value={editingPrompt}
+                    onChange={(e) => setEditingPrompt(e.target.value)}
+                    placeholder="Опишите ключевые особенности вашего мира..."
+                    rows={10}
+                  />
+                  <div className="prompt-editor-footer">
+                    <span className="char-count">{editingPrompt.length} символов</span>
+                    <div className="prompt-editor-actions">
+                      <button className="btn-cancel-prompt" onClick={() => setShowPromptEditor(false)}>
+                        Отмена
+                      </button>
+                      <button
+                        className="btn-save-prompt"
+                        onClick={async () => {
+                          if (!currentWorld) return;
+                          try {
+                            await worldApi.updatePrompt(currentWorld.id, editingPrompt);
+                            setCurrentWorld({ ...currentWorld, basePrompt: editingPrompt });
+                            setShowPromptEditor(false);
+                            alert('Промпт мира обновлён!');
+                          } catch (e) {
+                            console.error(e);
+                            alert('Ошибка сохранения промпта');
+                          }
+                        }}
+                      >
+                        💾 Сохранить
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -1187,29 +1117,22 @@ function App() {
             setSelectedCountry(countryCode);
             setLoading(true);
             try {
-              // Generate world state from template using Balance Agent (also saves to DB)
               const worldData = await worldApi.generateFromTemplate(
                 selectedTemplate.id,
                 countryCode
               );
               setGeneratedWorld(worldData);
 
-              // Create real game session via API
               const gameResponse = await gameApi.create({
                 world_id: worldData.worldId,
                 player_name: 'Player',
                 player_region_id: countryCode,
               });
 
-              // Load the created game to get full state
               const game = await gameApi.get(gameResponse.game_id);
               setCurrentGame(game);
               setCurrentWorld(game.world);
               setSelectedRegion(countryCode);
-
-              console.log('[DEBUG] Generated world:', worldData, 'Game:', game);
-
-              // Show game view
               setCurrentView('game');
             } catch (e) {
               console.error('[Game] Failed to generate world:', e);
