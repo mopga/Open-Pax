@@ -14,6 +14,7 @@ import { countryRepository } from './repositories/country.repository';
 import { svgPathToGeoJSON } from './utils/svg-to-geojson';
 import { initSessionRegistry, getSessionRegistry } from './session-registry';
 import { BalanceAgent } from './agents/balance-agent';
+import { addSSEClient, removeSSEClient, broadcastToGame } from './sse';
 import type {
   Game, GameWorld, MapRegion, MapObject, Player, Action, TurnResult,
   CreateWorldRequest, CreateGameRequest, SubmitActionRequest, MapData
@@ -554,6 +555,45 @@ app.post('/api/games/:id/action', async (req, res) => {
       res.status(500).json({ error: 'Failed to process turn' });
     }
   }
+});
+
+// SSE endpoint for real-time game updates
+app.get('/api/games/:id/events', (req, res) => {
+  const gameId = req.params.id;
+
+  // Set headers for SSE
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.flushHeaders();
+
+  // Send initial connection event
+  res.write(`event: connected\ndata: {"gameId":"${gameId}"}\n\n`);
+
+  const clientId = uuid().slice(0, 8);
+  addSSEClient(gameId, { id: clientId, response: res });
+
+  // Set SSE broadcaster on the session
+  try {
+    const session = getSessionRegistry().getSessionOrThrow(gameId);
+    session.setSSEBroadcaster((type, data) => {
+      broadcastToGame(gameId, type, data);
+    });
+  } catch (e) {
+    console.warn('[SSE] Game session not found:', gameId);
+  }
+
+  // Send ping every 30 seconds to keep connection alive
+  const pingInterval = setInterval(() => {
+    res.write(`event: ping\ndata: ${Date.now()}\n\n`);
+  }, 30000);
+
+  // Handle client disconnect
+  req.on('close', () => {
+    clearInterval(pingInterval);
+    removeSSEClient(gameId, clientId);
+  });
 });
 
 app.get('/api/games/:id/advisor', async (req, res) => {

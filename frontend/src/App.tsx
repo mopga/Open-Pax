@@ -3,7 +3,7 @@
  * ==============================
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { MapboxMapView } from './components/Map/MapboxMapView';
 import { MapEditor, type EditorRegion, type EditorObject } from './components/Editor';
 import { CreateWorld, type WorldConfig } from './components/WorldBuilder/CreateWorld';
@@ -12,6 +12,7 @@ import { CountrySelector } from './components/Game/CountrySelector';
 import { gameApi, worldApi, mapApi, savesApi } from './services/api';
 import type { Region, World, Game } from './types';
 import { useGameStore, useUIStore, useActionsStore, type LocalMap } from './stores';
+import { useSSE } from './services/sse';
 
 // Вспомогательная функция: точки в SVG path
 const pointsToPath = (points: { x: number; y: number }[]): string => {
@@ -589,6 +590,55 @@ function App() {
     const date = new Date(dateStr);
     return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;
   };
+
+  // SSE real-time updates
+  const [isProcessingTurn, setIsProcessingTurn] = useState(false);
+  const [turnProgress, setTurnProgress] = useState<string>('');
+
+  useSSE(currentGame?.id || null, {
+    onTurnStart: (data) => {
+      console.log('[SSE] Turn started:', data);
+      setIsProcessingTurn(true);
+      setTurnProgress('Обработка хода...');
+    },
+    onGeneratingNarration: () => {
+      console.log('[SSE] Generating narration...');
+      setTurnProgress('Генерация нарратива...');
+    },
+    onTurnComplete: (data) => {
+      console.log('[SSE] Turn complete:', data);
+      setIsProcessingTurn(false);
+      setTurnProgress('');
+
+      // Add to history
+      if (data) {
+        addHistory({
+          turn: data.turn,
+          action: data.action || 'Ход',
+          result: data.narration,
+          events: data.events,
+          periodEnd: data.newDate,
+        });
+
+        // Update current game state
+        if (data.newTurn && data.newDate) {
+          setCurrentGame(prev => prev ? {
+            ...prev,
+            currentTurn: data.newTurn,
+            currentDate: data.newDate,
+          } : prev);
+        }
+      }
+    },
+    onConnected: () => {
+      console.log('[SSE] Connected to game events');
+    },
+    onError: (error) => {
+      console.error('[SSE] Error:', error);
+      setIsProcessingTurn(false);
+      setTurnProgress('');
+    },
+  });
 
   const renderGame = () => {
     if (!currentWorld) return null;

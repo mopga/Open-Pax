@@ -108,12 +108,31 @@ export class GameSession {
   // Pending actions queue (Phase 2)
   private pendingActions: PendingAction[] = [];
 
+  // SSE broadcaster for real-time updates
+  private sseBroadcaster: ((type: string, data: any) => void) | null = null;
+
   constructor(gameId: string, worldId: string, provider: MiniMaxProvider) {
     this.id = gameId;
     this.worldId = worldId;
     this.gameController = new GameController(provider);
     this.promptEngine = new PromptEngine(provider);
     this.actionParser = new ActionParser();
+  }
+
+  /**
+   * Set SSE broadcaster for real-time updates
+   */
+  setSSEBroadcaster(broadcaster: (type: string, data: any) => void): void {
+    this.sseBroadcaster = broadcaster;
+  }
+
+  /**
+   * Broadcast event to SSE clients
+   */
+  private broadcast(type: string, data: any): void {
+    if (this.sseBroadcaster) {
+      this.sseBroadcaster(type, data);
+    }
   }
 
   /**
@@ -342,6 +361,9 @@ export class GameSession {
 
     const timeJump = jumpDays || 30;
 
+    // Broadcast turn start
+    this.broadcast('turn_start', { turn: this.currentTurn, action: playerAction });
+
     // Initialize simulation engine
     this.initSimulationEngine();
 
@@ -399,8 +421,13 @@ export class GameSession {
     // Apply random events
     const randomEvents = this.applyRandomEvents();
 
-    // Generate narration from facts (LLM only for this)
+    // Broadcast NPC processing complete
+    this.broadcast('processing_npcs_complete', { turn: this.currentTurn, npcCount: npcIds.size });
+
+    // Generate narration from facts (LLM only for this) - this is the slow part
+    this.broadcast('generating_narration', { turn: this.currentTurn });
     const narration = await this.generateNarration(allNarrativeFacts, timeJump);
+    this.broadcast('narration_generated', { turn: this.currentTurn });
 
     // Detect and create objects
     const createdObjects = this.detectAndCreateObjects(playerRegion, playerAction);
@@ -455,6 +482,17 @@ export class GameSession {
     const date = new Date(this.currentDate);
     date.setDate(date.getDate() + timeJump);
     this.currentDate = date.toISOString().split('T')[0];
+
+    // Broadcast turn complete
+    this.broadcast('turn_complete', {
+      turn: this.currentTurn - 1,
+      narration: turnResult.narration,
+      countryResponse: turnResult.countryResponse,
+      events: turnResult.events,
+      objects: playerRegion.objects,
+      newTurn: this.currentTurn,
+      newDate: this.currentDate,
+    });
 
     return {
       turn: this.currentTurn - 1,
