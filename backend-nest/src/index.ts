@@ -194,6 +194,7 @@ app.post('/api/worlds/generate', async (req, res) => {
           objects: [],
           borders: [],
           status: 'active',
+          flag: code,  // Country code for flag display
           metadata: {
             ideology: state.ideology,
             allies: state.allies,

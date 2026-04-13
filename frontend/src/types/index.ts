@@ -88,6 +88,7 @@ export interface Region {
   borders: string[];  // Neighbor IDs
   status: RegionStatus;
   metadata: Record<string, any>;
+  flag?: string;    // Country code for flag display (e.g., "USA", "RUS")
 }
 
 export interface Bloc {

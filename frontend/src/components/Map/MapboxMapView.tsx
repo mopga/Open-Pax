@@ -11,11 +11,29 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import type { Region } from '../../types';
 import type { MapObject } from '../../types';
 
+// Country flag emoji by code
+const FLAG_EMOJI: Record<string, string> = {
+  USA: '🇺🇸', RUS: '🇷🇺', CHN: '🇨🇳', GBR: '🇬🇧', FRA: '🇫🇷',
+  DEU: '🇩🇪', JPN: '🇯🇵', IND: '🇮🇳', BRA: '🇧🇷', CAN: '🇨🇦',
+  ITA: '🇮🇹', ESP: '🇪🇸', MEX: '🇲🇽', AUS: '🇦🇺', KOR: '🇰🇷',
+  SAU: '🇸🇦', TUR: '🇹🇷', POL: '🇵🇱', NLD: '🇳🇱', BEL: '🇧🇪',
+  SWE: '🇸🇪', NOR: '🇳🇴', DNK: '🇩🇰', FIN: '🇫🇮', AUT: '🇦🇹',
+  CHE: '🇨🇭', PRT: '🇵🇹', GRC: '🇬🇷', CZE: '🇨🇿', HUN: '🇭🇺',
+  ROU: '🇷🇴', BGR: '🇧🇬', UKR: '🇺🇦', KAZ: '🇰🇿', ARG: '🇦🇷',
+  CHL: '🇨🇱', COL: '🇨🇴', PER: '🇵🇪', VEN: '🇻🇪', ECU: '🇪🇨',
+  BOL: '🇧🇴', PRY: '🇵🇾', URY: '🇺🇾', GTM: '🇬🇹', CUB: '🇨🇺',
+  HTI: '🇭🇹', DOM: '🇩🇴', HND: '🇭🇳', NIC: '🇳🇮', CRI: '🇨🇷',
+  PAN: '🇵🇦', SLV: '🇸🇻', JAM: '🇯🇲', TTO: '🇹🇹',
+  // Add more as needed
+};
+
 interface MapboxMapViewProps {
   regions: Region[];
   selectedRegionId?: string;
   onRegionClick?: (regionId: string) => void;
   changedRegionIds?: string[];
+  showFlags?: boolean;
+  playerCountryCode?: string;  // Player's country code (USA, RUS, etc.) to highlight their regions
 }
 
 const OBJECT_ICONS: Record<string, { color: string; label: string }> = {
@@ -37,6 +55,8 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
   selectedRegionId,
   onRegionClick,
   changedRegionIds = [],
+  showFlags = false,
+  playerCountryCode,
 }) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -127,6 +147,7 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
           id: region.id,
           name: region.name,
           color: region.color,
+          flag: region.flag || null,
           isSelected: region.id === selectedRegionId,
           isHovered: hoveredRegionId === region.id,
           isChanged: changedRegionIds.includes(region.id),
@@ -170,7 +191,11 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
         'fill-color': [
           'case',
           ['get', 'isSelected'], '#ffffff',
-          ['get', 'color']
+          playerCountryCode ? [
+            'case',
+            ['==', ['get', 'flag'], playerCountryCode], '#00ff88',
+            ['get', 'color']
+          ] : ['get', 'color']
         ],
         'fill-opacity': [
           'case',
@@ -207,8 +232,10 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
       type: 'symbol',
       source: sourceId,
       layout: {
-        'text-field': ['get', 'name'],
-        'text-size': 14,
+        'text-field': showFlags
+          ? ['case', ['get', 'flag'], ['concat', ['get', 'flag'], ' ', ['get', 'name']], ['get', 'name']]
+          : ['get', 'name'],
+        'text-size': showFlags ? 16 : 14,
         'text-font': ['DIN Pro Bold', 'Arial Unicode MS Bold'],
         'text-anchor': 'center',
       },
@@ -254,7 +281,7 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
     const bounds = getBounds();
     map.current.fitBounds(bounds, { padding: 50, duration: 500 });
 
-  }, [regions, mapLoaded, selectedRegionId, hoveredRegionId, changedRegionIds]);
+  }, [regions, mapLoaded, selectedRegionId, hoveredRegionId, changedRegionIds, showFlags, playerCountryCode]);
 
   // Collect all objects for markers
   const allObjects: (MapObject & { regionName: string; regionColor: string })[] = [];

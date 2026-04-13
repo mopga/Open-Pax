@@ -708,6 +708,8 @@ function App() {
               selectedRegionId={selectedRegion || undefined}
               onRegionClick={handleCountryChange}
               changedRegionIds={changedRegions}
+              showFlags={!!selectedCountry}
+              playerCountryCode={selectedCountry || undefined}
             />
           </div>
 
