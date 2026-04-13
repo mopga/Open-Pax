@@ -19,6 +19,7 @@
     "@types/better-sqlite3": "^7.6.13",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
+    "@types/geojson": "^7946.0.16",
     "@types/node": "^20.10.0",
     "@types/uuid": "^9.0.7",
     "tsx": "^4.7.0",

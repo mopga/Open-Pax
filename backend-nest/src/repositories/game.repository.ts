@@ -93,4 +93,9 @@ export const gameRepository = {
     const stmt = db.prepare('UPDATE games SET current_turn = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
     stmt.run(turn, gameId);
   },
+
+  updateDate: (gameId: string, date: string) => {
+    const stmt = db.prepare('UPDATE games SET current_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+    stmt.run(date, gameId);
+  },
 };

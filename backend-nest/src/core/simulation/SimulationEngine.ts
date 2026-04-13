@@ -42,6 +42,14 @@ export class SimulationEngine {
   }
 
   /**
+   * Sync regions state from GameSession after each turn.
+   * This ensures NPC decisions are based on current (not initial) region stats.
+   */
+  syncRegions(regions: Map<string, RegionState>): void {
+    this.regions = new Map(regions);
+  }
+
+  /**
    * Apply a validated action and calculate consequences
    */
   applyAction(action: ValidatedAction, jumpDays: number): SimulationDelta {
@@ -70,9 +78,25 @@ export class SimulationEngine {
         break;
     }
 
-    // Apply natural growth/decline
-    this.applyNaturalChanges(jumpDays, delta);
+    return delta;
+  }
 
+  /**
+   * Apply natural growth/decline once per turn.
+   * Called from GameSession.applyTurn() after all actions are processed.
+   */
+  applyTurnNaturalChanges(jumpDays: number): SimulationDelta {
+    const delta: SimulationDelta = {
+      regionChanges: [],
+      gdpChanges: {},
+      populationChanges: {},
+      militaryChanges: {},
+      newObjects: [],
+      events: [],
+      narrativeFacts: [],
+    };
+
+    this.applyNaturalChanges(jumpDays, delta);
     return delta;
   }
 
@@ -259,18 +283,19 @@ export class SimulationEngine {
 
   /**
    * Validate if an action can be performed
+   * @param playerId - player's region ID (not used anymore, kept for API compatibility)
    */
   validateAction(
     action: ValidatedAction,
-    playerId: string
+    _playerId: string
   ): { valid: boolean; reason?: string } {
     const source = this.regions.get(action.sourceRegionId);
     if (!source) {
       return { valid: false, reason: 'Source region not found' };
     }
 
-    // Check ownership
-    if (!source.owner.includes(playerId) && !source.owner.startsWith('ai-')) {
+    // Check ownership - player owns regions with owner='player', NPCs own 'ai-*'
+    if (source.owner !== 'player' && !source.owner.startsWith('ai-')) {
       return { valid: false, reason: 'You do not own this region' };
     }
 

@@ -109,7 +109,7 @@ class SessionRegistry {
 
     session.reconstructFromDB({
       currentTurn: game.current_turn,
-      currentDate: game.world?.start_date || '1951-01-01',
+      currentDate: game.current_date || game.world?.start_date || '1951-01-01',
       players: players.map(p => ({
         id: p.id,
         name: p.name,

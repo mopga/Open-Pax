@@ -391,6 +391,8 @@ export class GameSession {
 
       // Apply delta to regions
       this.applySimulationDelta(delta);
+      // Sync updated regions back to engine for next action/NPC decision
+      this.simulationEngine!.syncRegions(this.regions);
     }
 
     // Process NPC turns through simulation engine
@@ -406,17 +408,15 @@ export class GameSession {
       allNarrativeFacts.push(...npcDelta.narrativeFacts);
       allEvents.push(...npcDelta.events);
       this.applySimulationDelta(npcDelta);
+      // Sync after each NPC turn too
+      this.simulationEngine!.syncRegions(this.regions);
     }
 
-    // Apply natural changes
-    const naturalDelta = this.simulationEngine!.applyAction({
-      type: 'develop', // Dummy action to trigger natural growth
-      sourceRegionId: player.regionId,
-      description: 'natural changes',
-      cost: { gdp: 0, population: 0, militaryPower: 0 },
-      expectedOutcome: { successProbability: 1, expectedCaptures: [], expectedLosses: { gdp: 0, population: 0, militaryPower: 0 }, duration: timeJump },
-    }, timeJump);
-    // Don't add natural changes' narrative facts as they're automatic
+    // Apply natural changes ONCE per turn (not per action)
+    const naturalDelta = this.simulationEngine!.applyTurnNaturalChanges(timeJump);
+    this.applySimulationDelta(naturalDelta);
+    // Sync after natural changes too
+    this.simulationEngine!.syncRegions(this.regions);
 
     // Apply random events
     const randomEvents = this.applyRandomEvents();
@@ -482,6 +482,9 @@ export class GameSession {
     const date = new Date(this.currentDate);
     date.setDate(date.getDate() + timeJump);
     this.currentDate = date.toISOString().split('T')[0];
+
+    // Persist updated date to DB
+    gameRepository.updateDate(this.id, this.currentDate);
 
     // Broadcast turn complete
     this.broadcast('turn_complete', {
@@ -853,6 +856,7 @@ export class GameSession {
 
     // Update game in DB
     gameRepository.updateTurn(this.id, this.currentTurn);
+    gameRepository.updateDate(this.id, this.currentDate);
 
     // Sync restored regions to DB
     this.syncRegionsToDB();
@@ -1028,6 +1032,9 @@ export class GameSession {
       // Now set periodEnd (after advancing)
       action.result.periodEnd = this.currentDate;
 
+      // Persist updated date to DB
+      gameRepository.updateDate(this.id, this.currentDate);
+
       console.log('[GameSession] Action processed, new date:', this.currentDate);
       return action;
 
@@ -1065,6 +1072,7 @@ export class GameSession {
 
     // Persist to DB
     gameRepository.updateTurn(this.id, this.currentTurn);
+    gameRepository.updateDate(this.id, this.currentDate);
 
     console.log('[GameSession] Advanced date:', periodStart, '->', this.currentDate);
     return { newDate: this.currentDate, newTurn: this.currentTurn };

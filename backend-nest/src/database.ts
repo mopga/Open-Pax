@@ -90,6 +90,7 @@ export function initDatabase() {
       id TEXT PRIMARY KEY,
       world_id TEXT NOT NULL,
       current_turn INTEGER DEFAULT 1,
+      current_date TEXT DEFAULT '1951-01-01',
       max_turns INTEGER DEFAULT 100,
       status TEXT DEFAULT 'playing',
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -97,6 +98,16 @@ export function initDatabase() {
       FOREIGN KEY (world_id) REFERENCES worlds(id) ON DELETE CASCADE
     )
   `);
+
+  // Migration: Add current_date to games table if it doesn't exist
+  try {
+    db.exec("ALTER TABLE games ADD COLUMN current_date TEXT DEFAULT '1951-01-01'");
+    console.log('[Migration] Added current_date to games');
+  } catch (e: any) {
+    if (!e.message.includes('duplicate column name') && !e.message.includes('no such column')) {
+      console.log('[Migration] current_date column check:', e.message);
+    }
+  }
 
   // Players table
   db.exec(`
