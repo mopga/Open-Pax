@@ -5,7 +5,7 @@
  * Supports: region fills, borders, labels, selection, hover, object markers.
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import type { Region } from '../../types';
@@ -31,9 +31,11 @@ interface MapboxMapViewProps {
   regions: Region[];
   selectedRegionId?: string;
   onRegionClick?: (regionId: string) => void;
+  onRegionHover?: (regionId: string | null) => void;
   changedRegionIds?: string[];
   showFlags?: boolean;
-  playerCountryCode?: string;  // Player's country code (USA, RUS, etc.) to highlight their regions
+  playerCountryCode?: string;
+  showMinimap?: boolean;
 }
 
 const OBJECT_ICONS: Record<string, { color: string; label: string }> = {
@@ -54,14 +56,74 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
   regions,
   selectedRegionId,
   onRegionClick,
+  onRegionHover,
   changedRegionIds = [],
   showFlags = false,
   playerCountryCode,
+  showMinimap = true,
 }) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [hoveredRegionId, setHoveredRegionId] = useState<string | null>(null);
+  const [tooltipInfo, setTooltipInfo] = useState<{ x: number; y: number; name: string; population: number; gdp: number; militaryPower: number } | null>(null);
+
+  // Zoom in/out functions for keyboard shortcuts
+  const zoomIn = useCallback(() => {
+    map.current?.zoomIn({ duration: 300 });
+  }, []);
+
+  const zoomOut = useCallback(() => {
+    map.current?.zoomOut({ duration: 300 });
+  }, []);
+
+  const resetView = useCallback(() => {
+    const bounds = getBounds();
+    map.current?.fitBounds(bounds, { padding: 50, duration: 500 });
+  }, []);
+
+  // Keyboard navigation shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!map.current) return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      switch (e.key) {
+        case '+':
+        case '=':
+          e.preventDefault();
+          zoomIn();
+          break;
+        case '-':
+          e.preventDefault();
+          zoomOut();
+          break;
+        case '0':
+          e.preventDefault();
+          resetView();
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          map.current.panBy([0, -100], { duration: 200 });
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          map.current.panBy([0, 100], { duration: 200 });
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          map.current.panBy([-100, 0], { duration: 200 });
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          map.current.panBy([100, 0], { duration: 200 });
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [zoomIn, zoomOut, resetView]);
 
   // Calculate map bounds from regions
   const getBounds = () => {
@@ -268,12 +330,30 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
         map.current.getCanvas().style.cursor = '';
       }
       setHoveredRegionId(null);
+      setTooltipInfo(null);
     });
 
     map.current.on('mousemove', fillLayerId, (e) => {
       if (e.features && e.features[0]) {
         const props = e.features[0].properties;
         setHoveredRegionId(props?.id || null);
+        if (onRegionHover) {
+          onRegionHover(props?.id || null);
+        }
+        // Update tooltip
+        if (props?.id) {
+          const region = regions.find(r => r.id === props.id);
+          if (region) {
+            setTooltipInfo({
+              x: e.point.x,
+              y: e.point.y,
+              name: region.name,
+              population: region.population,
+              gdp: region.gdp,
+              militaryPower: region.militaryPower,
+            });
+          }
+        }
       }
     });
 
@@ -281,7 +361,7 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
     const bounds = getBounds();
     map.current.fitBounds(bounds, { padding: 50, duration: 500 });
 
-  }, [regions, mapLoaded, selectedRegionId, hoveredRegionId, changedRegionIds, showFlags, playerCountryCode]);
+  }, [regions, mapLoaded, selectedRegionId, hoveredRegionId, changedRegionIds, showFlags, playerCountryCode, onRegionHover]);
 
   // Collect all objects for markers
   const allObjects: (MapObject & { regionName: string; regionColor: string })[] = [];
@@ -378,6 +458,94 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
           Loading map...
         </div>
       )}
+
+      {/* Region tooltip */}
+      {tooltipInfo && (
+        <div
+          style={{
+            position: 'absolute',
+            left: tooltipInfo.x + 10,
+            top: tooltipInfo.y - 10,
+            background: 'rgba(20, 20, 30, 0.95)',
+            border: '1px solid #444',
+            borderRadius: '6px',
+            padding: '10px 14px',
+            color: '#fff',
+            fontSize: '12px',
+            pointerEvents: 'none',
+            zIndex: 100,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+            minWidth: '140px',
+          }}
+        >
+          <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '6px', color: '#667eea' }}>
+            {tooltipInfo.name}
+          </div>
+          <div style={{ color: '#aaa' }}>👥 {tooltipInfo.population?.toLocaleString()}</div>
+          <div style={{ color: '#aaa' }}>💰 {tooltipInfo.gdp}</div>
+          <div style={{ color: '#aaa' }}>⚔️ {tooltipInfo.militaryPower}</div>
+        </div>
+      )}
+
+      {/* Zoom controls overlay */}
+      <div style={{
+        position: 'absolute',
+        top: '10px',
+        left: '10px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '4px',
+        zIndex: 10,
+      }}>
+        <button
+          onClick={zoomIn}
+          style={{
+            width: '32px',
+            height: '32px',
+            background: 'rgba(20, 20, 30, 0.9)',
+            border: '1px solid #444',
+            borderRadius: '4px',
+            color: '#fff',
+            fontSize: '18px',
+            cursor: 'pointer',
+          }}
+          title="Zoom in (+)"
+        >
+          +
+        </button>
+        <button
+          onClick={zoomOut}
+          style={{
+            width: '32px',
+            height: '32px',
+            background: 'rgba(20, 20, 30, 0.9)',
+            border: '1px solid #444',
+            borderRadius: '4px',
+            color: '#fff',
+            fontSize: '18px',
+            cursor: 'pointer',
+          }}
+          title="Zoom out (-)"
+        >
+          −
+        </button>
+        <button
+          onClick={resetView}
+          style={{
+            width: '32px',
+            height: '32px',
+            background: 'rgba(20, 20, 30, 0.9)',
+            border: '1px solid #444',
+            borderRadius: '4px',
+            color: '#fff',
+            fontSize: '14px',
+            cursor: 'pointer',
+          }}
+          title="Reset view (0)"
+        >
+          ⌂
+        </button>
+      </div>
     </div>
   );
 };

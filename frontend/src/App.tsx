@@ -643,7 +643,7 @@ function App() {
   const renderGame = () => {
     if (!currentWorld) return null;
 
-    const regions = Object.values(currentWorld.regions);
+    const regions: Region[] = Object.values(currentWorld.regions);
     const currentRegion = regions.find(r => r.id === selectedRegion);
 
     return (
