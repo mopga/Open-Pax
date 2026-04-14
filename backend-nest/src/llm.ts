@@ -97,3 +97,6 @@ export class MiniMaxProvider {
     }
   }
 }
+
+// Singleton instance
+export const llmProvider = new MiniMaxProvider();
