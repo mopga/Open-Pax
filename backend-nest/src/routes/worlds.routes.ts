@@ -167,6 +167,7 @@ worldsRouter.patch('/:id/prompt', (req, res) => {
   }
 
   worldRepository.update(req.params.id, { basePrompt });
+  llmProvider.clearCache(); // Invalidate cached narrations when world prompt changes
   res.json({ success: true, basePrompt });
 });
 
