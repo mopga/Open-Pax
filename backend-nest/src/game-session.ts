@@ -352,6 +352,7 @@ export class GameSession {
     countryResponse: string;
     events: string[];
     objects: any[];
+    validationErrors?: { action: string; reason: string }[];
   }> {
     const player = this.players[0];
     if (!player) throw new Error('No player in session');
@@ -367,21 +368,26 @@ export class GameSession {
     // Initialize simulation engine
     this.initSimulationEngine();
 
-    // Parse player action into ValidatedAction
-    const actions = playerAction.split(' | ').map(text => this.actionParser.parse(text, this.regions)).filter((a): a is ValidatedAction => a !== null);
+    // Parse player action into ValidatedAction (with validation)
+    const parseWithValidation = (text: string) => this.actionParser.parse(text, this.regions, (action) =>
+      this.simulationEngine!.validateAction(action, player.id)
+    );
+    const actions = playerAction.split(' | ').map(parseWithValidation).filter((a): a is ValidatedAction => a !== null);
+
+    // Collect failed actions (validation errors)
+    const failedActions = actions.filter(a => !a.validation?.valid);
+    const validActions = actions.filter(a => a.validation?.valid);
+
+    // Log failed actions
+    for (const action of failedActions) {
+      console.warn('[GameSession] Invalid action:', action.validation?.reason);
+    }
 
     // Process player actions through simulation engine
     const allNarrativeFacts: string[] = [];
     const allEvents: DeterministicEvent[] = [];
 
-    for (const action of actions) {
-      // Validate action
-      const validation = this.simulationEngine!.validateAction(action, player.id);
-      if (!validation.valid) {
-        console.warn('[GameSession] Invalid action:', validation.reason);
-        continue;
-      }
-
+    for (const action of validActions) {
       // Apply action through simulation engine
       const delta = this.simulationEngine!.applyAction(action, timeJump);
 
@@ -500,6 +506,10 @@ export class GameSession {
       countryResponse: turnResult.countryResponse,
       events: turnResult.events,
       objects: playerRegion.objects,
+      validationErrors: failedActions.map(a => ({
+        action: a.description,
+        reason: a.validation?.reason || 'Unknown error'
+      })),
     };
   }
 

@@ -44,6 +44,8 @@ export interface ValidatedAction {
   description: string;
   cost: ActionCost;
   expectedOutcome: ActionOutcome;
+  /** Validation result - set by ActionParser when validate function is provided */
+  validation?: { valid: boolean; reason?: string };
 }
 
 export interface ActionCost {

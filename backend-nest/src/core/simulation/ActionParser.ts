@@ -13,10 +13,12 @@ import type { ValidatedAction, ActionCost } from './types';
 export class ActionParser {
   /**
    * Parse action text into ValidatedAction
+   * @param validate Optional validation function to call on the parsed action
    */
   parse(
     text: string,
-    regions: Map<string, { id: string; name: string; owner: string }>
+    regions: Map<string, { id: string; name: string; owner: string }>,
+    validate?: (action: ValidatedAction) => { valid: boolean; reason?: string }
   ): ValidatedAction | null {
     const lower = text.toLowerCase();
 
@@ -33,7 +35,7 @@ export class ActionParser {
         militaryPower: 50,
       };
 
-      return {
+      const action: ValidatedAction = {
         type: 'attack',
         sourceRegionId: source.id,
         targetRegionId: target.id,
@@ -46,6 +48,8 @@ export class ActionParser {
           duration: 30,
         },
       };
+      if (validate) action.validation = validate(action);
+      return action;
     }
 
     // Development patterns
@@ -59,7 +63,7 @@ export class ActionParser {
         militaryPower: 0,
       };
 
-      return {
+      const action: ValidatedAction = {
         type: 'develop',
         sourceRegionId: source.id,
         description: `Развитие в ${source.name}`,
@@ -71,6 +75,8 @@ export class ActionParser {
           duration: 30,
         },
       };
+      if (validate) action.validation = validate(action);
+      return action;
     }
 
     // Trade patterns
@@ -84,7 +90,7 @@ export class ActionParser {
         militaryPower: 0,
       };
 
-      return {
+      const action: ValidatedAction = {
         type: 'trade',
         sourceRegionId: source.id,
         description: `Торговля в ${source.name}`,
@@ -96,6 +102,8 @@ export class ActionParser {
           duration: 30,
         },
       };
+      if (validate) action.validation = validate(action);
+      return action;
     }
 
     // Build patterns
@@ -109,7 +117,7 @@ export class ActionParser {
         militaryPower: 0,
       };
 
-      return {
+      const action: ValidatedAction = {
         type: 'build',
         sourceRegionId: source.id,
         description: `Строительство в ${source.name}`,
@@ -121,6 +129,8 @@ export class ActionParser {
           duration: 30,
         },
       };
+      if (validate) action.validation = validate(action);
+      return action;
     }
 
     return null;
