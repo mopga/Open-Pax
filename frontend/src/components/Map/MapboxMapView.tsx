@@ -11,20 +11,38 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import type { Region } from '../../types';
 import type { MapObject } from '../../types';
 
-// Country flag emoji by code
-const FLAG_EMOJI: Record<string, string> = {
-  USA: '🇺🇸', RUS: '🇷🇺', CHN: '🇨🇳', GBR: '🇬🇧', FRA: '🇫🇷',
-  DEU: '🇩🇪', JPN: '🇯🇵', IND: '🇮🇳', BRA: '🇧🇷', CAN: '🇨🇦',
-  ITA: '🇮🇹', ESP: '🇪🇸', MEX: '🇲🇽', AUS: '🇦🇺', KOR: '🇰🇷',
-  SAU: '🇸🇦', TUR: '🇹🇷', POL: '🇵🇱', NLD: '🇳🇱', BEL: '🇧🇪',
-  SWE: '🇸🇪', NOR: '🇳🇴', DNK: '🇩🇰', FIN: '🇫🇮', AUT: '🇦🇹',
-  CHE: '🇨🇭', PRT: '🇵🇹', GRC: '🇬🇷', CZE: '🇨🇿', HUN: '🇭🇺',
-  ROU: '🇷🇴', BGR: '🇧🇬', UKR: '🇺🇦', KAZ: '🇰🇿', ARG: '🇦🇷',
-  CHL: '🇨🇱', COL: '🇨🇴', PER: '🇵🇪', VEN: '🇻🇪', ECU: '🇪🇨',
-  BOL: '🇧🇴', PRY: '🇵🇾', URY: '🇺🇾', GTM: '🇬🇹', CUB: '🇨🇺',
-  HTI: '🇭🇹', DOM: '🇩🇴', HND: '🇭🇳', NIC: '🇳🇮', CRI: '🇨🇷',
-  PAN: '🇵🇦', SLV: '🇸🇻', JAM: '🇯🇲', TTO: '🇹🇹',
-  // Add more as needed
+// ISO 3166-1 alpha-3 to alpha-2 mapping for flagcdn.com
+const ISO3_TO_ISO2: Record<string, string> = {
+  USA: 'us', RUS: 'ru', CHN: 'cn', GBR: 'gb', FRA: 'fr',
+  DEU: 'de', JPN: 'jp', IND: 'in', BRA: 'br', CAN: 'ca',
+  ITA: 'it', ESP: 'es', MEX: 'mx', AUS: 'au', KOR: 'kr',
+  SAU: 'sa', TUR: 'tr', POL: 'pl', NLD: 'nl', BEL: 'be',
+  SWE: 'se', NOR: 'no', DNK: 'dk', FIN: 'fi', AUT: 'at',
+  CHE: 'ch', PRT: 'pt', GRC: 'gr', CZE: 'cz', HUN: 'hu',
+  ROU: 'ro', BGR: 'bg', UKR: 'ua', KAZ: 'kz', ARG: 'ar',
+  CHL: 'cl', COL: 'co', PER: 'pe', VEN: 've', ECU: 'ec',
+  BOL: 'bo', PRY: 'py', URY: 'uy', GTM: 'gt', CUB: 'cu',
+  HTI: 'ht', DOM: 'do', HND: 'hn', NIC: 'ni', CRI: 'cr',
+  PAN: 'pa', SLV: 'sv', JAM: 'jm', TTO: 'tt', PRK: 'kp',
+  VNM: 'vn', THA: 'th', IDN: 'id', MYS: 'my', PHL: 'ph',
+  PAK: 'pk', BGD: 'bd', IRN: 'ir', IRQ: 'iq', SYR: 'sy',
+  ISR: 'il', EGY: 'eg', LBY: 'ly', DZA: 'dz', MAR: 'ma',
+  TUN: 'tn', NGA: 'ng', ZAF: 'za', ETH: 'et', KEN: 'ke',
+  GHA: 'gh', AGO: 'ao', MOZ: 'mz', TZA: 'tz', CMR: 'cm',
+  COD: 'cd', SDN: 'sd', SOM: 'so', YEM: 'ye', AFG: 'af',
+  MMR: 'mm', KHM: 'kh', LAO: 'la', MNG: 'mn', NPL: 'np',
+  LKA: 'lk', AZE: 'az', GEO: 'ge', ARM: 'am', BLR: 'by',
+  MDA: 'md', LTU: 'lt', LVA: 'lv', EST: 'ee', SRB: 'rs',
+  HRV: 'hr', BIH: 'ba', SVN: 'si', SVK: 'sk', MKD: 'mk',
+  MNE: 'me', ALB: 'al', RWA: 'rw', UZB: 'uz', TKM: 'tm',
+  KGZ: 'kg', TJK: 'tj',
+};
+
+// Returns flagcdn.com PNG URL for a 3-letter country code
+const getFlagUrl = (code3: string, size: number = 40): string | null => {
+  const code2 = ISO3_TO_ISO2[code3];
+  if (!code2) return null;
+  return `https://flagcdn.com/w${size}/${code2}.png`;
 };
 
 interface MapboxMapViewProps {
@@ -194,6 +212,28 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
     };
   }, []);
 
+  // Preload flag images from flagcdn.com for all regions
+  useEffect(() => {
+    if (!map.current || !mapLoaded || !showFlags) return;
+
+    const flagCodes = [...new Set(regions.map(r => r.flag).filter(Boolean))] as string[];
+
+    flagCodes.forEach(code => {
+      const imageId = `flag-${code.toLowerCase()}`;
+      if (map.current!.hasImage(imageId)) return;
+
+      const url = getFlagUrl(code, 40);
+      if (!url) return;
+
+      map.current!.loadImage(url, (err, img) => {
+        if (err || !img || !map.current) return;
+        if (!map.current.hasImage(imageId)) {
+          map.current.addImage(imageId, img);
+        }
+      });
+    });
+  }, [mapLoaded, showFlags, regions]);
+
   // Add/update regions source and layers
   useEffect(() => {
     if (!map.current || !mapLoaded || regions.length === 0) return;
@@ -222,9 +262,10 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
     const fillLayerId = 'regions-fill';
     const lineLayerId = 'regions-line';
     const labelLayerId = 'regions-label';
+    const flagLayerId = 'flags-icon';
 
     // Remove existing layers if any
-    [labelLayerId, lineLayerId, fillLayerId].forEach(id => {
+    [flagLayerId, labelLayerId, lineLayerId, fillLayerId].forEach(id => {
       if (map.current?.getLayer(id)) {
         map.current.removeLayer(id);
       }
@@ -288,18 +329,18 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
       },
     });
 
-    // Add label layer
+    // Add label layer (country name only, no emoji)
     map.current.addLayer({
       id: labelLayerId,
       type: 'symbol',
       source: sourceId,
       layout: {
-        'text-field': showFlags
-          ? ['case', ['get', 'flag'], ['concat', ['get', 'flag'], ' ', ['get', 'name']], ['get', 'name']]
-          : ['get', 'name'],
-        'text-size': showFlags ? 16 : 14,
+        'text-field': ['get', 'name'],
+        'text-size': 14,
         'text-font': ['DIN Pro Bold', 'Arial Unicode MS Bold'],
         'text-anchor': 'center',
+        // Shift name below flag icon when flags are shown
+        'text-offset': showFlags ? [0, 1.5] : [0, 0],
       },
       paint: {
         'text-color': '#ffffff',
@@ -307,6 +348,29 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
         'text-halo-width': 2,
       },
     });
+
+    // Add flag icon layer (PNG from flagcdn.com)
+    if (showFlags) {
+      map.current.addLayer({
+        id: flagLayerId,
+        type: 'symbol',
+        source: sourceId,
+        layout: {
+          'icon-image': ['case',
+            ['has', 'flag'],
+            ['concat', 'flag-', ['downcase', ['get', 'flag']]],
+            '',
+          ],
+          'icon-size': 0.55,
+          'icon-anchor': 'center',
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+        },
+        paint: {
+          'icon-opacity': 0.95,
+        },
+      });
+    }
 
     // Click handler for regions
     map.current.on('click', fillLayerId, (e) => {
