@@ -165,4 +165,28 @@ export const worldRepository = {
     createWorld();
     return worldRepository.findById(world.id);
   },
+
+  /**
+   * Batch update multiple regions in a single transaction
+   * Much faster than calling updateRegion() N times
+   */
+  updateRegionsBatch: (updates: { id: string; population?: number; gdp?: number; militaryPower?: number }[]) => {
+    if (updates.length === 0) return;
+
+    const stmt = db.prepare(`
+      UPDATE world_regions SET
+        population = ?,
+        gdp = ?,
+        military_power = ?
+      WHERE id = ?
+    `);
+
+    const updateAll = db.transaction((items) => {
+      for (const item of items) {
+        stmt.run(item.population ?? null, item.gdp ?? null, item.militaryPower ?? null, item.id);
+      }
+    });
+
+    updateAll(updates);
+  },
 };

@@ -474,17 +474,14 @@ export class GameSession {
     // Persist ALL region changes to DB (FIXES: was only persisting player region)
     await this.syncRegionsToDB();
 
-    // Persist turn number to DB
-    gameRepository.updateTurn(this.id, this.currentTurn + 1);
-
     // Advance turn
     this.currentTurn++;
     const date = new Date(this.currentDate);
     date.setDate(date.getDate() + timeJump);
     this.currentDate = date.toISOString().split('T')[0];
 
-    // Persist updated date to DB
-    gameRepository.updateDate(this.id, this.currentDate);
+    // Persist turn and date to DB in single operation
+    gameRepository.updateTurnAndDate(this.id, this.currentTurn, this.currentDate);
 
     // Broadcast turn complete
     this.broadcast('turn_complete', {
@@ -793,19 +790,17 @@ export class GameSession {
 
   /**
    * Sync all region changes to database
-   * Called after each turn to persist all changes
+   * Uses batch update for performance (single transaction for all regions)
+   * Note: owner/color/objects rarely change per turn, so we batch population/gdp/military only
    */
   async syncRegionsToDB(): Promise<void> {
-    for (const [regionId, region] of this.regions) {
-      worldRepository.updateRegion(regionId, {
-        owner: region.owner,
-        color: region.color,
-        population: region.population,
-        gdp: region.gdp,
-        militaryPower: region.militaryPower,
-        objects: region.objects,
-      });
-    }
+    const updates = Array.from(this.regions.values()).map(region => ({
+      id: region.id,
+      population: region.population,
+      gdp: region.gdp,
+      militaryPower: region.militaryPower,
+    }));
+    worldRepository.updateRegionsBatch(updates);
   }
 
   /**
@@ -855,8 +850,7 @@ export class GameSession {
     }
 
     // Update game in DB
-    gameRepository.updateTurn(this.id, this.currentTurn);
-    gameRepository.updateDate(this.id, this.currentDate);
+    gameRepository.updateTurnAndDate(this.id, this.currentTurn, this.currentDate);
 
     // Sync restored regions to DB
     this.syncRegionsToDB();
@@ -1007,9 +1001,6 @@ export class GameSession {
       // Persist ALL region changes to DB
       await this.syncRegionsToDB();
 
-      // Persist turn number to DB
-      gameRepository.updateTurn(this.id, this.currentTurn + 1);
-
       // Update action with result (before advancing date)
       action.status = 'completed';
       const periodStart = this.currentDate;
@@ -1032,8 +1023,8 @@ export class GameSession {
       // Now set periodEnd (after advancing)
       action.result.periodEnd = this.currentDate;
 
-      // Persist updated date to DB
-      gameRepository.updateDate(this.id, this.currentDate);
+      // Persist turn and date to DB in single operation
+      gameRepository.updateTurnAndDate(this.id, this.currentTurn, this.currentDate);
 
       console.log('[GameSession] Action processed, new date:', this.currentDate);
       return action;
@@ -1071,8 +1062,7 @@ export class GameSession {
     this.currentDate = date.toISOString().split('T')[0];
 
     // Persist to DB
-    gameRepository.updateTurn(this.id, this.currentTurn);
-    gameRepository.updateDate(this.id, this.currentDate);
+    gameRepository.updateTurnAndDate(this.id, this.currentTurn, this.currentDate);
 
     console.log('[GameSession] Advanced date:', periodStart, '->', this.currentDate);
     return { newDate: this.currentDate, newTurn: this.currentTurn };

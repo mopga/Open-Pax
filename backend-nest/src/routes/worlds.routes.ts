@@ -80,28 +80,29 @@ worldsRouter.post('/generate', async (req, res) => {
     }
 
     const worldId = uuid().slice(0, 8);
-    worldRepository.create({
+    const worldData = {
       id: worldId,
       name: `${template.name} - ${new Date().toLocaleDateString()}`,
       description: template.description || template.base_prompt?.substring(0, 200) || '',
       startDate: worldState.date,
       basePrompt: template.base_prompt,
       historicalAccuracy: 0.8,
-    });
+    };
 
-    for (const [code, region] of Object.entries(regionsObj)) {
-      worldRepository.addRegion({
-        id: code,
-        worldId,
-        name: region.name,
-        geojson: region.geojson,
-        color: region.color,
-        owner: region.owner,
-        population: region.population,
-        gdp: region.gdp,
-        militaryPower: region.militaryPower,
-      });
-    }
+    // Convert regionsObj to array and use createWithRegions (which wraps in transaction)
+    const regionsArray = Object.entries(regionsObj).map(([code, region]) => ({
+      id: code,
+      worldId,
+      name: region.name,
+      geojson: region.geojson,
+      color: region.color,
+      owner: region.owner,
+      population: region.population,
+      gdp: region.gdp,
+      militaryPower: region.militaryPower,
+    }));
+
+    worldRepository.createWithRegions(worldData, regionsArray);
 
     res.json({
       templateId,
