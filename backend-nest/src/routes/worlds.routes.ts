@@ -5,7 +5,7 @@
 
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
-import { worldRepository } from '../repositories';
+import { worldRepository, relationshipRepository } from '../repositories';
 import { svgPathToGeoJSON } from '../utils/svg-to-geojson';
 import { BalanceAgent } from '../agents/balance-agent';
 import { llmProvider } from '../llm';
@@ -103,6 +103,20 @@ worldsRouter.post('/generate', async (req, res) => {
     }));
 
     worldRepository.createWithRegions(worldData, regionsArray);
+
+    // Persist diplomatic relationships from Balance Agent allies/enemies
+    const relEntries: { from: string; to: string; type: 'ally' | 'hostile' }[] = [];
+    for (const [code, state] of worldState.countries) {
+      for (const allyCode of state.allies || []) {
+        relEntries.push({ from: code, to: allyCode, type: 'ally' });
+      }
+      for (const enemyCode of state.enemies || []) {
+        relEntries.push({ from: code, to: enemyCode, type: 'hostile' });
+      }
+    }
+    if (relEntries.length > 0) {
+      relationshipRepository.initForWorld(worldId, relEntries);
+    }
 
     res.json({
       templateId,

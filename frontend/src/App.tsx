@@ -9,6 +9,7 @@ import { MapEditor, type EditorRegion, type EditorObject } from './components/Ed
 import { CreateWorld, type WorldConfig } from './components/WorldBuilder/CreateWorld';
 import { TemplateSelector } from './components/Game/TemplateSelector';
 import { CountrySelector } from './components/Game/CountrySelector';
+import { DiplomacyPanel } from './components/Game/DiplomacyPanel';
 import { gameApi, worldApi, mapApi, savesApi } from './services/api';
 import type { Region, World, Game } from './types';
 import { useGameStore, useUIStore, useActionsStore, type LocalMap } from './stores';
@@ -743,6 +744,15 @@ function App() {
                   <span>⚔️ {currentRegion.militaryPower || 100}</span>
                 </div>
               </div>
+            )}
+
+            {/* Diplomacy panel */}
+            {currentGame && selectedRegion && (
+              <DiplomacyPanel
+                gameId={currentGame.id}
+                selectedRegionId={selectedRegion}
+                regions={regions}
+              />
             )}
 
             {/* Save/Load buttons */}

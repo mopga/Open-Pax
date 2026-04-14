@@ -163,6 +163,18 @@ gamesRouter.get('/:id/suggestions', async (req, res) => {
   }
 });
 
+gamesRouter.get('/:id/relationships', (req, res) => {
+  const gameId = req.params.id;
+
+  try {
+    const session = getSessionRegistry().getSessionOrThrow(gameId);
+    res.json(session.getRelationships());
+  } catch (e) {
+    console.error('[Relationships] Error:', e);
+    res.status(404).json({ error: 'Game not found' });
+  }
+});
+
 gamesRouter.post('/:id/save', (req, res) => {
   const gameId = req.params.id;
   const { name } = req.body;

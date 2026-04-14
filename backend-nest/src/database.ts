@@ -84,6 +84,28 @@ export function initDatabase() {
     }
   }
 
+  // Migration: Add metadata column to world_regions if it doesn't exist
+  try {
+    db.exec("ALTER TABLE world_regions ADD COLUMN metadata TEXT");
+    console.log('[Migration] Added metadata column to world_regions');
+  } catch (e: any) {
+    if (!e.message.includes('duplicate column name') && !e.message.includes('no such column')) {
+      // Ignore duplicate / no-such-column errors
+    }
+  }
+
+  // Country relationships table (allies/enemies per world)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS country_relationships (
+      id TEXT PRIMARY KEY,
+      world_id TEXT NOT NULL,
+      from_region_id TEXT NOT NULL,
+      to_region_id TEXT NOT NULL,
+      relationship TEXT DEFAULT 'neutral',
+      FOREIGN KEY (world_id) REFERENCES worlds(id) ON DELETE CASCADE
+    )
+  `);
+
   // Games table
   db.exec(`
     CREATE TABLE IF NOT EXISTS games (

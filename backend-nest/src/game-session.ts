@@ -9,9 +9,10 @@ import { v4 as uuid } from 'uuid';
 import { MiniMaxProvider } from './llm';
 import { GameController } from './agents';
 import { PromptEngine } from './prompt-builder';
-import { worldRepository, gameRepository } from './repositories';
+import { worldRepository, gameRepository, relationshipRepository } from './repositories';
 import db from './database';
-import { SimulationEngine, ActionParser, type ValidatedAction, type SimulationDelta, type DeterministicEvent } from './core/simulation';
+import { SimulationEngine, ActionParser, type ValidatedAction, type SimulationDelta, type DeterministicEvent, type RelationshipChange } from './core/simulation';
+import { RelationshipMatrix } from './core/RelationshipMatrix';
 
 export interface RegionState {
   id: string;
@@ -79,6 +80,7 @@ export interface SaveData {
   currentDate: string;
   players: PlayerInfo[];
   regions: [string, RegionState][]; // [regionId, state] pairs
+  relationships?: Record<string, Record<string, string>>;
 }
 
 export class GameSession {
@@ -107,6 +109,9 @@ export class GameSession {
 
   // Pending actions queue (Phase 2)
   private pendingActions: PendingAction[] = [];
+
+  // Diplomatic relationships
+  private relationships: RelationshipMatrix = new RelationshipMatrix();
 
   // SSE broadcaster for real-time updates
   private sseBroadcaster: ((type: string, data: any) => void) | null = null;
@@ -223,6 +228,12 @@ export class GameSession {
       .map(r => ({ id: r.id, name: r.name, owner: r.owner }));
     this.gameController.setupNPCCountries(regionConfigs);
 
+    // Load diplomatic relationships from DB
+    const rels = relationshipRepository.getForWorld(this.worldId);
+    for (const rel of rels) {
+      this.relationships.set(rel.from, rel.to, rel.type);
+    }
+
     this.currentDate = world.start_date || '1951-01-01';
 
     // Sync all regions to DB on init (ensure baseline is persisted)
@@ -282,6 +293,12 @@ export class GameSession {
     if (player) {
       const playerRegion = this.regions.get(player.regionId);
       this.gameController.addCountry(player.regionId, playerRegion?.name || 'Unknown');
+    }
+
+    // Load relationships from DB
+    const rels = relationshipRepository.getForWorld(this.worldId);
+    for (const rel of rels) {
+      this.relationships.set(rel.from, rel.to, rel.type);
     }
 
     // Re-setup NPC countries
@@ -386,14 +403,16 @@ export class GameSession {
     // Process player actions through simulation engine
     const allNarrativeFacts: string[] = [];
     const allEvents: DeterministicEvent[] = [];
+    const allRelationshipChanges: RelationshipChange[] = [];
 
     for (const action of validActions) {
       // Apply action through simulation engine
-      const delta = this.simulationEngine!.applyAction(action, timeJump);
+      const delta = this.simulationEngine!.applyAction(action, timeJump, this.relationships);
 
       // Collect facts and events
       allNarrativeFacts.push(...delta.narrativeFacts);
       allEvents.push(...delta.events);
+      if (delta.relationshipChanges) allRelationshipChanges.push(...delta.relationshipChanges);
 
       // Apply delta to regions
       this.applySimulationDelta(delta);
@@ -410,9 +429,10 @@ export class GameSession {
     }
 
     for (const npcId of npcIds) {
-      const npcDelta = this.simulationEngine!.processNPCTurn(npcId, timeJump);
+      const npcDelta = this.simulationEngine!.processNPCTurn(npcId, timeJump, this.relationships);
       allNarrativeFacts.push(...npcDelta.narrativeFacts);
       allEvents.push(...npcDelta.events);
+      if (npcDelta.relationshipChanges) allRelationshipChanges.push(...npcDelta.relationshipChanges);
       this.applySimulationDelta(npcDelta);
       // Sync after each NPC turn too
       this.simulationEngine!.syncRegions(this.regions);
@@ -479,6 +499,11 @@ export class GameSession {
 
     // Persist ALL region changes to DB (FIXES: was only persisting player region)
     await this.syncRegionsToDB();
+
+    // Persist relationship changes to DB
+    if (allRelationshipChanges.length > 0) {
+      relationshipRepository.bulkUpsert(this.worldId, allRelationshipChanges);
+    }
 
     // Advance turn
     this.currentTurn++;
@@ -825,6 +850,7 @@ export class GameSession {
       currentDate: this.currentDate,
       players: this.players,
       regions: Array.from(this.regions.entries()),
+      relationships: this.relationships.toJSON(),
     };
 
     const stmt = db.prepare(`
@@ -859,6 +885,11 @@ export class GameSession {
       this.regions = new Map(saveData.regions);
     }
 
+    // Restore relationships
+    if (saveData.relationships) {
+      this.relationships = RelationshipMatrix.fromJSON(saveData.relationships);
+    }
+
     // Update game in DB
     gameRepository.updateTurnAndDate(this.id, this.currentTurn, this.currentDate);
 
@@ -866,6 +897,13 @@ export class GameSession {
     this.syncRegionsToDB();
 
     console.log('[GameSession] Loaded from save, turn:', this.currentTurn);
+  }
+
+  /**
+   * Get all relationships for the frontend UI
+   */
+  getRelationships(): Record<string, Record<string, string>> {
+    return this.relationships.toJSON();
   }
 
   /**

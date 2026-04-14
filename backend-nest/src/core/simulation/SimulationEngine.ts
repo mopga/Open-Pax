@@ -20,7 +20,9 @@ import type {
   ActionCost,
   ActionOutcome,
   SimulationConfig,
+  RelationshipChange,
 } from './types';
+import type { RelationshipMatrix } from '../RelationshipMatrix';
 
 export class SimulationEngine {
   private regions: Map<string, RegionState>;
@@ -52,7 +54,7 @@ export class SimulationEngine {
   /**
    * Apply a validated action and calculate consequences
    */
-  applyAction(action: ValidatedAction, jumpDays: number): SimulationDelta {
+  applyAction(action: ValidatedAction, jumpDays: number, relationships?: RelationshipMatrix): SimulationDelta {
     const delta: SimulationDelta = {
       regionChanges: [],
       gdpChanges: {},
@@ -61,17 +63,18 @@ export class SimulationEngine {
       newObjects: [],
       events: [],
       narrativeFacts: [],
+      relationshipChanges: [],
     };
 
     switch (action.type) {
       case 'attack':
-        this.resolveAttack(action, jumpDays, delta);
+        this.resolveAttack(action, jumpDays, delta, relationships);
         break;
       case 'develop':
         this.applyDevelopment(action, jumpDays, delta);
         break;
       case 'trade':
-        this.applyTrade(action, jumpDays, delta);
+        this.applyTrade(action, jumpDays, delta, relationships);
         break;
       case 'build':
         this.applyBuild(action, jumpDays, delta);
@@ -94,6 +97,7 @@ export class SimulationEngine {
       newObjects: [],
       events: [],
       narrativeFacts: [],
+      relationshipChanges: [],
     };
 
     this.applyNaturalChanges(jumpDays, delta);
@@ -106,7 +110,8 @@ export class SimulationEngine {
   private resolveAttack(
     action: ValidatedAction,
     jumpDays: number,
-    delta: SimulationDelta
+    delta: SimulationDelta,
+    relationships?: RelationshipMatrix
   ): void {
     const source = this.regions.get(action.sourceRegionId);
     const target = this.regions.get(action.targetRegionId!);
@@ -170,6 +175,21 @@ export class SimulationEngine {
         `BATTLE:${source.owner} attacked ${target.owner}, repelled. Losses: ${sourceLosses}/${targetLosses}.`
       );
     }
+
+    // Relationship degradation: attack worsens relations
+    if (relationships && source.owner !== target.owner) {
+      const prevRel = relationships.get(source.owner, target.owner);
+      relationships.degrade(source.owner, target.owner);
+      const nextRel = relationships.get(source.owner, target.owner);
+      if (nextRel !== prevRel) {
+        delta.relationshipChanges!.push({
+          from: source.owner,
+          to: target.owner,
+          newRelationship: nextRel,
+          reason: `Attack on ${target.name}`,
+        });
+      }
+    }
   }
 
   /**
@@ -208,7 +228,8 @@ export class SimulationEngine {
   private applyTrade(
     action: ValidatedAction,
     jumpDays: number,
-    delta: SimulationDelta
+    delta: SimulationDelta,
+    relationships?: RelationshipMatrix
   ): void {
     const source = this.regions.get(action.sourceRegionId);
     if (!source) return;
@@ -230,6 +251,24 @@ export class SimulationEngine {
     delta.narrativeFacts.push(
       `TRADE:${source.owner} conducted trade in ${source.name}, GDP +${tradeIncome}.`
     );
+
+    // Trading with another country improves relationships
+    if (relationships && action.targetRegionId) {
+      const target = this.regions.get(action.targetRegionId);
+      if (target && target.owner !== source.owner && !target.owner.startsWith('player')) {
+        const prevRel = relationships.get(source.owner, target.owner);
+        relationships.improve(source.owner, target.owner);
+        const nextRel = relationships.get(source.owner, target.owner);
+        if (nextRel !== prevRel) {
+          delta.relationshipChanges!.push({
+            from: source.owner,
+            to: target.owner,
+            newRelationship: nextRel,
+            reason: `Trade with ${target.name}`,
+          });
+        }
+      }
+    }
   }
 
   /**
@@ -370,7 +409,7 @@ export class SimulationEngine {
   /**
    * Process NPC decisions (simplified AI)
    */
-  processNPCTurn(npcId: string, jumpDays: number): SimulationDelta {
+  processNPCTurn(npcId: string, jumpDays: number, relationships?: RelationshipMatrix): SimulationDelta {
     const delta: SimulationDelta = {
       regionChanges: [],
       gdpChanges: {},
@@ -379,6 +418,7 @@ export class SimulationEngine {
       newObjects: [],
       events: [],
       narrativeFacts: [],
+      relationshipChanges: [],
     };
 
     // Find all regions owned by this NPC
@@ -398,14 +438,110 @@ export class SimulationEngine {
     );
     const avgGdp = npcRegions.reduce((sum, r) => sum + r.gdp, 0) / npcRegions.length;
 
-    // Simple AI: develop economy if peaceful, build military if strong
-    if (Math.random() < 0.3 && avgGdp > 50) {
-      // Trade
+    // Find potential targets: adjacent regions owned by other countries
+    const potentialTargets: RegionState[] = [];
+    for (const region of this.regions.values()) {
+      if (region.owner === npcId) continue;
+      if (region.owner === 'neutral') continue;
+
+      // Check if any NPC region borders this one
+      for (const npcRegion of npcRegions) {
+        if (npcRegion.borders.includes(region.id) || region.borders.includes(npcRegion.id)) {
+          // Skip allies
+          if (relationships && relationships.get(npcId, region.owner) === 'ally') continue;
+          potentialTargets.push(region);
+          break;
+        }
+      }
+    }
+
+    // Attack hostile neighbors first, then neutral if aggressive
+    const hostileTargets = potentialTargets.filter(
+      r => relationships && relationships.get(npcId, r.owner) === 'hostile'
+    );
+    const attackPool = hostileTargets.length > 0 ? hostileTargets : potentialTargets;
+
+    // NPC attacks if aggressive and has a target
+    if (
+      attackPool.length > 0 &&
+      Math.random() < 0.25 * this.config.aggressionMultiplier &&
+      totalPower > 150
+    ) {
+      const target = attackPool[Math.floor(Math.random() * attackPool.length)];
+      const source = npcRegions.find(r => r.borders.includes(target.id) || target.borders.includes(r.id)) || npcRegions[0];
+
+      const sourcePower = source.militaryPower;
+      const targetPower = target.militaryPower * this.config.defenderAdvantage;
+      const powerRatio = sourcePower / Math.max(targetPower, 1);
+      const successChance = Math.min(0.85, Math.max(0.15, powerRatio * 0.5 + 0.2));
+
+      const roll = Math.random();
+      const success = roll < successChance;
+
+      const sourceLosses = Math.floor(targetPower * 0.08 * jumpDays / 30 * (success ? 0.4 : 0.9));
+      const targetLosses = Math.floor(sourcePower * 0.1 * jumpDays / 30 * (success ? 0.6 : 1.3));
+
+      delta.militaryChanges[source.id] = -(sourceLosses);
+      delta.militaryChanges[target.id] = -(targetLosses);
+      delta.populationChanges[source.id] = -(sourceLosses * 10);
+      delta.populationChanges[target.id] = -(targetLosses * 10);
+      delta.gdpChanges[source.id] = -(this.config.warGdpCost * jumpDays * 0.5);
+      delta.gdpChanges[target.id] = -(this.config.warGdpCost * jumpDays * 0.3);
+
+      if (success) {
+        delta.regionChanges.push({
+          regionId: target.id,
+          newOwner: npcId,
+          newColor: source.color,
+        });
+        delta.events.push({
+          type: 'battle',
+          headline: `${source.name} захватил(а) ${target.name}`,
+          involvedRegions: [source.id, target.id],
+          outcome: `Победа: потери ${sourceLosses}VS${targetLosses}`,
+        });
+        delta.narrativeFacts.push(
+          `BATTLE:${npcId} captured ${target.name} from ${target.owner}.`
+        );
+      } else {
+        delta.events.push({
+          type: 'battle',
+          headline: `Атака на ${target.name} отражена`,
+          involvedRegions: [source.id, target.id],
+          outcome: `Неудача: потери ${sourceLosses}VS${targetLosses}`,
+        });
+        delta.narrativeFacts.push(
+          `BATTLE:${npcId} attacked ${target.name}, repelled.`
+        );
+      }
+
+      // Relationship degradation
+      if (relationships) {
+        const prevRel = relationships.get(npcId, target.owner);
+        relationships.degrade(npcId, target.owner);
+        const nextRel = relationships.get(npcId, target.owner);
+        if (nextRel !== prevRel) {
+          delta.relationshipChanges!.push({
+            from: npcId,
+            to: target.owner,
+            newRelationship: nextRel,
+            reason: `Attack on ${target.name}`,
+          });
+        }
+      }
+    }
+
+    // Trade (only if not attacking)
+    if (
+      Math.random() < 0.3 &&
+      avgGdp > 50 &&
+      delta.regionChanges.length === 0
+    ) {
       const source = npcRegions[Math.floor(Math.random() * npcRegions.length)];
       const tradeIncome = Math.floor(
         source.population / 1_000_000 * 5 * (jumpDays / 30)
       );
-      delta.gdpChanges[source.id] = tradeIncome;
+      delta.gdpChanges[source.id] = (delta.gdpChanges[source.id] || 0) + tradeIncome;
       delta.narrativeFacts.push(
         `TRADE:${npcId} conducted trade in ${source.name}, GDP +${tradeIncome}.`
       );
@@ -415,8 +551,8 @@ export class SimulationEngine {
     if (Math.random() < 0.2 * this.config.aggressionMultiplier) {
       const source = npcRegions[Math.floor(Math.random() * npcRegions.length)];
       const buildAmount = Math.floor(source.gdp * 0.1);
-      delta.militaryChanges[source.id] = Math.floor(buildAmount * 0.5);
-      delta.gdpChanges[source.id] = -buildAmount;
+      delta.militaryChanges[source.id] = (delta.militaryChanges[source.id] || 0) + Math.floor(buildAmount * 0.5);
+      delta.gdpChanges[source.id] = (delta.gdpChanges[source.id] || 0) - buildAmount;
       delta.narrativeFacts.push(
         `BUILD:${npcId} built military in ${source.name}, +${Math.floor(buildAmount * 0.5)} power.`
       );

@@ -287,6 +287,13 @@ export const gameApi = {
       body: JSON.stringify({ jump_days: jumpDays || 30 }),
     });
   },
+
+  /**
+   * Get diplomatic relationships for a game
+   */
+  getRelationships: (gameId: string): Promise<Record<string, Record<string, string>>> => {
+    return fetchApi(`/games/${gameId}/relationships`);
+  },
 };
 
 // ============================================================================

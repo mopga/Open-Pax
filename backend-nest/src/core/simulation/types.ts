@@ -4,6 +4,17 @@
  * Deterministic types for game simulation (no LLM)
  */
 
+import type { RelationshipType } from '../RelationshipMatrix';
+
+export { RelationshipType };
+
+export interface RelationshipChange {
+  from: string;
+  to: string;
+  newRelationship: RelationshipType;
+  reason: string;
+}
+
 export interface RegionState {
   id: string;
   name: string;
@@ -81,6 +92,9 @@ export interface SimulationDelta {
 
   // What happened narratively (for LLM to flesh out)
   narrativeFacts: string[];
+
+  // Relationship changes
+  relationshipChanges: RelationshipChange[];
 }
 
 export interface RegionChange {
