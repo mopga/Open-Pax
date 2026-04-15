@@ -540,6 +540,25 @@ function App() {
     setSelectedRegion(regionId);
   };
 
+  // Выбрать тип действия и заполнить шаблон
+  const handleActionTypeSelect = (type: string, template: string, targetRegionId?: string) => {
+    setSelectedActionType(type);
+    let text = template;
+    if (targetRegionId && currentWorld) {
+      const targetRegion = currentWorld.regions[targetRegionId];
+      if (targetRegion) {
+        text = template.replace('{target}', targetRegion.name);
+      }
+    }
+    setNewActionText(text);
+  };
+
+  // Очистить выбор действия
+  const clearActionType = () => {
+    setSelectedActionType(null);
+    setTargetRegionForAttack('');
+  };
+
   // Рендер главного меню
   const renderMenu = () => (
     <div className="menu-container">
@@ -595,6 +614,10 @@ function App() {
   // SSE real-time updates
   const [isProcessingTurn, setIsProcessingTurn] = useState(false);
   const [turnProgress, setTurnProgress] = useState<string>('');
+
+  // Action type selector
+  const [selectedActionType, setSelectedActionType] = useState<string | null>(null);
+  const [targetRegionForAttack, setTargetRegionForAttack] = useState<string>('');
 
   useSSE(currentGame?.id || null, {
     onTurnStart: (data) => {
@@ -955,10 +978,102 @@ function App() {
 
                   {/* Manual Action Input */}
                   <div className="manual-action-input">
+                    {/* Action Type Buttons */}
+                    <div className="action-type-selector">
+                      <button
+                        className={`action-type-btn attack ${selectedActionType === 'attack' ? 'active' : ''}`}
+                        onClick={() => {
+                          if (selectedActionType === 'attack') {
+                            clearActionType();
+                          } else {
+                            const enemyRegions = Object.values(currentWorld?.regions || {})
+                              .filter(r => r.owner !== 'player' && r.owner !== 'neutral');
+                            const firstEnemy = enemyRegions[0] as Region | undefined;
+                            if (firstEnemy) {
+                              setTargetRegionForAttack(firstEnemy.id);
+                              handleActionTypeSelect('attack', 'атака на {target}', firstEnemy.id);
+                            } else {
+                              handleActionTypeSelect('attack', 'атака на {target}');
+                            }
+                          }
+                        }}
+                        title="Атаковать регион (💰20 ⚔️50)"
+                      >
+                        ⚔️ Attack
+                        <span className="action-cost">💰20 ⚔️50</span>
+                      </button>
+                      <button
+                        className={`action-type-btn develop ${selectedActionType === 'develop' ? 'active' : ''}`}
+                        onClick={() => {
+                          if (selectedActionType === 'develop') {
+                            clearActionType();
+                          } else {
+                            handleActionTypeSelect('develop', 'развить регион');
+                          }
+                        }}
+                        title="Развить регион (💰30)"
+                      >
+                        🏗️ Develop
+                        <span className="action-cost">💰30</span>
+                      </button>
+                      <button
+                        className={`action-type-btn trade ${selectedActionType === 'trade' ? 'active' : ''}`}
+                        onClick={() => {
+                          if (selectedActionType === 'trade') {
+                            clearActionType();
+                          } else {
+                            handleActionTypeSelect('trade', 'торговля');
+                          }
+                        }}
+                        title="Торговля (💰10)"
+                      >
+                        💰 Trade
+                        <span className="action-cost">💰10</span>
+                      </button>
+                      <button
+                        className={`action-type-btn build ${selectedActionType === 'build' ? 'active' : ''}`}
+                        onClick={() => {
+                          if (selectedActionType === 'build') {
+                            clearActionType();
+                          } else {
+                            handleActionTypeSelect('build', 'строительство');
+                          }
+                        }}
+                        title="Строительство (💰40)"
+                      >
+                        🏭 Build
+                        <span className="action-cost">💰40</span>
+                      </button>
+                    </div>
+
+                    {/* Target Region Selector (for attack) */}
+                    {selectedActionType === 'attack' && (
+                      <div className="target-region-selector">
+                        <label>Цель:</label>
+                        <select
+                          value={targetRegionForAttack}
+                          onChange={(e) => {
+                            setTargetRegionForAttack(e.target.value);
+                            const region = currentWorld?.regions[e.target.value];
+                            if (region) {
+                              setNewActionText(`атака на ${region.name}`);
+                            }
+                          }}
+                        >
+                          {(Object.values(currentWorld?.regions || {}) as Region[])
+                            .filter(r => r.owner !== 'player' && r.owner !== 'neutral')
+                            .map(r => (
+                              <option key={r.id} value={r.id}>{r.name} ({r.owner})</option>
+                            ))
+                          }
+                        </select>
+                      </div>
+                    )}
+
                     <textarea
                       value={newActionText}
                       onChange={(e) => setNewActionText(e.target.value)}
-                      placeholder="Опишите действие вручную..."
+                      placeholder={selectedActionType ? 'Отредактируйте текст или добавьте...' : 'Опишите действие или выберите тип выше...'}
                       rows={2}
                     />
                     <button
@@ -976,6 +1091,7 @@ function App() {
                             text
                           });
                           setNewActionText('');
+                          clearActionType();
                         }
                       }}
                       disabled={!newActionText.trim()}
