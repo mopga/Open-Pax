@@ -90,8 +90,9 @@ worldsRouter.post('/generate', async (req, res) => {
     };
 
     // Convert regionsObj to array and use createWithRegions (which wraps in transaction)
+    // Prefix region IDs with worldId to ensure global uniqueness (since id is PRIMARY KEY)
     const regionsArray = Object.entries(regionsObj).map(([code, region]) => ({
-      id: code,
+      id: `${worldId}_${code}`,
       worldId,
       name: region.name,
       geojson: region.geojson,
@@ -100,6 +101,7 @@ worldsRouter.post('/generate', async (req, res) => {
       population: region.population,
       gdp: region.gdp,
       militaryPower: region.militaryPower,
+      flag: region.flag,
     }));
 
     worldRepository.createWithRegions(worldData, regionsArray);
@@ -124,6 +126,9 @@ worldsRouter.post('/generate', async (req, res) => {
       date: worldState.date,
       countries: countriesObj,
       regions: regionsObj,
+      regionIds: Object.fromEntries(
+        Object.keys(regionsObj).map(code => [code, `${worldId}_${code}`])
+      ),
       playerCountryCode,
     });
   } catch (e: any) {

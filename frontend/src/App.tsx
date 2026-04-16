@@ -5,6 +5,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { MapboxMapView } from './components/Map/MapboxMapView';
+import { MapView } from './components/Map/MapView';
 import { MapEditor, type EditorRegion, type EditorObject } from './components/Editor';
 import { CreateWorld, type WorldConfig } from './components/WorldBuilder/CreateWorld';
 import { TemplateSelector } from './components/Game/TemplateSelector';
@@ -727,14 +728,49 @@ function App() {
         <div className="game-container">
           {/* Карта слева */}
           <div className="game-map">
-            <MapboxMapView
-              regions={regions}
-              selectedRegionId={selectedRegion || undefined}
-              onRegionClick={handleCountryChange}
-              changedRegionIds={changedRegions}
-              showFlags={!!selectedCountry}
-              playerCountryCode={selectedCountry || undefined}
-            />
+            {import.meta.env.VITE_MAPBOX_TOKEN ? (
+              <MapboxMapView
+                regions={regions}
+                selectedRegionId={selectedRegion || undefined}
+                onRegionClick={handleCountryChange}
+                changedRegionIds={changedRegions}
+                showFlags={!!selectedCountry}
+                playerCountryCode={selectedCountry || undefined}
+              />
+            ) : regions.some(r => r.svgPath || r.geojson) ? (
+              <MapView
+                regions={regions}
+                selectedRegionId={selectedRegion || undefined}
+                onRegionClick={handleCountryChange}
+                changedRegionIds={changedRegions}
+              />
+            ) : (
+              <div style={{
+                width: '100%',
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: '#0a0a0f',
+                color: '#667eea',
+                padding: '40px',
+                textAlign: 'center',
+              }}>
+                <div style={{ fontSize: '48px', marginBottom: '16px' }}>🗺️</div>
+                <h3>Карта недоступна</h3>
+                <p style={{ color: '#888', maxWidth: '300px' }}>
+                  Для отображения карты нужен Mapbox token.
+                  <br/><br/>
+                  Создайте файл <code>frontend/.env</code> с:
+                  <br/>
+                  <code>VITE_MAPBOX_TOKEN=ваш_токен</code>
+                </p>
+                <p style={{ color: '#666', fontSize: '12px', marginTop: '16px' }}>
+                  Получить токен: <a href="https://account.mapbox.com" target="_blank" style={{ color: '#667eea' }}>account.mapbox.com</a>
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Панель справа */}
@@ -1301,16 +1337,19 @@ function App() {
               );
               setGeneratedWorld(worldData);
 
+              // Use correct region ID (prefixed with worldId)
+              const actualRegionId = worldData.regionIds?.[countryCode] || countryCode;
+
               const gameResponse = await gameApi.create({
                 world_id: worldData.worldId,
                 player_name: 'Player',
-                player_region_id: countryCode,
+                player_region_id: actualRegionId,
               });
 
               const game = await gameApi.get(gameResponse.game_id);
               setCurrentGame(game);
               setCurrentWorld(game.world);
-              setSelectedRegion(countryCode);
+              setSelectedRegion(actualRegionId);
               setCurrentView('game');
             } catch (e) {
               console.error('[Game] Failed to generate world:', e);

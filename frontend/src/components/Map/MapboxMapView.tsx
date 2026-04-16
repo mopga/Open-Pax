@@ -38,10 +38,21 @@ const ISO3_TO_ISO2: Record<string, string> = {
   KGZ: 'kg', TJK: 'tj',
 };
 
+// Convert ISO 3166-1 alpha-3 to flag emoji
+const codeToEmoji = (code: string): string => {
+  if (!code || code.length !== 3) return '';
+  const toAlpha2 = ISO3_TO_ISO2[code];
+  if (!toAlpha2) return code;
+  return toAlpha2.toUpperCase().split('').map(c =>
+    String.fromCodePoint(127397 + c.charCodeAt(0))
+  ).join('');
+};
+
 // Returns flagcdn.com PNG URL for a 3-letter country code
 const getFlagUrl = (code3: string, size: number = 40): string | null => {
   const code2 = ISO3_TO_ISO2[code3];
   if (!code2) return null;
+  // Use flagpedia.net which serves proper RGBA PNGs
   return `https://flagcdn.com/w${size}/${code2}.png`;
 };
 
@@ -180,6 +191,7 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
 
   // Initialize map
   useEffect(() => {
+    console.log('[Mapbox] Mounting component, token:', !!MAPBOX_TOKEN, 'regions:', regions?.length);
     if (!mapContainer.current || map.current) return;
     if (!MAPBOX_TOKEN) {
       console.error('Mapbox token not configured. Set VITE_MAPBOX_TOKEN in .env');
@@ -198,6 +210,7 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
     });
 
     map.current.on('load', () => {
+      console.log('[Mapbox] Map loaded!');
       setMapLoaded(true);
     });
 
@@ -212,44 +225,28 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
     };
   }, []);
 
-  // Preload flag images from flagcdn.com for all regions
-  useEffect(() => {
-    if (!map.current || !mapLoaded || !showFlags) return;
-
-    const flagCodes = [...new Set(regions.map(r => r.flag).filter(Boolean))] as string[];
-
-    flagCodes.forEach(code => {
-      const imageId = `flag-${code.toLowerCase()}`;
-      if (map.current!.hasImage(imageId)) return;
-
-      const url = getFlagUrl(code, 40);
-      if (!url) return;
-
-      map.current!.loadImage(url, (err, img) => {
-        if (err || !img || !map.current) return;
-        if (!map.current.hasImage(imageId)) {
-          map.current.addImage(imageId, img);
-        }
-      });
-    });
-  }, [mapLoaded, showFlags, regions]);
-
   // Add/update regions source and layers
   useEffect(() => {
+    console.log('[Mapbox] useEffect triggered, regions:', regions.length, 'mapLoaded:', mapLoaded);
     if (!map.current || !mapLoaded || regions.length === 0) return;
 
     const geojsonFeatures: GeoJSON.Feature[] = [];
+    const flagCodes: string[] = [];
 
     regions.forEach(region => {
       if (!region.geojson) return;
       try {
         const parsed = JSON.parse(region.geojson);
+        if (region.flag) flagCodes.push(region.flag);
+        const flagEmoji = region.flag ? codeToEmoji(region.flag) : '';
         parsed.properties = {
           ...parsed.properties,
           id: region.id,
           name: region.name,
           color: region.color,
           flag: region.flag || null,
+          flag_emoji: flagEmoji,
+          owner: region.owner || null,
           isSelected: region.id === selectedRegionId,
           isHovered: hoveredRegionId === region.id,
           isChanged: changedRegionIds.includes(region.id),
@@ -258,14 +255,15 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
       } catch (e) { /* skip */ }
     });
 
+    console.log('[Mapbox] Processed features:', geojsonFeatures.length, 'sample:', geojsonFeatures[0]?.properties);
+
     const sourceId = 'regions';
     const fillLayerId = 'regions-fill';
     const lineLayerId = 'regions-line';
     const labelLayerId = 'regions-label';
-    const flagLayerId = 'flags-icon';
 
     // Remove existing layers if any
-    [flagLayerId, labelLayerId, lineLayerId, fillLayerId].forEach(id => {
+    [labelLayerId, lineLayerId, fillLayerId].forEach(id => {
       if (map.current?.getLayer(id)) {
         map.current.removeLayer(id);
       }
@@ -294,11 +292,8 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
         'fill-color': [
           'case',
           ['get', 'isSelected'], '#ffffff',
-          playerCountryCode ? [
-            'case',
-            ['==', ['get', 'flag'], playerCountryCode], '#00ff88',
-            ['get', 'color']
-          ] : ['get', 'color']
+          ['==', ['get', 'owner'], 'player'], '#00ff88',
+          ['get', 'color']
         ],
         'fill-opacity': [
           'case',
@@ -329,18 +324,18 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
       },
     });
 
-    // Add label layer (country name only, no emoji)
+    // Add label layer (country name with flag emoji)
     map.current.addLayer({
       id: labelLayerId,
       type: 'symbol',
       source: sourceId,
       layout: {
-        'text-field': ['get', 'name'],
+        'text-field': showFlags
+          ? ['concat', ['to-string', ['get', 'flag_emoji']], ' ', ['get', 'name']]
+          : ['get', 'name'],
         'text-size': 14,
         'text-font': ['DIN Pro Bold', 'Arial Unicode MS Bold'],
         'text-anchor': 'center',
-        // Shift name below flag icon when flags are shown
-        'text-offset': showFlags ? [0, 1.5] : [0, 0],
       },
       paint: {
         'text-color': '#ffffff',
@@ -349,28 +344,7 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
       },
     });
 
-    // Add flag icon layer (PNG from flagcdn.com)
-    if (showFlags) {
-      map.current.addLayer({
-        id: flagLayerId,
-        type: 'symbol',
-        source: sourceId,
-        layout: {
-          'icon-image': ['case',
-            ['has', 'flag'],
-            ['concat', 'flag-', ['downcase', ['get', 'flag']]],
-            '',
-          ],
-          'icon-size': 0.55,
-          'icon-anchor': 'center',
-          'icon-allow-overlap': true,
-          'icon-ignore-placement': true,
-        },
-        paint: {
-          'icon-opacity': 0.95,
-        },
-      });
-    }
+    console.log('[Mapbox] Labels added, showFlags:', showFlags, 'regions:', regions.length);
 
     // Click handler for regions
     map.current.on('click', fillLayerId, (e) => {
