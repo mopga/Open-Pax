@@ -8,7 +8,7 @@ import { PromptVariables, SimulationResult, ConvertedAction, Suggestion, Advisor
 import { buildSimulationPrompt, parseSimulationResponse } from './prompts/simulation';
 import { buildAdvisorPrompt, parseAdvisorResponse } from './prompts/advisor';
 import { buildSuggestionsPrompt, parseSuggestionsResponse } from './prompts/suggestions';
-import { buildConverterPrompt, parseConverterResponse } from './prompts/converter';
+import { buildConverterPrompt, parseConverterResponse, buildBatchConverterPrompt, parseBatchConverterResponse } from './prompts/converter';
 import { buildNarrationPrompt, parseNarrationResponse } from './prompts/narration';
 import { MiniMaxProvider } from './llm';
 
@@ -298,6 +298,26 @@ export class PromptEngine {
     const response = await this.llm.generate(prompt, '', { temperature: 0.5 });
 
     return parseConverterResponse(response.content);
+  }
+
+  /**
+   * Convert multiple actions in a single LLM call (batch processing)
+   * Significantly reduces API calls when processing multiple pending actions
+   */
+  async convertActionsBatch(game: GameData, actionTexts: string[]): Promise<ConvertedAction[]> {
+    if (actionTexts.length === 0) return [];
+    if (actionTexts.length === 1) {
+      // Fall back to single conversion for single action
+      return [await this.convertAction(game, actionTexts[0])];
+    }
+
+    const builder = new PromptBuilder(game);
+    const vars = builder.buildVariables();
+
+    const prompt = buildBatchConverterPrompt(vars, actionTexts);
+    const response = await this.llm.generate(prompt, '', { temperature: 0.5 });
+
+    return parseBatchConverterResponse(response.content);
   }
 
   async getAdvisor(game: GameData, message: string, history: AdvisorMessage[] = []): Promise<string> {

@@ -163,15 +163,12 @@ export class GameController {
       this.initPromptEngine(gameData);
     }
 
-    console.log('[GameController] Processing turn with prompts:', { actions, jumpDays });
+    console.log('[GameController] Processing turn with prompts:', { actions, jumpDays, count: actions.length });
 
-    // 1. Конвертируем каждое действие через desript-to-action.md
-    const convertedActions = [];
-    for (const action of actions) {
-      const converted = await this.promptEngine!.convertAction(gameData, action);
-      convertedActions.push(converted);
-      console.log('[GameController] Converted action:', converted);
-    }
+    // 1. Конвертируем действия через desript-to-action.md
+    // Use batch conversion for multiple actions (1 LLM call instead of N)
+    const convertedActions = await this.promptEngine!.convertActionsBatch(gameData, actions);
+    console.log('[GameController] Converted', convertedActions.length, 'actions via batch LLM call');
 
     // 2. Запускаем симуляцию через time-rewind.md
     const simulationResult = await this.promptEngine!.runSimulation(
