@@ -824,9 +824,14 @@ export class GameSession {
   }
 
   /**
-   * Sync all region changes to database
-   * Uses batch update for performance (single transaction for all regions)
-   * Note: owner/color/objects rarely change per turn, so we batch population/gdp/military only
+   * Sync all region changes to database.
+   * Uses batch update for performance (single transaction for all regions).
+   *
+   * Persists population/gdp/militaryPower (every turn) and owner/color
+   * (rarely changes, but NPC conquests in processNPCTurns and LLM-driven
+   * mapChanges in applyWorldChanges both mutate them in memory, so we
+   * write them too to keep the DB consistent with the in-memory state
+   * across restarts).
    */
   async syncRegionsToDB(): Promise<void> {
     const updates = Array.from(this.regions.values()).map(region => ({
@@ -834,6 +839,8 @@ export class GameSession {
       population: region.population,
       gdp: region.gdp,
       militaryPower: region.militaryPower,
+      owner: region.owner,
+      color: region.color,
     }));
     worldRepository.updateRegionsBatch(updates);
   }
