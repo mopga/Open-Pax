@@ -53,9 +53,11 @@ gamesRouter.get('/:id', (req, res) => {
   res.json({
     id: game.id,
     currentTurn: game.current_turn,
+    currentDate: game.current_date,
     maxTurns: game.max_turns,
     status: game.status,
     world: {
+      id: game.world.id,
       name: game.world.name,
       regions: game.world.regions.map((r: any) => ({
         id: r.id,
@@ -63,7 +65,10 @@ gamesRouter.get('/:id', (req, res) => {
         color: r.color,
         owner: r.owner,
         population: r.population,
+        gdp: r.gdp,
         militaryPower: r.militaryPower,
+        geojson: r.geojson,
+        flag: r.flag,
       })),
     },
     players: game.players.map((p: any) => ({

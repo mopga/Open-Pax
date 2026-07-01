@@ -94,6 +94,16 @@ export function initDatabase() {
     }
   }
 
+  // Migration: Add flag column to world_regions if it doesn't exist
+  try {
+    db.exec("ALTER TABLE world_regions ADD COLUMN flag TEXT");
+    console.log('[Migration] Added flag column to world_regions');
+  } catch (e: any) {
+    if (!e.message.includes('duplicate column name') && !e.message.includes('no such column')) {
+      // Ignore duplicate / no-such-column errors
+    }
+  }
+
   // Country relationships table (allies/enemies per world)
   db.exec(`
     CREATE TABLE IF NOT EXISTS country_relationships (
