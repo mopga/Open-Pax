@@ -110,6 +110,46 @@ export class GameSession {
   // Pending actions queue (Phase 2)
   private pendingActions: PendingAction[] = [];
 
+  /**
+   * Per-session mutex around any read-modify-write sequence that mutates
+   * `this.regions` / `this.currentTurn` / `this.currentDate` (applyTurn,
+   * processNextAction, processAllPendingActions, syncRegionsToDB after a
+   * write, etc.).
+   *
+   * Two concurrent POST /actions/process calls previously both flipped
+   * the same PendingAction.status='processing', both ran the LLM call,
+   * both applied the delta, both incremented currentTurn, and both
+   * wrote the same action row to the DB. This lock collapses them
+   * to one effective execution; the second caller gets `null` back
+   * and can retry or surface "another turn in progress" to the client.
+   *
+   * KISS: a single boolean + an awaited promise. No external
+   * dependency on `async-mutex`. Sufficient because there's exactly
+   * one writer path (this class) — if that ever changes, switch to
+   * a real semaphore.
+   */
+  private isProcessing: boolean = false;
+
+  /**
+   * Run `fn` under the per-session lock. If another caller already
+   * holds the lock, return `null` immediately (no waiting — the
+   * queue may run for many minutes and we don't want a second HTTP
+   * request to block that long). On success or thrown error, the
+   * lock is always released before this function resolves.
+   */
+  private async withLock<T>(fn: () => Promise<T>): Promise<T | null> {
+    if (this.isProcessing) {
+      console.warn('[GameSession] Concurrent turn attempt rejected (lock held)');
+      return null;
+    }
+    this.isProcessing = true;
+    try {
+      return await fn();
+    } finally {
+      this.isProcessing = false;
+    }
+  }
+
   // Diplomatic relationships
   private relationships: RelationshipMatrix = new RelationshipMatrix();
 
@@ -963,10 +1003,22 @@ export class GameSession {
   }
 
   /**
-   * Process ONE action from the queue (for sequential processing)
-   * Called when time-skip happens or when explicitly processing
+   * Process ONE action from the queue (for sequential processing).
+   * Called when time-skip happens or when explicitly processing.
+   *
+   * Wrapped in `withLock` so two concurrent HTTP requests can't
+   * double-process the same action. Returns `null` if another
+   * turn is already in flight for this session.
    */
   async processNextAction(jumpDays: number = 30): Promise<PendingAction | null> {
+    return (await this.withLock(async () => this._processNextActionUnlocked(jumpDays))) as PendingAction | null;
+  }
+
+  /**
+   * Body of processNextAction, without the lock. Private so external
+   * callers cannot bypass withLock.
+   */
+  private async _processNextActionUnlocked(jumpDays: number = 30): Promise<PendingAction | null> {
     // Find next pending action
     const action = this.pendingActions.find(a => a.status === 'pending');
     if (!action) {
@@ -1092,18 +1144,25 @@ export class GameSession {
   }
 
   /**
-   * Process all pending actions sequentially
+   * Process all pending actions sequentially.
+   *
+   * Holds the session lock for the whole loop. If another call comes
+   * in while we're processing the queue, that caller gets `[]` back
+   * and can poll. We intentionally do NOT await the in-flight queue
+   * because the queue itself may take many minutes (each action does
+   * an LLM call) and the caller would block for the entire duration.
    */
   async processAllPendingActions(jumpDays: number = 30): Promise<PendingAction[]> {
-    const processed: PendingAction[] = [];
-    let action = await this.processNextAction(jumpDays);
-
-    while (action) {
-      processed.push(action);
-      action = await this.processNextAction(jumpDays);
-    }
-
-    return processed;
+    const result = await this.withLock(async () => {
+      const processed: PendingAction[] = [];
+      let action = await this._processNextActionUnlocked(jumpDays);
+      while (action) {
+        processed.push(action);
+        action = await this._processNextActionUnlocked(jumpDays);
+      }
+      return processed;
+    });
+    return result ?? [];
   }
 
   /**

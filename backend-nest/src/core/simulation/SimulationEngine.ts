@@ -52,9 +52,21 @@ export class SimulationEngine {
   }
 
   /**
-   * Apply a validated action and calculate consequences
+   * Apply a validated action and calculate consequences.
+   *
+   * Validates that the source region can afford the action's cost before
+   * mutating any state. Without this, a bankrupt region (gdp=0) could
+   * still build unlimited factories, and a military-depleted region
+   * could wage infinite wars, because the cost was only checked by
+   * the optional `validateAction` callback, which the LLM-driven path
+   * (`applyTurn` via `processTurnWithPrompts`) never wires up.
+   *
+   * Throws on insufficient resources; the caller catches and reports
+   * the failure to the action queue instead of silently corrupting state.
    */
   applyAction(action: ValidatedAction, jumpDays: number, relationships?: RelationshipMatrix): SimulationDelta {
+    this.assertCanAfford(action);
+
     const delta: SimulationDelta = {
       regionChanges: [],
       gdpChanges: {},
@@ -82,6 +94,34 @@ export class SimulationEngine {
     }
 
     return delta;
+  }
+
+  /**
+   * Throw if the source region cannot afford the action's cost.
+   * Called at the top of applyAction so that all callers (LLM-driven
+   * processTurn, unit tests, future scripted actions) are protected
+   * by the same gate.
+   */
+  private assertCanAfford(action: ValidatedAction): void {
+    const source = this.regions.get(action.sourceRegionId);
+    if (!source) {
+      throw new Error(`Source region not found: ${action.sourceRegionId}`);
+    }
+    if (action.cost.gdp > source.gdp) {
+      throw new Error(
+        `Insufficient GDP: ${action.sourceRegionId} has ${source.gdp}, needs ${action.cost.gdp}`,
+      );
+    }
+    if (action.cost.population > source.population) {
+      throw new Error(
+        `Insufficient population: ${action.sourceRegionId} has ${source.population}, needs ${action.cost.population}`,
+      );
+    }
+    if (action.cost.militaryPower > source.militaryPower) {
+      throw new Error(
+        `Insufficient military power: ${action.sourceRegionId} has ${source.militaryPower}, needs ${action.cost.militaryPower}`,
+      );
+    }
   }
 
   /**
