@@ -170,23 +170,44 @@ export const worldRepository = {
   },
 
   /**
-   * Batch update multiple regions in a single transaction
-   * Much faster than calling updateRegion() N times
+   * Batch update multiple regions in a single transaction.
+   * Much faster than calling updateRegion() N times.
+   *
+   * `owner` and `color` are optional; if omitted, the existing value is
+   * preserved (the prepared statement writes NULL, which we guard with a
+   * COALESCE in the SET clause). This lets callers persist only the
+   * fields that actually changed.
    */
-  updateRegionsBatch: (updates: { id: string; population?: number; gdp?: number; militaryPower?: number }[]) => {
+  updateRegionsBatch: (updates: {
+    id: string;
+    population?: number;
+    gdp?: number;
+    militaryPower?: number;
+    owner?: string;
+    color?: string;
+  }[]) => {
     if (updates.length === 0) return;
 
     const stmt = db.prepare(`
       UPDATE world_regions SET
-        population = ?,
-        gdp = ?,
-        military_power = ?
+        population   = COALESCE(?, population),
+        gdp          = COALESCE(?, gdp),
+        military_power = COALESCE(?, military_power),
+        owner        = COALESCE(?, owner),
+        color        = COALESCE(?, color)
       WHERE id = ?
     `);
 
     const updateAll = db.transaction((items) => {
       for (const item of items) {
-        stmt.run(item.population ?? null, item.gdp ?? null, item.militaryPower ?? null, item.id);
+        stmt.run(
+          item.population ?? null,
+          item.gdp ?? null,
+          item.militaryPower ?? null,
+          item.owner ?? null,
+          item.color ?? null,
+          item.id,
+        );
       }
     });
 

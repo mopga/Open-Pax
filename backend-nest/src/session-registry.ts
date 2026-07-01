@@ -240,6 +240,39 @@ class SessionRegistry {
   getActiveSessionIds(): string[] {
     return Array.from(this.sessions.keys());
   }
+
+  /**
+   * Flush all in-memory session state to the database.
+   *
+   * Called on SIGTERM / SIGINT (and any other clean shutdown) so that
+   * NPC mutations, queued actions, and any pending region deltas that
+   * haven't yet been persisted are written before the process exits.
+   * Without this, pm2 restart / docker stop / kill <pid> loses every
+   * state change since the last syncRegionsToDB call inside applyTurn.
+   *
+   * Safe to call concurrently with normal traffic: each session's
+   * syncRegionsToDB runs in its own DB transaction.
+   */
+  async flushAll(): Promise<void> {
+    const ids = this.getActiveSessionIds();
+    if (ids.length === 0) return;
+    console.log(`[SessionRegistry] Flushing ${ids.length} session(s) to DB...`);
+    const results = await Promise.allSettled(
+      ids.map(async (id) => {
+        const session = this.sessions.get(id);
+        if (!session) return;
+        try {
+          await session.syncRegionsToDB();
+        } catch (e) {
+          console.error(`[SessionRegistry] Failed to flush session ${id}:`, e);
+          throw e;
+        }
+      }),
+    );
+    const ok = results.filter((r) => r.status === 'fulfilled').length;
+    const failed = results.length - ok;
+    console.log(`[SessionRegistry] Flush complete: ${ok} ok, ${failed} failed`);
+  }
 }
 
 // Singleton instance - will be initialized in index.ts with provider

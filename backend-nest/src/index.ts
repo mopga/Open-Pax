@@ -36,6 +36,43 @@ registerRoutes(app);
 // Reload active sessions from database (survives server restart)
 sessionRegistry.reloadActiveSessions();
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`🚀 Open-Pax API running on http://localhost:${PORT}`);
 });
+
+/**
+ * Graceful shutdown: flush in-memory session state to the DB before
+ * the process exits, so NPC conquests / pending region changes / etc.
+ * are not lost on SIGTERM (pm2, docker stop, systemd) or SIGINT (Ctrl+C).
+ *
+ * The flush is awaited up to a hard timeout so a hung DB write cannot
+ * block shutdown indefinitely. The closeIdleConnections + close hooks
+ * ensure the HTTP server stops accepting new requests while the flush
+ * is running.
+ */
+let shuttingDown = false;
+async function shutdown(signal: NodeJS.Signals) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`\n[${signal}] Graceful shutdown starting...`);
+
+  server.close((err) => {
+    if (err) console.error('[shutdown] server.close error:', err);
+  });
+
+  const FLUSH_TIMEOUT_MS = 10_000;
+  const flushPromise = sessionRegistry.flushAll();
+  const timeout = new Promise<void>((resolve) =>
+    setTimeout(() => {
+      console.warn(`[shutdown] flush timed out after ${FLUSH_TIMEOUT_MS}ms`);
+      resolve();
+    }, FLUSH_TIMEOUT_MS),
+  );
+  await Promise.race([flushPromise, timeout]);
+
+  console.log(`[${signal}] Shutdown complete`);
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+process.on('SIGINT', () => void shutdown('SIGINT'));
