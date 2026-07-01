@@ -4,11 +4,14 @@
  */
 
 import { Router } from 'express';
-import { v4 as uuid } from 'uuid';
+import { shortId } from '../utils/short-id';
+import fs from 'fs';
+import path from 'path';
 import { worldRepository, relationshipRepository } from '../repositories';
 import { svgPathToGeoJSON } from '../utils/svg-to-geojson';
 import { BalanceAgent } from '../agents/balance-agent';
 import { llmProvider } from '../llm';
+import { resolveInside, safeReadJson } from '../utils/safe-path';
 
 export const worldsRouter = Router();
 
@@ -21,18 +24,20 @@ worldsRouter.post('/generate', async (req, res) => {
     return;
   }
 
-  const fs = require('fs');
-  const path = require('path');
-  const templatePath = path.join(process.cwd(), 'data', 'templates', `${templateId}.json`);
-
-  if (!fs.existsSync(templatePath)) {
+  // Confine the user-supplied templateId to data/templates; reject any
+  // path traversal attempt before touching the filesystem.
+  const resolved = resolveInside('data/templates', templateId, '.json');
+  if (!resolved.ok || !resolved.path) {
+    res.status(resolved.statusCode ?? 400).json({ error: resolved.error });
+    return;
+  }
+  const template = safeReadJson<any>(resolved.path);
+  if (!template) {
     res.status(404).json({ error: 'Template not found' });
     return;
   }
 
   try {
-    const template = JSON.parse(fs.readFileSync(templatePath, 'utf-8'));
-
     const geojsonPath = path.join(process.cwd(), 'data', 'geojson', 'countries.geojson');
     let geojsonFeatures: Record<string, any> = {};
     if (fs.existsSync(geojsonPath)) {
@@ -79,7 +84,7 @@ worldsRouter.post('/generate', async (req, res) => {
       }
     }
 
-    const worldId = uuid().slice(0, 8);
+    const worldId = shortId();
     const worldData = {
       id: worldId,
       name: `${template.name} - ${new Date().toLocaleDateString()}`,
@@ -141,7 +146,7 @@ worldsRouter.post('/', (req, res) => {
   const { name, description, startDate, basePrompt, historicalAccuracy = 0.8 } = req.body;
 
   const world = {
-    id: uuid().slice(0, 8),
+    id: shortId(),
     name,
     description,
     startDate: startDate || '1951-01-01',
@@ -224,7 +229,7 @@ worldsRouter.post('/from-map', (req, res) => {
   }
   console.log('[DEBUG] Map found:', map.name);
 
-  const worldId = uuid().slice(0, 8);
+  const worldId = shortId();
 
   const ownerMap = new Map<string, string>();
   if (initialOwners && Array.isArray(initialOwners)) {
@@ -235,7 +240,7 @@ worldsRouter.post('/from-map', (req, res) => {
 
   const regions = map.regions.map((r: any, index: number) => {
     const owner = ownerMap.get(r.id) || 'neutral';
-    const regionId = `${worldId}_r${index}_${uuid().slice(0, 4)}`;
+    const regionId = `${worldId}_r${index}_${shortId()}`;
 
     let militaryPower = 100;
     let population = 1000000;

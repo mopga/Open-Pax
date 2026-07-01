@@ -4,7 +4,7 @@
  */
 
 import { Router } from 'express';
-import { v4 as uuid } from 'uuid';
+import { shortId } from '../utils/short-id';
 import { mapRepository } from '../repositories';
 
 export const mapsRouter = Router();
@@ -19,7 +19,7 @@ mapsRouter.post('/', (req, res) => {
   const { name, width = 800, height = 600, regions, objects } = req.body;
 
   const map = {
-    id: uuid().slice(0, 8),
+    id: shortId(),
     name,
     width,
     height,
