@@ -4,7 +4,7 @@
  */
 
 import { Router } from 'express';
-import { v4 as uuid } from 'uuid';
+import { shortId } from '../utils/short-id';
 import { gameRepository } from '../repositories';
 import { getSessionRegistry } from '../session-registry';
 import { addSSEClient, removeSSEClient, broadcastToGame } from '../sse';
@@ -119,7 +119,7 @@ gamesRouter.get('/:id/events', (req, res) => {
 
   res.write(`event: connected\ndata: {"gameId":"${gameId}"}\n\n`);
 
-  const clientId = uuid().slice(0, 8);
+  const clientId = shortId();
   addSSEClient(gameId, { id: clientId, response: res });
 
   try {

@@ -5,7 +5,7 @@
  * Each game gets its own GameSession instance via SessionRegistry.
  */
 
-import { v4 as uuid } from 'uuid';
+import { shortId } from './utils/short-id';
 import { MiniMaxProvider } from './llm';
 import { GameController } from './agents';
 import { PromptEngine } from './prompt-builder';
@@ -207,7 +207,7 @@ export class GameSession {
     }
 
     // Create player
-    const playerId = uuid().slice(0, 8);
+    const playerId = shortId();
     this.players = [{
       id: playerId,
       name: playerName,
@@ -460,7 +460,7 @@ export class GameSession {
 
     // Record action
     const actionRecord: ActionRecord = {
-      id: uuid().slice(0, 8),
+      id: shortId(),
       playerId: player.id,
       turn: this.currentTurn,
       text: playerAction,
@@ -479,7 +479,7 @@ export class GameSession {
 
     // Create turn result
     const turnResult: TurnResultRecord = {
-      id: uuid().slice(0, 8),
+      id: shortId(),
       turn: this.currentTurn,
       narration,
       countryResponse: actions.map(a => a.description).join('\n'),
@@ -700,7 +700,7 @@ export class GameSession {
           const offsetY = objType === 'city' ? 0 : (Math.random() - 0.5) * 150;
 
           const newObject = {
-            id: uuid().slice(0, 8),
+            id: shortId(),
             type: objType,
             name: `${region.name} ${objType === 'city' ? 'гор.' : objType.charAt(0).toUpperCase() + objType.slice(1)} ${(region.objects?.length || 0) + 1}`,
             x: baseX + offsetX,
@@ -842,7 +842,7 @@ export class GameSession {
    * Save full session state to saves table
    */
   save(name: string): { saveId: string; currentTurn: number; currentDate: string } {
-    const saveId = uuid().slice(0, 8);
+    const saveId = shortId();
 
     // Capture full region snapshot
     const saveData: SaveData = {
@@ -931,7 +931,7 @@ export class GameSession {
    */
   queueAction(text: string): PendingAction {
     const action: PendingAction = {
-      id: uuid().slice(0, 8),
+      id: shortId(),
       text,
       createdAt: new Date().toISOString(),
       status: 'pending',
@@ -1028,7 +1028,7 @@ export class GameSession {
 
       // Create turn result
       const turnResult: TurnResultRecord = {
-        id: uuid().slice(0, 8),
+        id: shortId(),
         turn: this.currentTurn,
         narration: promptResult.narration,
         countryResponse: promptResult.convertedActions.map((a: any) => a.text).join('\n'),

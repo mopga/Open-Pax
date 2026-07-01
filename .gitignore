@@ -28,3 +28,12 @@ npm-debug.log*
 # Cache
 .cache/
 *.tsbuildinfo
+
+# Runtime databases (SQLite, etc.)
+*.db
+*.sqlite
+*.sqlite3
+backend-nest/data/open-pax.db
+!backend-nest/data/.gitkeep
+!backend-nest/data/templates/
+!backend-nest/data/geojson/

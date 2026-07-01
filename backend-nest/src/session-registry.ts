@@ -5,7 +5,7 @@
  * Provides session lookup, creation, loading from DB.
  */
 
-import { v4 as uuid } from 'uuid';
+import { shortId } from './utils/short-id';
 import { MiniMaxProvider } from './llm';
 import { GameSession, SaveData } from './game-session';
 import { gameRepository, worldRepository } from './repositories';
@@ -23,7 +23,7 @@ class SessionRegistry {
    * Create a new game session
    */
   createSession(worldId: string, playerName: string, playerRegionId: string, playerColor: string = '#FF0000'): { session: GameSession; playerId: string; gameId: string } {
-    const gameId = uuid().slice(0, 8);
+    const gameId = shortId();
 
     // Verify world exists
     const world = worldRepository.findById(worldId);
@@ -47,7 +47,7 @@ class SessionRegistry {
     });
 
     // Add player to database
-    const playerId = uuid().slice(0, 8);
+    const playerId = shortId();
     gameRepository.addPlayer({
       id: playerId,
       gameId,
