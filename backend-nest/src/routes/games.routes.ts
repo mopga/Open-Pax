@@ -8,8 +8,24 @@ import { shortId } from '../utils/short-id';
 import { gameRepository } from '../repositories';
 import { getSessionRegistry } from '../session-registry';
 import { addSSEClient, removeSSEClient, broadcastToGame } from '../sse';
+import { LLMError } from '../llm';
 
 export const gamesRouter = Router();
+
+/**
+ * Единый обработчик ошибок игровых эндпоинтов:
+ * LLMError → 502 с понятным сообщением (провайдер/причина),
+ * "not found" → 404, всё остальное → 500.
+ */
+function respondRouteError(res: any, e: any, fallback: string): void {
+  if (e instanceof LLMError) {
+    res.status(502).json({ error: `LLM (${e.provider}): ${e.message}` });
+  } else if (typeof e?.message === 'string' && e.message.includes('not found')) {
+    res.status(404).json({ error: e.message });
+  } else {
+    res.status(500).json({ error: fallback });
+  }
+}
 
 gamesRouter.post('/', (req, res) => {
   const worldId = req.body.worldId || req.body.world_id;
@@ -101,11 +117,7 @@ gamesRouter.post('/:id/action', async (req, res) => {
     });
   } catch (e: any) {
     console.error('[POST /api/games/:id/action] Error:', e);
-    if (e.message.includes('not found')) {
-      res.status(404).json({ error: e.message });
-    } else {
-      res.status(500).json({ error: 'Failed to process turn' });
-    }
+    respondRouteError(res, e, 'Failed to process turn');
   }
 });
 
@@ -151,9 +163,13 @@ gamesRouter.get('/:id/advisor', async (req, res) => {
     const session = getSessionRegistry().getSessionOrThrow(gameId);
     const advice = await session.getAdvisor(message as string || '', []);
     res.json({ tips: [advice] });
-  } catch (e) {
+  } catch (e: any) {
     console.error('[Advisor] Error:', e);
-    res.status(404).json({ error: 'Game not found' });
+    if (e instanceof LLMError) {
+      res.status(502).json({ error: `LLM (${e.provider}): ${e.message}` });
+    } else {
+      res.status(404).json({ error: 'Game not found' });
+    }
   }
 });
 
@@ -164,9 +180,13 @@ gamesRouter.get('/:id/suggestions', async (req, res) => {
     const session = getSessionRegistry().getSessionOrThrow(gameId);
     const suggestions = await session.getSuggestions();
     res.json({ suggestions });
-  } catch (e) {
+  } catch (e: any) {
     console.error('[Suggestions] Error:', e);
-    res.status(404).json({ error: 'Game not found' });
+    if (e instanceof LLMError) {
+      res.status(502).json({ error: `LLM (${e.provider}): ${e.message}` });
+    } else {
+      res.status(404).json({ error: 'Game not found' });
+    }
   }
 });
 
@@ -268,11 +288,7 @@ gamesRouter.post('/:id/actions/process', async (req, res) => {
     });
   } catch (e: any) {
     console.error('[PROCESS] Error:', e);
-    if (e.message.includes('not found')) {
-      res.status(404).json({ error: e.message });
-    } else {
-      res.status(500).json({ error: 'Failed to process action' });
-    }
+    respondRouteError(res, e, 'Failed to process action');
   }
 });
 
@@ -291,11 +307,7 @@ gamesRouter.post('/:id/actions/process-all', async (req, res) => {
     });
   } catch (e: any) {
     console.error('[PROCESS ALL] Error:', e);
-    if (e.message.includes('not found')) {
-      res.status(404).json({ error: e.message });
-    } else {
-      res.status(500).json({ error: 'Failed to process actions' });
-    }
+    respondRouteError(res, e, 'Failed to process actions');
   }
 });
 
@@ -325,10 +337,6 @@ gamesRouter.post('/:id/time-skip', async (req, res) => {
     }
   } catch (e: any) {
     console.error('[TIME-SKIP] Error:', e);
-    if (e.message.includes('not found')) {
-      res.status(404).json({ error: e.message });
-    } else {
-      res.status(500).json({ error: 'Failed to time-skip' });
-    }
+    respondRouteError(res, e, 'Failed to time-skip');
   }
 });

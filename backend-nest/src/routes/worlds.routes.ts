@@ -10,7 +10,7 @@ import path from 'path';
 import { worldRepository, relationshipRepository } from '../repositories';
 import { svgPathToGeoJSON } from '../utils/svg-to-geojson';
 import { BalanceAgent } from '../agents/balance-agent';
-import { llmProvider } from '../llm';
+import { getLLMRouter } from '../llm';
 import { resolveInside, safeReadJson } from '../utils/safe-path';
 
 export const worldsRouter = Router();
@@ -50,7 +50,7 @@ worldsRouter.post('/generate', async (req, res) => {
       }
     }
 
-    const balanceAgent = new BalanceAgent(llmProvider);
+    const balanceAgent = new BalanceAgent(getLLMRouter());
     const worldState = await balanceAgent.generateInitialWorldState(template);
 
     const countriesObj: Record<string, any> = {};
@@ -193,7 +193,7 @@ worldsRouter.patch('/:id/prompt', (req, res) => {
   }
 
   worldRepository.update(req.params.id, { basePrompt });
-  llmProvider.clearCache(); // Invalidate cached narrations when world prompt changes
+  getLLMRouter().clearCache(); // Invalidate cached narrations when world prompt changes
   res.json({ success: true, basePrompt });
 });
 

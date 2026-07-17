@@ -6,16 +6,16 @@
  */
 
 import { shortId } from './utils/short-id';
-import { MiniMaxProvider } from './llm';
+import { LLMRouter } from './llm';
 import { GameSession, SaveData } from './game-session';
 import { gameRepository, worldRepository } from './repositories';
 import db from './database';
 
 class SessionRegistry {
   private sessions: Map<string, GameSession> = new Map();
-  private provider: MiniMaxProvider;
+  private provider: LLMRouter;
 
-  constructor(provider: MiniMaxProvider) {
+  constructor(provider: LLMRouter) {
     this.provider = provider;
   }
 
@@ -285,7 +285,7 @@ class SessionRegistry {
 // Singleton instance - will be initialized in index.ts with provider
 let registry: SessionRegistry | null = null;
 
-export function initSessionRegistry(provider: MiniMaxProvider): SessionRegistry {
+export function initSessionRegistry(provider: LLMRouter): SessionRegistry {
   registry = new SessionRegistry(provider);
   return registry;
 }

@@ -6,7 +6,7 @@
  */
 
 import { shortId } from './utils/short-id';
-import { MiniMaxProvider } from './llm';
+import { LLMRouter } from './llm';
 import { GameController } from './agents';
 import { PromptEngine } from './prompt-builder';
 import { worldRepository, gameRepository, relationshipRepository } from './repositories';
@@ -171,7 +171,7 @@ export class GameSession {
   // SSE broadcaster for real-time updates
   private sseBroadcaster: ((type: string, data: any) => void) | null = null;
 
-  constructor(gameId: string, worldId: string, provider: MiniMaxProvider) {
+  constructor(gameId: string, worldId: string, provider: LLMRouter) {
     this.id = gameId;
     this.worldId = worldId;
     this.gameController = new GameController(provider);
@@ -1172,7 +1172,8 @@ export class GameSession {
       const promptResult = await this.gameController.processTurnWithPrompts(
         gameData,
         [action.text], // Single action as array
-        timeJump
+        timeJump,
+        (chars) => this.broadcast('llm_progress', { mechanic: 'jump', chars })
       );
 
       // Apply world changes from simulation (верхнеуровневый словарь)

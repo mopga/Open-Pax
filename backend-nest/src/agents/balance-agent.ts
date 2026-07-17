@@ -5,7 +5,7 @@
  * Generates and updates country data (population, GDP, military, ideology, allies, enemies).
  */
 
-import { MiniMaxProvider } from '../llm';
+import { LLMRouter } from '../llm';
 import { getCountry, type Country } from '../utils/countries';
 
 export interface CountryState {
@@ -31,10 +31,10 @@ export interface WorldState {
 }
 
 export class BalanceAgent {
-  private provider: MiniMaxProvider;
+  private provider: LLMRouter;
   private readonly BATCH_SIZE = 6; // Concurrent LLM calls - balanced for rate limits
 
-  constructor(provider: MiniMaxProvider) {
+  constructor(provider: LLMRouter) {
     this.provider = provider;
   }
 
@@ -135,7 +135,7 @@ export class BalanceAgent {
 Сгенерируй реалистичное начальное состояние этой страны.`;
 
     try {
-      const result = await this.provider.generate(system, user, { temperature: 0.7 });
+      const result = await this.provider.generate('balance', system, user, { temperature: 0.7 });
 
       // Strip markdown code fences if present
       let jsonContent = result.content.trim();

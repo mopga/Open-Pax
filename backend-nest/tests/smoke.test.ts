@@ -27,14 +27,25 @@ let getSessionRegistry: any;
 /** Промпт, который движок реально отправил в «LLM» при симуляции */
 let capturedSimulationPrompt = '';
 
-/** Заглушка LLM: детерминированные ответы по типу промпта */
+/** Механики, с которыми движок вызывал LLM */
+const seenMechanics: string[] = [];
+
+/** Когда true — stub бросает LLMError на симуляции (тест восстановления очереди) */
+let failJump = false;
+
+/** Заглушка LLM: детерминированные ответы по механике (сигнатура LLMRouter) */
 const stubProvider: any = {
-  async generate(system: string, _user: string) {
-    if (system.includes('конвертируешь решение игрока')) {
+  async generate(mechanic: string, system: string, user: string) {
+    seenMechanics.push(mechanic);
+    if (mechanic === 'converter') {
       return { content: JSON.stringify({ type: 'action', text: 'Вторжение в Польшу силами ФРГ' }) };
     }
-    if (system.includes('симулируешь пошаговую стратегическую игру')) {
-      capturedSimulationPrompt = system;
+    if (mechanic === 'jump') {
+      if (failJump) {
+        const { LLMError } = await import('../src/llm');
+        throw new LLMError('test-provider: таймаут запроса (1мс)', { provider: 'test-provider', retriable: true });
+      }
+      capturedSimulationPrompt = `${system}\n${user}`;
       return {
         content: JSON.stringify({
           events: [
@@ -50,13 +61,16 @@ const stubProvider: any = {
         }),
       };
     }
-    // NPC-агенты
+    // NPC-агенты и прочие механики
     return { content: JSON.stringify({ type: 'develop', description: 'Внутреннее развитие', priority: 5 }) };
   },
-  clearCache() {},
-  getCacheStats() {
-    return { size: 0, hits: 0, misses: 0, hitRate: '0%' };
+  // Фолбэк-стриминг, как у LLMRouter: generate + один onToken
+  async stream(mechanic: string, system: string, user: string, onToken: (chars: number) => void, options?: any) {
+    const r = await this.generate(mechanic, system, user, options);
+    onToken(r.content.length);
+    return r;
   },
+  clearCache() {},
 };
 
 const WORLD_ID = 'test_world_smoke';
@@ -212,5 +226,31 @@ describe('Этап 0: сквозной дым-тест', () => {
     expect(loaded).not.toBeNull();
     expect(loaded.getCurrentDate()).toBe('1951-01-31');
     expect(loaded.getRegion(`${WORLD_ID}_POL`).owner).toBe('DEU');
+  });
+
+  it('движок вызывает LLM с правильными механиками (Этап 1)', () => {
+    expect(seenMechanics).toContain('converter');
+    expect(seenMechanics).toContain('jump');
+    expect(seenMechanics).toContain('npc');
+  });
+
+  it('падение LLM на прыжке: действие возвращается в pending, ошибка пробрасывается', async () => {
+    const restored = getSessionRegistry().getSession(gameId);
+    restored.queueAction('Провальный прыжок');
+    const before = restored.getPendingActions().length;
+
+    failJump = true;
+    try {
+      await expect(restored.processNextAction(30)).rejects.toThrow(/таймаут запроса/);
+    } finally {
+      failJump = false;
+    }
+
+    // Действие НЕ потеряно и не зависло в 'processing'
+    const pending = restored.getPendingActions();
+    expect(pending.length).toBe(before);
+    expect(pending[pending.length - 1].status).toBe('pending');
+    // Дата/ход не продвинулись
+    expect(restored.getCurrentDate()).toBe('1951-01-31');
   });
 });

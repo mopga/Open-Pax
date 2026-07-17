@@ -9,18 +9,18 @@
  * вызывались ниоткуда, кроме самих себя.
  */
 
-import { MiniMaxProvider } from './llm';
+import { LLMRouter } from './llm';
 import { NPCCountryAgent, NPCCountryContext, createNPCCountries, type NPCAction } from './npc-agents';
 import { PromptEngine } from './prompt-builder';
 import type { SimulationEvent } from './prompts/types';
 
 export class GameController {
-  private provider: MiniMaxProvider;
+  private provider: LLMRouter;
   private npcAgents: Map<string, NPCCountryAgent> = new Map();
   private worldPrompt: string = '';
   private promptEngine: PromptEngine | null = null;
 
-  constructor(provider: MiniMaxProvider) {
+  constructor(provider: LLMRouter) {
     this.provider = provider;
   }
 
@@ -38,7 +38,8 @@ export class GameController {
   async processTurnWithPrompts(
     gameData: any,
     actions: string[],
-    jumpDays: number
+    jumpDays: number,
+    onProgress?: (charsSoFar: number) => void
   ): Promise<{
     narration: string;
     events: SimulationEvent[];
@@ -55,11 +56,12 @@ export class GameController {
     const convertedActions = await this.promptEngine!.convertActionsBatch(gameData, actions);
     console.log('[GameController] Converted', convertedActions.length, 'actions via batch LLM call');
 
-    // 2. Запускаем симуляцию (time-rewind)
+    // 2. Запускаем симуляцию (time-rewind) со стримингом прогресса генерации
     const simulationResult = await this.promptEngine!.runSimulation(
       gameData,
       convertedActions.map(a => a.text),
-      jumpDays
+      jumpDays,
+      onProgress
     );
 
     console.log('[GameController] Simulation result:', simulationResult.narration.substring(0, 100));

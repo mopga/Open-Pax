@@ -630,6 +630,9 @@ function App() {
       console.log('[SSE] Generating narration...');
       setTurnProgress('Генерация нарратива...');
     },
+    onLLMProgress: (data) => {
+      setTurnProgress(`Модель генерирует… ${data.chars} зн.`);
+    },
     onTurnComplete: (data) => {
       console.log('[SSE] Turn complete:', data);
       setIsProcessingTurn(false);

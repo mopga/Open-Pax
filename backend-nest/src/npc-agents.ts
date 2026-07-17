@@ -4,7 +4,7 @@
  * AI agents for non-player countries with personality traits.
  */
 
-import { MiniMaxProvider } from './llm';
+import { LLMRouter } from './llm';
 
 export type NPCPersonality = 'aggressive' | 'diplomatic' | 'neutral' | 'isolationist';
 
@@ -24,10 +24,10 @@ export interface NPCAction {
 }
 
 export class NPCCountryAgent {
-  private provider: MiniMaxProvider;
+  private provider: LLMRouter;
   private country: NPCCountry;
 
-  constructor(provider: MiniMaxProvider, country: NPCCountry) {
+  constructor(provider: LLMRouter, country: NPCCountry) {
     this.provider = provider;
     this.country = country;
   }
@@ -118,7 +118,7 @@ ${recentEvents}
 Выбери ОДНО действие которое наиболее соответствует твоей личности и текущей ситуации.`;
 
     try {
-      const result = await this.provider.generate(system, user, {
+      const result = await this.provider.generate('npc', system, user, {
         temperature: 0.7,
         maxTokens: 500,
       });
@@ -247,7 +247,7 @@ export function personalityForPolity(polityId: string): { personality: NPCPerson
 }
 
 export function createNPCCountries(
-  provider: MiniMaxProvider,
+  provider: LLMRouter,
   regionConfigs: {
     id: string;
     name: string;

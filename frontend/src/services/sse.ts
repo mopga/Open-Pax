@@ -15,6 +15,7 @@ interface UseSSEOptions {
   onTurnStart?: (data: any) => void;
   onTurnComplete?: (data: any) => void;
   onGeneratingNarration?: (data: any) => void;
+  onLLMProgress?: (data: { mechanic: string; chars: number }) => void;
   onError?: (error: any) => void;
   onConnected?: () => void;
 }
@@ -94,6 +95,15 @@ export function useSSE(gameId: string | null, options: UseSSEOptions) {
 
     eventSource.addEventListener('narration_generated', (e) => {
       console.log('[SSE] Narration generated:', e.data);
+    });
+
+    eventSource.addEventListener('llm_progress', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        options.onLLMProgress?.(data);
+      } catch (err) {
+        console.error('[SSE] Failed to parse llm_progress:', err);
+      }
     });
 
     eventSource.addEventListener('ping', () => {

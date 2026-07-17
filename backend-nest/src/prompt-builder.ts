@@ -10,7 +10,7 @@ import { buildAdvisorPrompt, parseAdvisorResponse } from './prompts/advisor';
 import { buildSuggestionsPrompt, parseSuggestionsResponse } from './prompts/suggestions';
 import { buildConverterPrompt, parseConverterResponse, buildBatchConverterPrompt, parseBatchConverterResponse } from './prompts/converter';
 import { buildNarrationPrompt, parseNarrationResponse } from './prompts/narration';
-import { MiniMaxProvider } from './llm';
+import { LLMRouter } from './llm';
 
 interface GameData {
   id: string;
@@ -290,13 +290,18 @@ export class PromptBuilder {
 
 // Класс для работы с LLM через промпты
 export class PromptEngine {
-  private llm: MiniMaxProvider;
+  private llm: LLMRouter;
 
-  constructor(llm: MiniMaxProvider) {
+  constructor(llm: LLMRouter) {
     this.llm = llm;
   }
 
-  async runSimulation(game: GameData, actions: string[], jumpDays: number): Promise<SimulationResult> {
+  async runSimulation(
+    game: GameData,
+    actions: string[],
+    jumpDays: number,
+    onProgress?: (charsSoFar: number) => void
+  ): Promise<SimulationResult> {
     const builder = new PromptBuilder(game);
 
     // Обновляем целевую дату
@@ -306,7 +311,16 @@ export class PromptEngine {
     vars.PLAYER_ACTIONS_THIS_ROUND = actions.join('\n');
 
     const prompt = buildSimulationPrompt(vars);
-    const response = await this.llm.generate(prompt, '', { temperature: 0.7 });
+    // system — короткая ролевая инструкция, user — большой промпт.
+    // Раньше весь промпт шёл в system, а user был пустым: часть моделей
+    // (особенно локальные) на это реагирует заметно хуже.
+    const response = await this.llm.stream(
+      'jump',
+      'Ты — симулятор альтернативной истории. Строго следуй формату ответа из инструкции.',
+      prompt,
+      onProgress ?? (() => {}),
+      { temperature: 0.7 }
+    );
 
     return parseSimulationResponse(response.content);
   }
@@ -316,7 +330,12 @@ export class PromptEngine {
     const vars = builder.buildVariablesForAction(actionText);
 
     const prompt = buildConverterPrompt(vars);
-    const response = await this.llm.generate(prompt, '', { temperature: 0.5 });
+    const response = await this.llm.generate(
+      'converter',
+      'Ты — аналитик приказов в глобальной стратегической игре. Отвечай только JSON.',
+      prompt,
+      { temperature: 0.5 }
+    );
 
     return parseConverterResponse(response.content);
   }
@@ -336,7 +355,12 @@ export class PromptEngine {
     const vars = builder.buildVariables();
 
     const prompt = buildBatchConverterPrompt(vars, actionTexts);
-    const response = await this.llm.generate(prompt, '', { temperature: 0.5 });
+    const response = await this.llm.generate(
+      'converter',
+      'Ты — аналитик приказов в глобальной стратегической игре. Отвечай только JSON.',
+      prompt,
+      { temperature: 0.5 }
+    );
 
     return parseBatchConverterResponse(response.content);
   }
@@ -346,7 +370,12 @@ export class PromptEngine {
     const vars = builder.buildVariables();
 
     const prompt = buildAdvisorPrompt(vars, message, history);
-    const response = await this.llm.generate(prompt, '', { temperature: 0.7 });
+    const response = await this.llm.generate(
+      'advisor',
+      'Ты — мудрый советник лидера государства в альтернативной истории.',
+      prompt,
+      { temperature: 0.7 }
+    );
 
     return parseAdvisorResponse(response.content);
   }
@@ -356,7 +385,12 @@ export class PromptEngine {
     const vars = builder.buildVariables();
 
     const prompt = buildSuggestionsPrompt(vars);
-    const response = await this.llm.generate(prompt, '', { temperature: 0.8 });
+    const response = await this.llm.generate(
+      'suggestions',
+      'Ты — штабной аналитик, предлагающий варианты действий. Отвечай только JSON.',
+      prompt,
+      { temperature: 0.8 }
+    );
 
     return parseSuggestionsResponse(response.content);
   }
@@ -379,7 +413,12 @@ export class PromptEngine {
       language,
     });
 
-    const response = await this.llm.generate(prompt, '', { temperature: 0.7 });
+    const response = await this.llm.generate(
+      'narration',
+      'Ты — летописец альтернативной истории. Пиши живым, но сдержанным стилем.',
+      prompt,
+      { temperature: 0.7 }
+    );
 
     return parseNarrationResponse(response.content);
   }
