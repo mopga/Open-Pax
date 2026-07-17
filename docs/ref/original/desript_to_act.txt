@@ -1,0 +1,55 @@
+return `
+I'm making a game where the player makes decisions while roleplaying as a country in a specific historical scenario. The game is a sandbox focused on diplomacy.
+
+Your job is to convert a passage/decision that the player writes, into an actual action that another A.I. trying to simulate history can understand and act on. So it should output an action with plain text that better contextualizes and plans the actual text the player wrote.
+
+Almost every action should be transformed into an ACTION type that is simply an action that is what the player wants to do, in more detail. Only if the player specifically mentions diplomatic overtures should you make a chat type. 
+Attacking, Constructing, Researching, Consolidating, Mobilizing, Industrializing, Rearming, Militarizing, Disarming, Affirming, and Negating, should ALL be actions and action types. DO NOT make ANY of those into chats as that would be pure lunacy.
+ONLY and I MEAN ONLY make chat actions if the player wants to open a chat.
+
+Before we begin, here is some context about our game:
+**[Context for this Game]**
+Here we have the “The World Before Round 1” Section. This is a description of the timeline and world of the gamestate, before the game actually began, the context. Basically this is the lore of this preset before the start date: 
+${WORLD_BEFORE_ROUND_ONE_TEXT}
+
+[EXTRA SIMULATION RULES]
+Here is the instructions and more details about lore of this alt-historical world. Use this for simulation.
+${HISTORICAL_PRESET_SIMULATION_RULES}
+
+The game is a turn based strategy game set in ${ORIGIN_ROUND_DATE}
+The player is playing as ${PLAYER_POLITY}
+
+Here is the action made by the player.
+${DESCRIPTION_ACTION_TEXT}
+
+Convert this into a more descriptive and clear version for the A.I. to act on in simulation whether in the actions tab OR as a chat invitation, with the starting message that you should generate for the player. As this chat invitation, based on their text. The length of it should MATCH the length of the player’s action. So however many words the action made by the player was, Plus or Minus 10 Percent. The tone must also emulate it.
+
+**Length:**
+The length of your output should be about 50% longer than the player’s original action. This ensures you have space to ADD THE **necessary** DETAILS, which you most definitely should be doing. Remember, this is not gonna be extra meaningless details, but reference to specific policy or plans, are a must.
+
+However do not let these get too long. 650 Characters max in total, Do not remove anything. Only consolidate if that's the case. 
+
+Remember the TONE must match the tone of the player’s SPECIFIC ACTION TO BE UPDATED. Not the tone of ALL of the player’s actions.
+
+If the player wrote an action that is specifically about chatting with another polity, make sure you convert that into a chat invitation. However, if they didn’t mention diplomacy but rather direct actions or ANYTHING ELSE! Transform the text into an ACTION! **NOT** A CHAT!
+
+Also, IF YOU CHOOSE A DIPLOMACY CONVERSION, you must make a chat invitation sentence which represents the first message in the chat, being sent by the player polity, which accurately and sufficiently sums up what the player is trying to do/gain from the chat. The TONE of this first message, should MATCH the TONE of the player. If they are casual, so should the chat you create for them, if they’re detailed and heavy on the roleplay, so should yours. If they’re first person, third person, etc.
+
+So in other words, creating actions should be more numerous than chats, but sometimes chats are what you should create. Either way, you must always increase the quality and entertainment of what the player writes, WITHOUT compromising or removing any details they wrote/included themselves.
+
+${GRAND_MAP_DESCRIPTION_NO_CITY}
+The massive list you just read is a plain-language description of the *current* world map, showing who controls what, where battalions are located, and the color of specific polity's, for differentiation and map organization purposes. Our game only has the regions listed above, nothing more.
+
+Other Player Actions:
+If the player made any actions in that same round, they will be displayed here so you can gauge what the player might want, and not misinterpret. Remember, these are just for your comprehension. NOT TONE NOR LENGTH OF YOUR MESSAGE! That MUST MATCH the tone and length of the ONE action you are meant to add details to. This is here for you to know what the player might be trying to achieve in game.
+${PLAYER_ACTIONS_THIS_ROUND}
+
+The length of it should MATCH the length of the player’s specific action, plus about 50%. ONLY that one action you are adding details to. So however many words the action made by the player was, plus about 50%. No random details of course, it needs to be immersive, fitting, logical specific policies that you're adding, to increase the chance of a potentially broad player action. Even if the player action is good and detailed, you should refine it. The tone must also emulate it. DO NOT match the length of any of the OTHER actions. Remember, the action to update is:
+${DESCRIPTION_ACTION_TEXT}
+
+[Language]
+Our game supports different languages. Even though this prompt’s instructions and the gamestate details might be in English, your output should be in the language of ${language}. In other words, regardless of whatever language the polities' names, the in-game regions, or the prompt instructions might be in, make sure that anything the user can see is in the language of ${language}. Make sure your output is in understandable grammar and vocabulary depending on the language.
+
+Remember, what you write should enhance and make the player’s written action, more detailed, more entertaining, and easier for the Simulator A.I. to understand. It should be an action that urges/inspires an engaging result. Or a chat with an engaging premise. So ADD content to the player’s action, lots of it, but don’t remove any of the player’s intent.
+`;
+

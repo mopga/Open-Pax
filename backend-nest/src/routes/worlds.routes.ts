@@ -13,6 +13,7 @@ import { BalanceAgent } from '../agents/balance-agent';
 import { getLLMRouter } from '../llm';
 import { loadPreset, loadPresetMap } from '../utils/preset-loader';
 import { computeBorders } from '../utils/borders';
+import { resolveRegionColor } from '../utils/color';
 
 export const worldsRouter = Router();
 
@@ -84,6 +85,13 @@ worldsRouter.post('/generate', async (req, res) => {
     // Кастомные страны пакета (имена/цвета) перекрывают реестр data/countries.json
     const worldState = await balanceAgent.generateInitialWorldState(preset, preset.countries);
 
+    // Цвета карты: приоритет у кураторской палитры пресета (country_colors);
+    // для кодов вне палитры — прежний цвет (реестр/countries[]) + анти-тёмный
+    // post-process (карта фронта тёмная, #0a0a0f: чёрные регионы невидимы).
+    for (const [code, state] of worldState.countries) {
+      state.color = resolveRegionColor(code, state.color, preset.country_colors);
+    }
+
     const countriesObj: Record<string, any> = {};
     const regionsObj: Record<string, any> = {};
 
@@ -134,6 +142,8 @@ worldsRouter.post('/generate', async (req, res) => {
       historicalAccuracy: preset.historical_accuracy ?? 0.8,
       // Этап 5: кастомные правила симуляции пресета (rules.md) едут с миром
       simulationRules: preset.simulation_rules ?? null,
+      // Переопределённые промпты ИИ пресета (секция "prompts") едут с миром
+      prompts: preset.prompts ? JSON.stringify(preset.prompts) : null,
     };
 
     // Convert regionsObj to array and use createWithRegions (which wraps in transaction)

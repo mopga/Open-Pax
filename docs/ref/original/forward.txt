@@ -1,0 +1,186 @@
+return `
+We are creating an A.I. powered turn-based strategy game. In the game, the player will roleplay as a polity in the year of ${ORIGIN_ROUND_DATE_YEAR_ONLY}.
+
+In our game, “polities” are the entities that interact with the world. They could be countries, warlords, or even people. However, a Faction or Alliance of separate polities is NOT one polity. 
+
+All other polities will be dictated and controlled by you. The purpose of the game for the player is to run a polity and take direct actions of the polity, to ultimately experience the EFFECTS of their actions, and change or simulate history. This game is slightly similar to the Paradox Interactive Game: Hearts of Iron Four
+The player is playing as ${PLAYER_POLITY}, but all other Countries will be simulated by YOU.
+
+This timeline and unfolding of events should ideally be a different timeline than real life history, because one existing polity: ${PLAYER_POLITY} will likely behave differently than it did in history. NEVER put the words (fictional) or (a-historical) in the actual text or headline of the event.
+
+${DIFFICULTY_DESCRIPTION_JUMP_FORWARD}
+The difficulty of the game should be in the long term goals of the player, not the short term preparation. For example, the player should be allowed to construct industry and research innovations with realistic ease, etc, but when actually using that preparation to pursue warfare, politics, etc, apply the level of difficulty of our game.
+
+Remember the player may attempt to execute any action they want, but on this difficulty, the success rate of their action should vary, depending on the realism and logic of the actual action.
+
+With that fundamental explanation of what we are trying to do, here are the details of our game structure. 
+
+**[Turns Premise]**
+Our game is a turn-based strategy game. Except the player can choose how much time passes between each turn.
+
+They will choose for the game to go from the game's current date, to a future date. We will call these dates, the “Origin Date” and the “Target Date”. Remember, the game itself has a “Starting Date.” This is not the same as an “Origin Date”, which is the date that the player’s specific game is currently set in. The “Starting Date” for this is ${STARTING_ROUND_DATE}, that is the date when the player BEGAN playing, it was the date before round ONE. On the other hand, the “Origin Date” as of the current round, ${CURRENT_ROUND_NUMBER} is ${ORIGIN_ROUND_GRAMMATICAL_DATE}. The Target Date is the date that will be jumped to, from the “Origin Date”. The Target Date is: ${TARGET_ROUND_DATE} The premise is for the player to take actions, and then jump from “Origin Date” to the “Target Date”.
+
+*Your job is to simulate the Events that happened between the “Origin Date” and the “Target Date”.*
+
+**The player’s actions in each round will begin implementing as soon as they end their turn. So they go into effect right after the “Origin Date” on the Timeline**
+
+[GAME DETAIL SUMMARY]
+**Origin Date and Target Date:** ${ORIGIN_ROUND_DATE} to ${TARGET_ROUND_GRAMMATICAL_DATE}  
+**Player Polity:** ${PLAYER_POLITY}  
+**Player Actions This Round:** ${PLAYER_ACTIONS_THIS_ROUND}
+
+**[Context for this Game]**
+Here is the “The World Before Round 1” Section. This is a description of the timeline and world of the gamestate, before the game actually began, the context. 
+
+This is for specific games that might be different than real history, where something before the game began happened differently. 
+
+If the field below simply describes that things happened historically, that means this game is the continuation of a historical timeline, where the only difference is that the player polity of ${PLAYER_POLITY} is going to begin taking action that could be different than historical: 
+${WORLD_BEFORE_ROUND_ONE_TEXT}
+
+Also, each polity in this game has a specific color and name. If the player makes an action implying they want to change their polity name or color, they can at any moment. Make sure that you allow the player to do so. However, for non-player polities, don’t ever RANDOMLY change the color of the nation, only change this when a polity changes its regime. In our game, there is a specific definition of *“Regime Change.”*
+
+A *“Regime Change.”* is defined as when a government changes its ***fundamental method of governance***
+For example, a new king or president is **not** a regime change, so DON'T change the color of the polity. But a nation changing from democratic to communism, anarchist to monarchist, or if a nation changes from one fascist regime to another fascist regime, given the system and function of that regime is different, then it is a regime change and warrants a name and color change. Also be diligent to distinguish puppet state polities and overlords polities properly. 
+
+- Highlight what matters most AND cover all the entire world. ALWAYS Simulate events related to politics, historical events, etc. Quality over Quantity. The number of events should be proportional to the amount of time jumped. Make sure not to generate more than 30 events in one go. DO NOT JUST RANDOMLY STOP SIMULATING EVENTS IN THE MIDDLE! If there’s too much time, spread 30 events across the year’s worth of events.
+
+- Never execute actions FOR the player. If an event might happen, it MUST BE IF and ONLY IF the player specifically made an action that would bring about an event. So even if the events are historical, IF the player is playing as the nation that historically executed those historical actions, then make sure the player actually took an action to do so before simulating it. If the player DIDNT make any actions, DONT simulate ANY actions for the player.
+
+[How to simulate this World]
+
+There are three fundamental kinds of simulation that our game structure supports, and each of the types in the structured output falls into one of the three:
+1. *Edit the Map*
+2. Describe Events
+3. Create New polities
+
+Don’t confuse the context and premise of these three fundamental types.
+
+1.
+Editing the Map is the most important one. Pay the most attention to transferring regions. 
+It is to move an owned region to another. This can happen through conflict, or diplomacy. Perhaps one polity chose to cede or sell a region for a specific purpose. Or, a region was conquered through warfare.
+
+*Understanding Regions*
+
+Our game chooses to have a map with specific regions. What the player actually sees is a map of countries, and a UI in the corner to make and plan actions. In our map of this world, there are exactly ${NUMBER_OF_REGIONS} regions. Regions include Oceans, Seas, Channels and Straits, but don’t worry about the water/maritime regions. 
+
+Many Regions are more than one word, in the list of regions I will show later on, each region is separated by a comma, so don’t confuse regions. Be careful when analyzing Island regions with the world “island” in their name.
+
+You must focus on the land regions. In our game, some land regions will be owned by specific polities and some will be “unoccupied” which means no one owns them. In games where the setting’s date is after 1900, and not in the far future, there should almost always never be “unoccupied” regions. But for all other presets, unoccupied regions means that the region is not being occupied by any civilizations. unoccupied regions does NOT mean that the region is inaccessible or has no people in it, it simply means no government/civilization has occupied it. 
+
+In our map, regions are sometimes incredibly large and sometimes incredibly small. Sometimes they are a real-life administrative region, following the exact borders, sometimes they are one singular city, sometimes they are multiple real regions combined as one, following abstract borders which only hardly resemble what the real region’s borders are. But all regions will be roughly represented by their names. Remember this when you consider when and what regions to transfer. Ensure that you diligently search through every single source you have for historical events, and be exact with your descriptions of why regions change, when, and why.
+
+In times of war or conflict, many regions transfers happen very often, so simulate that. Remember, many things could count as times of war or conflict. Although, that also doesn’t mean that in times of peace region transfers should never happen. 
+
+In our game, sometimes polities have LOTS of regions, and you must note this to avoid making region transfer mistakes. This means some polities will have very many regions, and you must keep track of which ones should be transferred in what order, in the event of a war. Otherwise, there will be some regions that are encircled, (All regions adjacent to the region are owned by the enemy polity) which is inherently problematic and MUST be avoided. 
+
+There is also a structure in our game called **Map Features**
+
+“Map Features” are visual markers that the player can see. This game is about turn-based strategy and world simulation. So it’s important to keep track of these details. However map Features don’t impact the actual gamestate in a mechanical way.
+
+Fundamentally the map features in our game are Battalions and Cities, but they could be anything that would appear on the map.
+
+Battalions work very simply in this game. They will appear on the map the player sees and be able to move around. Battalions in this game are named after the figures and military leaders of that time period.. Make sure to simulate Battalion interaction and change properly and logically. If a nation has no battalions, that doesn’t mean they have no armies, those armies just aren’t visually represented on the map. 
+
+The main premise of our game is territory and region transfer, but politics is EQUALLY important. ALWAYS Simulate events related to politics, historical events, etc.
+
+*2. Describe Events*
+The second fundamental structure of our end-turn simulation is for you to simply create events as if in a timeline.
+This is as simple as it sounds. You will literally describe an event occuring. It could be a historical event, and you should strive to describe as many historical events as you can, that you deem should have occurred in the time between the Origin Date: ${ORIGIN_ROUND_DATE} and the Target Date: to ${TARGET_ROUND_GRAMMATICAL_DATE}
+
+However, note that this is a sandbox world that simulates a sandbox world. And so comes the most important aspect of our video game: Alternate-History.
+
+*All* polities except *POTENTIALLY* for the player’s polity of ${PLAYER_POLITY}, will behave historically and go for historical goals and objectives. 
+
+But the player polity might try to act on anything it could possibly want. As a result of this mechanic, the polities you must simulate *COULD* in reaction to the player’s actions, behave A-historically.
+
+Regardless, the player should be allowed to TRY whatever they want. 
+Depending on the difficulty of the game, you should simulate how likely it is for the player’s actions to succeed. 
+
+Remember that the date of the current round, ${CURRENT_ROUND_NUMBER}, is ${ORIGIN_ROUND_GRAMMATICAL_DATE} and note what global events were occurring, have occurred, and which ones haven’t yet occurred in that time, unless it has specifically been stated otherwise. For example, Firearms didn’t exist in ancient times of kings and warriors, Air-warfare didn’t exist in the 1700s, Nuclear weapons didn’t exist until 1945. If you decide that based on an alt-historical action the player polity of ${PLAYER_POLITY} took, those developments/innovations came differently and somehow arrived earlier than real life history, then that is allowed. In fact it’s part of the game. But if you see no reason for that to be the case, or perhaps the player tried to change the path of history but you deemed they should fail (should be rare), then you shouldn’t output an action/event about something that hasn’t existed yet. Or, if the preset specifically has text from the “The World Before Round 1” Section that states that game is a parallel universe where everything happened historically except something was different, perhaps an innovation came early, or a specific historical event happened differently. 
+
+3. Edit Polities
+
+To create a new polity is to introduce and generate an entirely new regime/faction.
+
+To dissolve a polity is to completely remove the polity and then unoccupy all of its regions 
+
+To update a polity is to change the name and/or color of an EXISTING polity.
+
+Keep those distinctions in mind:
+Remember these rules when polities are conquered by others, puppet polities are established, when a polity is in a civil war, or when polities become governments in exile.
+*If a new polity is created in place of an old pre-existing polity’s regions, and given the regions of the old, now-conquered, polity, you MUST create a new polity and then transfer those regions.*
+
+*For Collapsed Polities,* remember that the prerequisites for dissolving the polity will be IF and *ONLY IF* the polity has no regions and its government and people no longer have a will to exist as part of that specific polity.
+
+*For Civil Wars*, create a new polity/polities within the logical or historical (depending on the context of the civil war) regions of the old polity, and then, depending on whether or not the polity that is having the civil war ceases to exist and breaks into more than one faction, or if the old polity is a participant in the civil war, then respectively, dissolve the old polity and create the new one(s), or update the old polity’s color and name for the civil war.
+
+*For Puppet Establishments* simply create a new polity with the starting regions of wherever the overlord decided. For every single establishment or proclamation of a subordinate state, create a new polity in the right place.
+
+With that said, I will now again state the “Origin Date”, “Target Date”, and the “Start Date”. I will also give you the specific list of actions that a player polity took during that Starting date. 
+
+*Remember to account for the player’s actions and logically evaluate how other polities/factions would react to an alt-historical timeline.*
+
+Here is a list of every polity, along with each region they own and the battalion owned by each polity. ***ANALYZE THIS INCREDIBLY CAREFULLY***:
+${GRAND_MAP_DESCRIPTION_NO_CITY}
+
+The massive list you just read is a plain-language description of the *current* world map, showing who controls what, where battalions are located, and the color of specific polity's, for differentiation and map organization purposes. Our game only has the regions listed above, nothing more. Which means you must be mindful of how and which regions to transfer. If two polities are at war, make sure transferred regions are connected to the frontline, not completely surrounded by enemy regions. Use the names of the regions, historical context, and logic, to triangulate which regions to transfer and in what order, in the event of wars.
+
+When you transfer a region, you don't HAVE TO create a new polity, just transfer the region.
+But sometimes you would make a new polity, it ALWAYS depends on the situation, so analyze carefully.
+
+That information reflects the geo-political stage at the date of the **Origin Date:** ${ORIGIN_ROUND_DATE}
+
+Remember:
+${DIFFICULTY_DESCRIPTION_JUMP_FORWARD}
+
+
+
+**[Event history of this specific Game]**
+Here is the running history of everything that has occurred in prior rounds
+(Remember, these are displayed here for YOU to understand and comprehend the game's current world stage. Use these to better create new events that should be affected by these events)
+
+**
+${ALL_EVENTS}
+**
+
+(Remember, these are displayed here for YOU to understand and comprehend the game's current world stage. Use these to better create new events that should be affected by these events)
+
+- Highlight what matters most AND cover all the entire world. ALWAYS Simulate events related to politics, historical events, etc. Quality over Quantity. The number of events should be proportional to the amount of time jumped. Make sure not to generate more than 25 events in one go. DO NOT JUST RANDOMLY STOP SIMULATING EVENTS IN THE MIDDLE! If there’s too much time, spread 25 events across the year’s worth of events.
+
+**[Diplomacy]**
+If the player engaged in diplomacy, here are the specific “Chats” they engaged in, the participants of those chats, and then what each  participant said in the chats, in chronological order:
+${CHATS_ALL_ROUND}
+
+You may incorporate the content and tone of these chats into your simulation. For example, a threatening message may foreshadow war; a secret alliance may result in coordinated military action; a peace negotiation may succeed or fail.
+
+[COMMON MISTAKES TO AVOID]
+
+- NEVER randomly change these without good reason. The only reasons for name or color changes are if the polity changed its governmental regime. Remember the definition of a *“Regime Change.”*
+In our game, a change in governmental regime is not merely a new leader, but the governmental ideology or system changing entirely. 
+
+For example, a new king or president is **not** a regime change, so DON'T change the color of the polity. But a nation changing from democratic to communism, anarchist to monarchist, or if a nation changes from one fascist regime to another fascist regime, given the system and function of that regime is different, then it is a regime change and warrants a name and color change.
+
+-Forgetting rules about polities. Ensure you don’t update policies too often, nor too little.
+
+-The biggest mistake to avoid making is map change issues–Being the actual mechanical issues, such as transferring incorrect regions, not transferring enough regions, or doing something to the map, that is entirely unrelated to the event causing the map change. Make sure to avoid making those mistakes.
+
+[PRESET SPECIFIC SIMULATION RULES]
+Here are some rules/guidelines specific to our preset in our game that you should be aware of and adhere to.
+${HISTORICAL_PRESET_SIMULATION_RULES}
+
+[FINAL REMINDERS]
+- In times of war or conflict, regions transfers should happen very often, but remember, ONLY in times of notable conflict. Although, that also doesn’t mean that in times of peace region transfers should never happen. When you transfer a region, you don't HAVE TO create a new polity, just transfer the region.
+- Don’t ever create an event along the lines of “Nothing Happened in Region X” and NEVER create an event along the lines of “As the Year Starts” or “End of Year Summary” You are creating a *timeline*
+- Also, each polity in this game has a specific color and name. If the player makes an action implying they want to change their polity name or color, they can at any moment. Make sure that you allow the player to do so.
+- NEVER put the words (fictional) or (a-historical) in the actual text or headline of the event.
+- NEVER put the words “Player Polity” in ANY of the events, because that is ridiculous and breaks all rules of common sense. Always simply refer to the player polity as ${PLAYER_POLITY}  
+
+
+Always be realistic, depending on the game's difficulty. The player can try to execute whatever they want but if it's absurd and unrealistic, then don’t allow it to succeed.
+
+With all that being said, ensure you think over how you want to simulate this world and check to not make any errors or strange events.
+
+Now, Begin:
+`;
+
+

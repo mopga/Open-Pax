@@ -1,7 +1,10 @@
 /**
- * Интеграционные тесты Этапа 3 (с заглушкой LLM):
- *   дипломатические чаты — хранение сообщений, LLM-initiated startChat,
- *   транскрипты в промпте симуляции, проактивный советник.
+ * Интеграционные тесты Этапа 3 (с заглушкой LLM).
+ *
+ * ОТКЛЮЧЕНО: переговоры — фича дипломатических чатов выключена решением
+ * владельца (GameSession не создаёт чаты, роуты не смонтированы).
+ * Тесты чатов закомментированы и сохранены для возможного возврата фичи.
+ * Активным остаётся тест проактивного советника (он не часть чат-фичи).
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import os from 'os';
@@ -108,89 +111,90 @@ afterAll(() => {
 });
 
 describe('Этап 3: дипломатические чаты', () => {
-  it('sendChatMessage сохраняет сообщение игрока и ответ политии от LLM', async () => {
-    const { session } = createGame();
-
-    const chat = session.ensureChat('Польша');
-    expect(chat.polityId).toBe('POL');
-    expect(chat.polityName).toBe('Польша');
-    // Идемпотентность: повторный ensureChat возвращает тот же чат
-    expect(session.ensureChat('Польша').id).toBe(chat.id);
-
-    const { message, reply } = await session.sendChatMessage(chat.id, 'Предлагаем пакт о ненападении');
-
-    expect(message.role).toBe('player');
-    expect(message.content).toBe('Предлагаем пакт о ненападении');
-    expect(reply.role).toBe('polity');
-    expect(reply.content).toBe(chatReply);
-
-    // Оба сообщения в истории
-    const messages = session.getChatMessages(chat.id);
-    expect(messages).toHaveLength(2);
-    expect(messages[0].role).toBe('player');
-    expect(messages[1].role).toBe('polity');
-
-    // В списке чатов видно последнее сообщение и непрочитанное
-    const chats = session.getChats();
-    expect(chats).toHaveLength(1);
-    expect(chats[0].lastMessage).toBe(chatReply);
-    expect(chats[0].unread).toBe(1);
-
-    // Пометка прочитанными сбрасывает счётчик
-    session.markChatRead(chat.id);
-    expect(session.getChats()[0].unread).toBe(0);
-  });
-
-  it('ensureChat для чужой/несуществующей политии — not found', async () => {
-    const { session } = createGame();
-    expect(() => session.ensureChat('Атлантида')).toThrow(/not found/);
-    // Чат с самим собой не создаётся
-    expect(() => session.ensureChat('ФРГ')).toThrow(/not found/);
-  });
-
-  it('startChat из ответа симуляции создаёт чат, сообщение политии и SSE-событие', async () => {
-    stubStartChat = [{ polityName: 'Польша', topic: 'Требуем объяснений' }];
-    const { session } = createGame();
-
-    const sseEvents: { type: string; data: any }[] = [];
-    session.setSSEBroadcaster((type: string, data: any) => sseEvents.push({ type, data }));
-
-    session.queueAction('Укреплять границы');
-    const action = await session.processNextAction(30);
-    expect(action.status).toBe('completed');
-
-    // Чат создан, первое сообщение — от политии с темой из startChat
-    const chats = session.getChats();
-    expect(chats).toHaveLength(1);
-    expect(chats[0].polityName).toBe('Польша');
-
-    const messages = session.getChatMessages(chats[0].id);
-    expect(messages).toHaveLength(1);
-    expect(messages[0].role).toBe('polity');
-    expect(messages[0].content).toBe('Требуем объяснений');
-
-    // chat_message транслировался
-    const chatEvent = sseEvents.find(e => e.type === 'chat_message');
-    expect(chatEvent).toBeTruthy();
-    expect(chatEvent.data.polityName).toBe('Польша');
-    expect(chatEvent.data.chatId).toBe(chats[0].id);
-    expect(chatEvent.data.message.content).toBe('Требуем объяснений');
-
-    stubStartChat = [];
-  });
-
-  it('транскрипты чатов попадают в промпт следующего прыжка', async () => {
-    const { session } = createGame();
-
-    const chat = session.ensureChat('Польша');
-    await session.sendChatMessage(chat.id, 'Как насчёт торгового договора?');
-
-    session.queueAction('Развивать экономику');
-    await session.processNextAction(30);
-
-    expect(capturedPrompt).toContain('Переговоры с Польша');
-    expect(capturedPrompt).toContain('Как насчёт торгового договора?');
-  });
+  // ОТКЛЮЧЕНО: переговоры — чат-фича выключена, методы GameSession закомментированы.
+  // it('sendChatMessage сохраняет сообщение игрока и ответ политии от LLM', async () => {
+  //   const { session } = createGame();
+  //
+  //   const chat = session.ensureChat('Польша');
+  //   expect(chat.polityId).toBe('POL');
+  //   expect(chat.polityName).toBe('Польша');
+  //   // Идемпотентность: повторный ensureChat возвращает тот же чат
+  //   expect(session.ensureChat('Польша').id).toBe(chat.id);
+  //
+  //   const { message, reply } = await session.sendChatMessage(chat.id, 'Предлагаем пакт о ненападении');
+  //
+  //   expect(message.role).toBe('player');
+  //   expect(message.content).toBe('Предлагаем пакт о ненападении');
+  //   expect(reply.role).toBe('polity');
+  //   expect(reply.content).toBe(chatReply);
+  //
+  //   // Оба сообщения в истории
+  //   const messages = session.getChatMessages(chat.id);
+  //   expect(messages).toHaveLength(2);
+  //   expect(messages[0].role).toBe('player');
+  //   expect(messages[1].role).toBe('polity');
+  //
+  //   // В списке чатов видно последнее сообщение и непрочитанное
+  //   const chats = session.getChats();
+  //   expect(chats).toHaveLength(1);
+  //   expect(chats[0].lastMessage).toBe(chatReply);
+  //   expect(chats[0].unread).toBe(1);
+  //
+  //   // Пометка прочитанными сбрасывает счётчик
+  //   session.markChatRead(chat.id);
+  //   expect(session.getChats()[0].unread).toBe(0);
+  // });
+  //
+  // it('ensureChat для чужой/несуществующей политии — not found', async () => {
+  //   const { session } = createGame();
+  //   expect(() => session.ensureChat('Атлантида')).toThrow(/not found/);
+  //   // Чат с самим собой не создаётся
+  //   expect(() => session.ensureChat('ФРГ')).toThrow(/not found/);
+  // });
+  //
+  // it('startChat из ответа симуляции создаёт чат, сообщение политии и SSE-событие', async () => {
+  //   stubStartChat = [{ polityName: 'Польша', topic: 'Требуем объяснений' }];
+  //   const { session } = createGame();
+  //
+  //   const sseEvents: { type: string; data: any }[] = [];
+  //   session.setSSEBroadcaster((type: string, data: any) => sseEvents.push({ type, data }));
+  //
+  //   session.queueAction('Укреплять границы');
+  //   const action = await session.processNextAction(30);
+  //   expect(action.status).toBe('completed');
+  //
+  //   // Чат создан, первое сообщение — от политии с темой из startChat
+  //   const chats = session.getChats();
+  //   expect(chats).toHaveLength(1);
+  //   expect(chats[0].polityName).toBe('Польша');
+  //
+  //   const messages = session.getChatMessages(chats[0].id);
+  //   expect(messages).toHaveLength(1);
+  //   expect(messages[0].role).toBe('polity');
+  //   expect(messages[0].content).toBe('Требуем объяснений');
+  //
+  //   // chat_message транслировался
+  //   const chatEvent = sseEvents.find(e => e.type === 'chat_message');
+  //   expect(chatEvent).toBeTruthy();
+  //   expect(chatEvent.data.polityName).toBe('Польша');
+  //   expect(chatEvent.data.chatId).toBe(chats[0].id);
+  //   expect(chatEvent.data.message.content).toBe('Требуем объяснений');
+  //
+  //   stubStartChat = [];
+  // });
+  //
+  // it('транскрипты чатов попадают в промпт следующего прыжка', async () => {
+  //   const { session } = createGame();
+  //
+  //   const chat = session.ensureChat('Польша');
+  //   await session.sendChatMessage(chat.id, 'Как насчёт торгового договора?');
+  //
+  //   session.queueAction('Развивать экономику');
+  //   await session.processNextAction(30);
+  //
+  //   expect(capturedPrompt).toContain('Переговоры с Польша');
+  //   expect(capturedPrompt).toContain('Как насчёт торгового договора?');
+  // });
 
   it('проактивный советник транслируется после успешного хода', async () => {
     const { session } = createGame();

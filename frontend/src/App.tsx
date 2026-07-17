@@ -6,28 +6,34 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { MapboxMapView } from './components/Map/MapboxMapView';
 import { MapView } from './components/Map/MapView';
-import { MapEditor, type EditorRegion, type EditorObject } from './components/Editor';
-import { CreateWorld, type WorldConfig } from './components/WorldBuilder/CreateWorld';
+// ОТКЛЮЧЕНО: редактор карт (временно)
+// import { MapEditor, type EditorRegion, type EditorObject } from './components/Editor';
+// import { CreateWorld, type WorldConfig } from './components/WorldBuilder/CreateWorld';
 import { TemplateSelector } from './components/Game/TemplateSelector';
 import { CountrySelector } from './components/Game/CountrySelector';
 import { DiplomacyPanel } from './components/Game/DiplomacyPanel';
-import { ChatsPanel } from './components/Game/ChatsPanel';
+// ОТКЛЮЧЕНО: переговоры/дипломатические чаты (временно)
+// import { ChatsPanel } from './components/Game/ChatsPanel';
 import { AdvisorChat } from './components/Game/AdvisorChat';
 import { Landing } from './components/Game/Landing';
 import { SaveGameModal } from './components/Game/SaveGameModal';
 import { HudBar } from './components/Game/HudBar';
 import { GameLoader, WORLD_GEN_PHASES } from './components/Game/GameLoader';
 import { Fab } from './components/Game/Fab';
-import { gameApi, worldApi, mapApi, savesApi } from './services/api';
+// ОТКЛЮЧЕНО: редактор карт (временно) — mapApi использовался только редактором/«Мои карты»
+import { gameApi, worldApi, savesApi } from './services/api';
 import type { Region, World, Game } from './types';
-import { useGameStore, useUIStore, useActionsStore, useChatStore, selectTotalUnread, type LocalMap } from './stores';
+// ОТКЛЮЧЕНО: переговоры — selectTotalUnread не нужен; редактор карт — тип LocalMap не нужен
+import { useGameStore, useUIStore, useActionsStore, useChatStore } from './stores';
 import { useSSE } from './services/sse';
 
-// Вспомогательная функция: точки в SVG path
-const pointsToPath = (points: { x: number; y: number }[]): string => {
-  if (points.length === 0) return '';
-  return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-};
+// ОТКЛЮЧЕНО: редактор карт (временно) — хелпер точек в SVG path использовался только
+// при сохранении карт из редактора (handleSaveMapLocal/handleSaveMap)
+// // Вспомогательная функция: точки в SVG path
+// const pointsToPath = (points: { x: number; y: number }[]): string => {
+//   if (points.length === 0) return '';
+//   return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+// };
 
 // Вспомогательная функция: форматирование диапазона дат
 const formatDateRange = (start: string, end: string): string => {
@@ -61,11 +67,13 @@ function App() {
     currentView, loading, showJumpMenu, jumpDays, showSavesMenu,
     showPromptEditor, editingPrompt,
     showActions, actionsMaximized, actionsSize, isResizing,
-    selectedMapForWorld, savedMaps, selectedTemplate,
+    // ОТКЛЮЧЕНО: редактор карт (временно) — selectedMapForWorld, savedMaps,
+    selectedTemplate,
     setCurrentView, setLoading, setShowJumpMenu, setJumpDays, setShowSavesMenu,
     setShowPromptEditor, setEditingPrompt,
     setShowActions, setActionsMaximized, setActionsSize, setIsResizing,
-    setSelectedMapForWorld, setSavedMaps, addSavedMap, setSelectedTemplate,
+    // ОТКЛЮЧЕНО: редактор карт (временно) — setSelectedMapForWorld, setSavedMaps, addSavedMap,
+    setSelectedTemplate,
     resetUI
   } = useUIStore();
 
@@ -75,19 +83,21 @@ function App() {
     reset: resetActions
   } = useActionsStore();
 
-  // Этап 3: дипломатические чаты + живой Советник
+  // Этап 3: живой Советник (вкладки плавающей панели).
+  // ОТКЛЮЧЕНО: переговоры — дипломатические чаты и unread-бейдж (totalUnread) больше не используются
   const panelTab = useChatStore(s => s.panelTab);
   const setPanelTab = useChatStore(s => s.setPanelTab);
-  const totalUnread = useChatStore(selectTotalUnread);
+  // const totalUnread = useChatStore(selectTotalUnread); // ОТКЛЮЧЕНО: переговоры
 
-  // Привязка чатов к текущей игре (при смене игры chatStore сбрасывается)
+  // Привязка chatStore к текущей игре (при смене игры лента советника сбрасывается)
   const currentGameId = currentGame?.id || null;
   useEffect(() => {
     const chatStore = useChatStore.getState();
     chatStore.setGameId(currentGameId);
-    if (currentGameId) {
-      chatStore.refreshChats();
-    }
+    // ОТКЛЮЧЕНО: переговоры — список дипломатических чатов с сервера больше не грузим
+    // if (currentGameId) {
+    //   chatStore.refreshChats();
+    // }
   }, [currentGameId]);
 
   // Refs (not in store - DOM refs)
@@ -124,48 +134,51 @@ function App() {
     };
   }, [isResizing, setActionsSize, setIsResizing]);
 
-  // Загрузка сохраненных карт
-  useEffect(() => {
-    const loadMaps = async () => {
-      const maps: LocalMap[] = [];
+  // ОТКЛЮЧЕНО: редактор карт (временно) — загрузка сохраненных карт для «Мои карты»/редактора
+  // useEffect(() => {
+  //   const loadMaps = async () => {
+  //     const maps: LocalMap[] = [];
+  //
+  //     try {
+  //       const serverMaps = await mapApi.list();
+  //       for (const m of serverMaps) {
+  //         try {
+  //           const fullMap = await mapApi.get(m.id);
+  //           maps.push({
+  //             id: `server_${m.id}`,
+  //             name: fullMap.name,
+  //             regions: fullMap.regions.map(r => ({
+  //               id: r.id,
+  //               name: r.name,
+  //               color: r.color,
+  //               path: r.path,
+  //             })),
+  //           });
+  //         } catch (e) { /* skip */ }
+  //       }
+  //     } catch (e) { /* skip */ }
+  //
+  //     for (let i = 0; i < localStorage.length; i++) {
+  //       const key = localStorage.key(i);
+  //       if (key?.startsWith('map_')) {
+  //         try {
+  //           const data = JSON.parse(localStorage.getItem(key) || '{}');
+  //           if (!maps.find(m => m.name === data.name)) {
+  //             maps.push({ id: key, ...data });
+  //           }
+  //         } catch (e) { /* skip */ }
+  //       }
+  //     }
+  //
+  //     setSavedMaps(maps);
+  //   };
+  //
+  //   loadMaps();
+  // }, [setSavedMaps]);
 
-      try {
-        const serverMaps = await mapApi.list();
-        for (const m of serverMaps) {
-          try {
-            const fullMap = await mapApi.get(m.id);
-            maps.push({
-              id: `server_${m.id}`,
-              name: fullMap.name,
-              regions: fullMap.regions.map(r => ({
-                id: r.id,
-                name: r.name,
-                color: r.color,
-                path: r.path,
-              })),
-            });
-          } catch (e) { /* skip */ }
-        }
-      } catch (e) { /* skip */ }
-
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key?.startsWith('map_')) {
-          try {
-            const data = JSON.parse(localStorage.getItem(key) || '{}');
-            if (!maps.find(m => m.name === data.name)) {
-              maps.push({ id: key, ...data });
-            }
-          } catch (e) { /* skip */ }
-        }
-      }
-
-      setSavedMaps(maps);
-    };
-
-    loadMaps();
-  }, [setSavedMaps]);
-
+  // ОТКЛЮЧЕНО: редактор карт (временно) — сохранение карт, выбор карты и создание мира
+  // из кастомной карты (handleSaveMapLocal / handleSaveMap / handleSelectMap / handleCreateWorld)
+  /*
   // Сохранить карту локально
   const handleSaveMapLocal = (regions: EditorRegion[], mapName: string, objects?: EditorObject[]): LocalMap => {
     const mapData: LocalMap = {
@@ -407,6 +420,7 @@ function App() {
     }
     setLoading(false);
   };
+  */
 
   // Отправить действия (несколько)
   const handleSubmitActions = async (actions: string[]) => {
@@ -629,8 +643,8 @@ function App() {
         } catch (e) { console.error(e); }
       })();
     }
-    // Этап 3: актуализируем чаты при открытии панели
-    useChatStore.getState().refreshChats();
+    // ОТКЛЮЧЕНО: переговоры — актуализация чатов при открытии панели больше не нужна
+    // useChatStore.getState().refreshChats();
   };
 
   // Выбрать тип действия и заполнить шаблон
@@ -682,10 +696,10 @@ function App() {
   const renderMenu = () => (
     <Landing
       onNewGame={() => setCurrentView('select-template')}
-      onOpenEditor={() => setCurrentView('editor')}
-      onSelectMap={handleSelectMap}
+      // ОТКЛЮЧЕНО: редактор карт (временно) — onOpenEditor={() => setCurrentView('editor')}
+      // ОТКЛЮЧЕНО: редактор карт (временно) — onSelectMap={handleSelectMap}
       onResumeSave={handleResumeSave}
-      savedMaps={savedMaps}
+      // ОТКЛЮЧЕНО: редактор карт (временно) — savedMaps={savedMaps}
     />
   );
 
@@ -742,13 +756,14 @@ function App() {
     onActionVoided: (data) => {
       setTurnProgress(`⊘ Действие отклонено: ${data.reason || data.action}`);
     },
-    // Этап 3: входящее сообщение от политии — бейдж unread + обновление списка чатов
-    onChatMessage: (data) => {
-      const chatStore = useChatStore.getState();
-      chatStore.handleIncomingChatMessage(data);
-      // Синхронизируем список с сервером (новые чаты, актуальные unread)
-      chatStore.refreshChats();
-    },
+    // ОТКЛЮЧЕНО: переговоры — входящие сообщения дипломатических чатов не обрабатываем
+    // // Этап 3: входящее сообщение от политии — бейдж unread + обновление списка чатов
+    // onChatMessage: (data) => {
+    //   const chatStore = useChatStore.getState();
+    //   chatStore.handleIncomingChatMessage(data);
+    //   // Синхронизируем список с сервером (новые чаты, актуальные unread)
+    //   chatStore.refreshChats();
+    // },
     // Этап 3: проактивный комментарий советника после хода — в ленту с пометкой
     onAdvisorProactive: (data) => {
       if (data?.content) {
@@ -978,10 +993,11 @@ function App() {
               </div>
             )}
 
-            {/* Этап 6: FAB-группа (действия / дипломатия с бейджем) */}
+            {/* Этап 6: FAB-группа (действия). ОТКЛЮЧЕНО: переговоры — FAB «💬 Дипломатия» с бейджем убран */}
             {!showActions && (
               <Fab items={[
                 { icon: '⚡', title: 'Действия', onClick: openActionsPanel },
+                /* ОТКЛЮЧЕНО: переговоры (временно)
                 {
                   icon: '💬',
                   title: 'Дипломатия',
@@ -991,6 +1007,7 @@ function App() {
                     openActionsPanel();
                   },
                 },
+                */
               ]} />
             )}
 
@@ -1028,7 +1045,7 @@ function App() {
                   </div>
                 </div>
 
-                {/* Этап 3: вкладки панели — Предложения | Советник | Дипломатия */}
+                {/* Этап 3: вкладки панели — Предложения | Советник (ОТКЛЮЧЕНО: переговоры — вкладка «Дипломатия») */}
                 <div className="advisor-tabs-row">
                   <button
                     className={`advisor-tab ${panelTab === 'suggestions' ? 'active' : ''}`}
@@ -1042,6 +1059,7 @@ function App() {
                   >
                     Советник
                   </button>
+                  {/* ОТКЛЮЧЕНО: переговоры (временно)
                   <button
                     className={`advisor-tab ${panelTab === 'chats' ? 'active' : ''}`}
                     onClick={() => setPanelTab('chats')}
@@ -1049,6 +1067,7 @@ function App() {
                     Дипломатия
                     {totalUnread > 0 && <span className="tab-badge">{totalUnread}</span>}
                   </button>
+                  */}
                 </div>
 
                 {/* Actions Content */}
@@ -1255,7 +1274,7 @@ function App() {
                   <AdvisorChat gameId={currentGame.id} />
                 )}
 
-                {/* Этап 3: вкладка дипломатических чатов */}
+                {/* ОТКЛЮЧЕНО: переговоры (временно) — вкладка дипломатических чатов
                 {panelTab === 'chats' && currentGame && (
                   <ChatsPanel
                     gameId={currentGame.id}
@@ -1263,6 +1282,7 @@ function App() {
                     playerPolityId={playerPolityId}
                   />
                 )}
+                */}
 
                 {/* Submit Button */}
                 {panelTab === 'suggestions' && (
@@ -1424,6 +1444,8 @@ function App() {
     );
   };
 
+  // ОТКЛЮЧЕНО: редактор карт (временно) — рендеры редактора и создания мира из карты
+  /*
   // Рендер редактора
   const renderEditor = () => (
     <MapEditor
@@ -1457,6 +1479,7 @@ function App() {
       />
     );
   };
+  */
 
   return (
     <div className="app">
@@ -1534,8 +1557,10 @@ function App() {
         </div>
       )}
       {currentView === 'game' && renderGame()}
+      {/* ОТКЛЮЧЕНО: редактор карт (временно) — маршруты 'editor' и 'create-world'
       {currentView === 'editor' && renderEditor()}
       {currentView === 'create-world' && renderCreateWorld()}
+      */}
     </div>
   );
 }

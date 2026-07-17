@@ -63,6 +63,15 @@ export function initDatabase() {
     if (!e.message.includes('duplicate column name')) { /* уже есть */ }
   }
 
+  // Migration: переопределённые промпты ИИ мира (секция "prompts" пресета,
+  // JSON-объект {"<механика>": "<текст>"}); NULL — дефолтные промпты
+  try {
+    db.exec("ALTER TABLE worlds ADD COLUMN prompts TEXT DEFAULT NULL");
+    console.log('[Migration] Added prompts to worlds');
+  } catch (e: any) {
+    if (!e.message.includes('duplicate column name')) { /* уже есть */ }
+  }
+
   // Regions table (world regions)
   db.exec(`
     CREATE TABLE IF NOT EXISTS world_regions (

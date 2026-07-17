@@ -15,14 +15,16 @@ import { savesApi } from '../../services/api';
 export interface LandingProps {
   /** Переход к созданию новой игры */
   onNewGame: () => void;
-  /** Открыть редактор карт */
-  onOpenEditor: () => void;
-  /** Выбор сохранённой карты из секции «Мои карты» */
-  onSelectMap: (map: any) => void;
+  // ОТКЛЮЧЕНО: редактор карт (временно)
+  // /** Открыть редактор карт */
+  // onOpenEditor: () => void;
+  // /** Выбор сохранённой карты из секции «Мои карты» */
+  // onSelectMap: (map: any) => void;
   /** Продолжить игру из сохранения (объект из savesApi.list) */
   onResumeSave: (save: any) => void;
-  /** Сохранённые карты пользователя (regions: {id, path, color}[]) */
-  savedMaps: any[];
+  // ОТКЛЮЧЕНО: редактор карт (временно)
+  // /** Сохранённые карты пользователя (regions: {id, path, color}[]) */
+  // savedMaps: any[];
 }
 
 /** «1951-01-01» → «1 января 1951» */
@@ -50,7 +52,8 @@ function formatSavedAt(value?: string): string {
 }
 
 export function Landing(props: LandingProps) {
-  const { onNewGame, onOpenEditor, onSelectMap, onResumeSave, savedMaps } = props;
+  // ОТКЛЮЧЕНО: редактор карт (временно) — onOpenEditor, onSelectMap, savedMaps
+  const { onNewGame, onResumeSave } = props;
 
   const [saves, setSaves] = useState<any[]>([]);
 
@@ -73,7 +76,8 @@ export function Landing(props: LandingProps) {
     };
   }, []);
 
-  const maps = Array.isArray(savedMaps) ? savedMaps : [];
+  // ОТКЛЮЧЕНО: редактор карт (временно) — список карт для секции «Мои карты»
+  // const maps = Array.isArray(savedMaps) ? savedMaps : [];
 
   return (
     <div className="landing">
@@ -90,15 +94,18 @@ export function Landing(props: LandingProps) {
             <button className="landing-cta" onClick={onNewGame}>
               Новая игра <span className="landing-cta-arrow">→</span>
             </button>
+            {/* ОТКЛЮЧЕНО: редактор карт (временно)
             <button className="landing-cta-secondary" onClick={onOpenEditor}>
               🗺 Редактор карт
             </button>
+            */}
           </div>
         </div>
       </div>
 
       {/* ===== Секции под hero ===== */}
-      {(saves.length > 0 || maps.length > 0) && (
+      {/* ОТКЛЮЧЕНО: редактор карт (временно) — условие было (saves.length > 0 || maps.length > 0) */}
+      {saves.length > 0 && (
         <div className="landing-sections">
           {saves.length > 0 && (
             <section className="landing-section">
@@ -125,6 +132,7 @@ export function Landing(props: LandingProps) {
             </section>
           )}
 
+          {/* ОТКЛЮЧЕНО: редактор карт (временно) — секция «Мои карты»
           {maps.length > 0 && (
             <section className="landing-section">
               <h2 className="landing-section-title">🗺 Мои карты</h2>
@@ -161,6 +169,7 @@ export function Landing(props: LandingProps) {
               </div>
             </section>
           )}
+          */}
         </div>
       )}
     </div>

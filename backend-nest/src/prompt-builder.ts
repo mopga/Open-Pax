@@ -5,11 +5,12 @@
  */
 
 import { PromptVariables, SimulationResult, ConvertedAction, Suggestion, AdvisorMessage, difficultyPromptBlock, normalizeDifficulty } from './prompts';
-import { buildSimulationPrompt, parseSimulationResponse } from './prompts/simulation';
-import { buildAdvisorPrompt, parseAdvisorResponse } from './prompts/advisor';
+import { buildSimulationPrompt, parseSimulationResponse, buildAutoJumpInstruction } from './prompts/simulation';
+import { buildAdvisorPrompt, parseAdvisorResponse, buildAdvisorDialogSuffix } from './prompts/advisor';
 import { buildSuggestionsPrompt, parseSuggestionsResponse } from './prompts/suggestions';
 import { buildConverterPrompt, parseConverterResponse, buildBatchConverterPrompt, parseBatchConverterResponse } from './prompts/converter';
 import { buildNarrationPrompt, parseNarrationResponse } from './prompts/narration';
+import { getPromptOverride, renderPromptTemplate, PromptOverrides } from './prompts/override';
 import { LLMRouter } from './llm';
 
 interface GameData {
@@ -26,17 +27,63 @@ interface GameData {
   chatTranscripts?: string;
   /** Этап 5: кастомные правила симуляции мира (rules.md пресет-пакета) */
   simulationRules?: string;
+  /** Переопределённые промпты мира (секция "prompts" пресета; объект или JSON-строка) */
+  prompts?: PromptOverrides | string | null;
   world: {
     name: string;
     basePrompt: string;
     startDate: string;
     regions: any; // может быть Map или объект
+    /** Переопределённые промпты мира (приоритет над дефолтными builders) */
+    prompts?: PromptOverrides | string | null;
   };
   players: PlayerData[];
   /** Полития игрока (polityId) — для пометки в описании карты */
   playerPolityId?: string;
   actions: ActionData[];
   results: TurnResultData[];
+}
+
+/** Нормализовать prompts-запись: объект или JSON-строка → чистый словарь. */
+function normalizePrompts(raw: unknown): PromptOverrides | undefined {
+  if (!raw) return undefined;
+  let obj = raw;
+  if (typeof obj === 'string') {
+    try {
+      obj = JSON.parse(obj);
+    } catch {
+      return undefined;
+    }
+  }
+  if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) return undefined;
+  const out: PromptOverrides = {};
+  for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+    if (typeof value === 'string' && value.trim()) out[key] = value;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * Переопределённые промпты мира (пресетная секция "prompts").
+ *
+ * Приоритет: GameData.world.prompts → GameData.prompts → ленивый lookup в БД
+ * (games → worlds.prompts). Lookup нужен, потому что GameSession не знает о
+ * колонке prompts; любая ошибка (нет игры, нет БД, битый JSON) молча
+ * откатывает на дефолтные промпты.
+ */
+export async function resolveWorldPrompts(game: GameData): Promise<PromptOverrides | undefined> {
+  const direct = normalizePrompts(game.world?.prompts) ?? normalizePrompts(game.prompts);
+  if (direct) return direct;
+
+  try {
+    // Ленивый dynamic import: repositories тянут database (better-sqlite3) —
+    // не хотим открывать БД при импорте prompt-builder в средах без неё.
+    const { gameRepository } = await import('./repositories');
+    const row = gameRepository.findById(game.id);
+    return normalizePrompts(row?.world?.prompts);
+  } catch {
+    return undefined;
+  }
 }
 
 interface RegionData {
@@ -334,7 +381,12 @@ export class PromptEngine {
     vars.TARGET_ROUND_GRAMMATICAL_DATE = this.toGrammaticalDate(vars.TARGET_ROUND_DATE);
     vars.PLAYER_ACTIONS_THIS_ROUND = actions.join('\n');
 
-    const prompt = buildSimulationPrompt(vars, { autoJump });
+    const promptOverride = getPromptOverride(await resolveWorldPrompts(game), 'simulation');
+    // Пресетный шаблон заменяет дефолтный промпт целиком; правила auto-jump
+    // (если режим включён) дописываем после него, чтобы механика не ломалась.
+    const prompt = promptOverride
+      ? renderPromptTemplate(promptOverride, vars) + (autoJump ? buildAutoJumpInstruction(vars) : '')
+      : buildSimulationPrompt(vars, { autoJump });
     // system — короткая ролевая инструкция, user — большой промпт.
     // Раньше весь промпт шёл в system, а user был пустым: часть моделей
     // (особенно локальные) на это реагирует заметно хуже.
@@ -353,7 +405,8 @@ export class PromptEngine {
     const builder = new PromptBuilder(game);
     const vars = builder.buildVariablesForAction(actionText);
 
-    const prompt = buildConverterPrompt(vars);
+    const promptOverride = getPromptOverride(await resolveWorldPrompts(game), 'converter');
+    const prompt = promptOverride ? renderPromptTemplate(promptOverride, vars) : buildConverterPrompt(vars);
     const response = await this.llm.generate(
       'converter',
       'Ты — аналитик приказов в глобальной стратегической игре. Отвечай только JSON.',
@@ -375,6 +428,16 @@ export class PromptEngine {
       return [await this.convertAction(game, actionTexts[0])];
     }
 
+    // Пресетный шаблон конвертера рассчитан на одно действие: с ним
+    // конвертируем последовательно — корректность важнее экономии вызовов.
+    if (getPromptOverride(await resolveWorldPrompts(game), 'converter')) {
+      const converted: ConvertedAction[] = [];
+      for (const text of actionTexts) {
+        converted.push(await this.convertAction(game, text));
+      }
+      return converted;
+    }
+
     const builder = new PromptBuilder(game);
     const vars = builder.buildVariables();
 
@@ -393,7 +456,12 @@ export class PromptEngine {
     const builder = new PromptBuilder(game);
     const vars = builder.buildVariables();
 
-    const prompt = buildAdvisorPrompt(vars, message, history);
+    // Пресетный шаблон советника: роль/стиль из пресета, но историю диалога
+    // и текущий вопрос игрока всегда дописываем — иначе советник «оглохнет».
+    const promptOverride = getPromptOverride(await resolveWorldPrompts(game), 'advisor');
+    const prompt = promptOverride
+      ? renderPromptTemplate(promptOverride, vars) + buildAdvisorDialogSuffix(message, history)
+      : buildAdvisorPrompt(vars, message, history);
     const response = await this.llm.generate(
       'advisor',
       'Ты — мудрый советник лидера государства в альтернативной истории.',
@@ -417,7 +485,10 @@ export class PromptEngine {
     const builder = new PromptBuilder(game);
     const vars = builder.buildVariables();
 
-    const prompt = buildAdvisorPrompt(vars, message, history);
+    const promptOverride = getPromptOverride(await resolveWorldPrompts(game), 'advisor');
+    const prompt = promptOverride
+      ? renderPromptTemplate(promptOverride, vars) + buildAdvisorDialogSuffix(message, history)
+      : buildAdvisorPrompt(vars, message, history);
     const response = await this.llm.stream(
       'advisor',
       'Ты — мудрый советник лидера государства в альтернативной истории.',
@@ -433,7 +504,8 @@ export class PromptEngine {
     const builder = new PromptBuilder(game);
     const vars = builder.buildVariables();
 
-    const prompt = buildSuggestionsPrompt(vars);
+    const promptOverride = getPromptOverride(await resolveWorldPrompts(game), 'suggestions');
+    const prompt = promptOverride ? renderPromptTemplate(promptOverride, vars) : buildSuggestionsPrompt(vars);
     const response = await this.llm.generate(
       'suggestions',
       'Ты — штабной аналитик, предлагающий варианты действий. Отвечай только JSON.',

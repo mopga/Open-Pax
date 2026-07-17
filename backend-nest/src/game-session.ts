@@ -9,13 +9,17 @@ import { shortId } from './utils/short-id';
 import { LLMRouter } from './llm';
 import { GameController } from './agents';
 import { PromptEngine } from './prompt-builder';
-import { worldRepository, gameRepository, relationshipRepository, chatRepository } from './repositories';
-import type { ChatRecord, ChatSummary, ChatMessageRecord } from './repositories';
+import { worldRepository, gameRepository, relationshipRepository } from './repositories';
+// ОТКЛЮЧЕНО: переговоры — chatRepository и типы чатов больше не используются
+// (фича дипломатических чатов выключена решением владельца; таблицы chats/chat_messages в БД сохраняются).
+// import { chatRepository } from './repositories';
+// import type { ChatRecord, ChatSummary, ChatMessageRecord } from './repositories';
 import db from './database';
 import { RelationshipMatrix } from './core/RelationshipMatrix';
 import { RegionResolver, PolityResolver } from './utils/name-resolver';
 import { Difficulty, normalizeDifficulty } from './prompts/difficulty';
-import { buildChatPrompt, parseChatResponse } from './prompts/chat';
+// ОТКЛЮЧЕНО: переговоры — промпт дипломатических чатов не собирается
+// import { buildChatPrompt, parseChatResponse } from './prompts/chat';
 import type { MapChange } from './prompts/types';
 
 export interface RegionState {
@@ -247,155 +251,161 @@ export class GameSession {
       playerPolityId: this.playerPolityId,
       actions: this.actions,
       results: this.results,
-      // Этап 3: транскрипты дипломатических чатов попадают в промпт симуляции
-      chatTranscripts: this.buildChatTranscripts(),
+      // ОТКЛЮЧЕНО: переговоры — транскрипты чатов в промпт симуляции не передаём
+      // (prompt-builder подставляет chatTranscripts ?? '')
+      // chatTranscripts: this.buildChatTranscripts(),
     };
   }
 
   // =========================================================================
-  // Этап 3: дипломатические чаты
+  // Этап 3: дипломатические чаты — ОТКЛЮЧЕНО: переговоры
   // =========================================================================
-
-  /**
-   * Список чатов игры (с последним сообщением и счётчиком непрочитанных).
-   */
-  getChats(): ChatSummary[] {
-    return chatRepository.getChatsByGame(this.id);
-  }
-
-  /**
-   * Сообщения чата (404, если чат чужой или не существует).
-   */
-  getChatMessages(chatId: string): ChatMessageRecord[] {
-    const chat = chatRepository.getChatById(chatId);
-    if (!chat || chat.gameId !== this.id) {
-      throw new Error(`Chat not found: ${chatId}`);
-    }
-    return chatRepository.getMessages(chatId);
-  }
-
-  /** Пометить сообщения политии в чате прочитанными. */
-  markChatRead(chatId: string): void {
-    const chat = chatRepository.getChatById(chatId);
-    if (!chat || chat.gameId !== this.id) {
-      throw new Error(`Chat not found: ${chatId}`);
-    }
-    chatRepository.markRead(chatId);
-  }
-
-  /**
-   * Найти или создать чат с политией по её ИМЕНИ (так её называет LLM/игрок).
-   * Полития резолвится через PolityResolver по текущим регионам; чат с самим
-   * собой, с 'neutral' и с несуществующей политией — 404-ошибка.
-   */
-  ensureChat(polityName: string): ChatRecord {
-    const resolvers = this.buildResolvers();
-    const resolution = resolvers.polities.resolve(polityName);
-
-    if (!resolution || resolution.isNew
-        || resolution.polityId === 'neutral'
-        || resolution.polityId === this.playerPolityId) {
-      throw new Error(`Polity not found: ${polityName}`);
-    }
-
-    const polityId = resolution.polityId;
-    const polityRegions = Array.from(this.regions.values()).filter(r => r.owner === polityId);
-    const displayName = polityRegions[0]?.name || polityId;
-    const color = polityRegions[0]?.color || '#888888';
-
-    const existing = chatRepository.getChatByGameAndPolity(this.id, polityId);
-    if (existing) return existing;
-
-    return chatRepository.createChat({
-      id: shortId(),
-      gameId: this.id,
-      polityId,
-      polityName: displayName,
-      polityColor: color,
-    });
-  }
-
-  /**
-   * Отправить сообщение в чат: сохраняет сообщение игрока, спрашивает LLM
-   * (механика 'chat'), сохраняет ответ политии и рассылает его по SSE.
-   */
-  async sendChatMessage(chatId: string, content: string): Promise<{ message: ChatMessageRecord; reply: ChatMessageRecord }> {
-    const chat = chatRepository.getChatById(chatId);
-    if (!chat || chat.gameId !== this.id) {
-      throw new Error(`Chat not found: ${chatId}`);
-    }
-
-    // История ДО нового сообщения игрока
-    const history = chatRepository.getMessages(chatId)
-      .map(m => ({ role: m.role, content: m.content }));
-
-    const message = chatRepository.addMessage(chatId, 'player', content, this.currentTurn);
-
-    const prompt = buildChatPrompt({
-      polityName: chat.polityName,
-      worldContext: this.worldBasePrompt || 'Альтернативная история',
-      mapContext: this.buildChatMapContext(),
-      date: this.currentDate,
-      relationship: this.relationships.get(chat.polityId, this.playerPolityId),
-      history,
-      playerMessage: content,
-    });
-
-    const response = await this.llm.generate(
-      'chat',
-      `Ты — лидер и МИД политии ${chat.polityName} в стратегической игре. Отвечай на русском, от первого лица державы, не выходи из роли.`,
-      prompt,
-      { temperature: 0.7 }
-    );
-
-    const reply = chatRepository.addMessage(chatId, 'polity', parseChatResponse(response.content), this.currentTurn);
-
-    this.broadcast('chat_message', {
-      chatId: chat.id,
-      polityId: chat.polityId,
-      polityName: chat.polityName,
-      message: reply,
-    });
-
-    return { message, reply };
-  }
-
-  /**
-   * Компактное описание карты для чат-промпта: «Полития: регион1, регион2».
-   */
-  private buildChatMapContext(): string {
-    const byOwner = new Map<string, RegionState[]>();
-    for (const region of this.regions.values()) {
-      if (region.owner === 'neutral') continue;
-      if (!byOwner.has(region.owner)) byOwner.set(region.owner, []);
-      byOwner.get(region.owner)!.push(region);
-    }
-    const lines: string[] = [];
-    for (const regions of byOwner.values()) {
-      lines.push(`${regions[0].name}: ${regions.map(r => r.name).join(', ')}`);
-    }
-    return lines.join('\n');
-  }
-
-  /**
-   * Предформатированные транскрипты последних чатов для промпта симуляции:
-   * до 3 самых свежих чатов, до 15 последних сообщений каждого.
-   */
-  private buildChatTranscripts(): string {
-    const chats = chatRepository.getChatsByGame(this.id).slice(0, 3);
-    const parts: string[] = [];
-
-    for (const chat of chats) {
-      const messages = chatRepository.getMessages(chat.id).slice(-15);
-      if (messages.length === 0) continue;
-      const lines = messages.map(m =>
-        m.role === 'player' ? `Игрок: ${m.content}` : `${chat.polityName}: ${m.content}`
-      );
-      parts.push(`[Переговоры с ${chat.polityName}]\n${lines.join('\n')}`);
-    }
-
-    return parts.join('\n\n');
-  }
+  // Фича дипломатических чатов выключена решением владельца: симуляция не
+  // создаёт чаты, LLM-вызовы механики 'chat' не выполняются, роуты не
+  // смонтированы (см. routes/index.ts). Код сохранён закомментированным;
+  // таблицы chats/chat_messages и chat.repository не тронуты — данные и
+  // возможность быстрого возврата фичи сохраняются.
+  //
+  // /**
+  //  * Список чатов игры (с последним сообщением и счётчиком непрочитанных).
+  //  */
+  // getChats(): ChatSummary[] {
+  //   return chatRepository.getChatsByGame(this.id);
+  // }
+  //
+  // /**
+  //  * Сообщения чата (404, если чат чужой или не существует).
+  //  */
+  // getChatMessages(chatId: string): ChatMessageRecord[] {
+  //   const chat = chatRepository.getChatById(chatId);
+  //   if (!chat || chat.gameId !== this.id) {
+  //     throw new Error(`Chat not found: ${chatId}`);
+  //   }
+  //   return chatRepository.getMessages(chatId);
+  // }
+  //
+  // /** Пометить сообщения политии в чате прочитанными. */
+  // markChatRead(chatId: string): void {
+  //   const chat = chatRepository.getChatById(chatId);
+  //   if (!chat || chat.gameId !== this.id) {
+  //     throw new Error(`Chat not found: ${chatId}`);
+  //   }
+  //   chatRepository.markRead(chatId);
+  // }
+  //
+  // /**
+  //  * Найти или создать чат с политией по её ИМЕНИ (так её называет LLM/игрок).
+  //  * Полития резолвится через PolityResolver по текущим регионам; чат с самим
+  //  * собой, с 'neutral' и с несуществующей политией — 404-ошибка.
+  //  */
+  // ensureChat(polityName: string): ChatRecord {
+  //   const resolvers = this.buildResolvers();
+  //   const resolution = resolvers.polities.resolve(polityName);
+  //
+  //   if (!resolution || resolution.isNew
+  //       || resolution.polityId === 'neutral'
+  //       || resolution.polityId === this.playerPolityId) {
+  //     throw new Error(`Polity not found: ${polityName}`);
+  //   }
+  //
+  //   const polityId = resolution.polityId;
+  //   const polityRegions = Array.from(this.regions.values()).filter(r => r.owner === polityId);
+  //   const displayName = polityRegions[0]?.name || polityId;
+  //   const color = polityRegions[0]?.color || '#888888';
+  //
+  //   const existing = chatRepository.getChatByGameAndPolity(this.id, polityId);
+  //   if (existing) return existing;
+  //
+  //   return chatRepository.createChat({
+  //     id: shortId(),
+  //     gameId: this.id,
+  //     polityId,
+  //     polityName: displayName,
+  //     polityColor: color,
+  //   });
+  // }
+  //
+  // /**
+  //  * Отправить сообщение в чат: сохраняет сообщение игрока, спрашивает LLM
+  //  * (механика 'chat'), сохраняет ответ политии и рассылает его по SSE.
+  //  */
+  // async sendChatMessage(chatId: string, content: string): Promise<{ message: ChatMessageRecord; reply: ChatMessageRecord }> {
+  //   const chat = chatRepository.getChatById(chatId);
+  //   if (!chat || chat.gameId !== this.id) {
+  //     throw new Error(`Chat not found: ${chatId}`);
+  //   }
+  //
+  //   // История ДО нового сообщения игрока
+  //   const history = chatRepository.getMessages(chatId)
+  //     .map(m => ({ role: m.role, content: m.content }));
+  //
+  //   const message = chatRepository.addMessage(chatId, 'player', content, this.currentTurn);
+  //
+  //   const prompt = buildChatPrompt({
+  //     polityName: chat.polityName,
+  //     worldContext: this.worldBasePrompt || 'Альтернативная история',
+  //     mapContext: this.buildChatMapContext(),
+  //     date: this.currentDate,
+  //     relationship: this.relationships.get(chat.polityId, this.playerPolityId),
+  //     history,
+  //     playerMessage: content,
+  //   });
+  //
+  //   const response = await this.llm.generate(
+  //     'chat',
+  //     `Ты — лидер и МИД политии ${chat.polityName} в стратегической игре. Отвечай на русском, от первого лица державы, не выходи из роли.`,
+  //     prompt,
+  //     { temperature: 0.7 }
+  //   );
+  //
+  //   const reply = chatRepository.addMessage(chatId, 'polity', parseChatResponse(response.content), this.currentTurn);
+  //
+  //   this.broadcast('chat_message', {
+  //     chatId: chat.id,
+  //     polityId: chat.polityId,
+  //     polityName: chat.polityName,
+  //     message: reply,
+  //   });
+  //
+  //   return { message, reply };
+  // }
+  //
+  // /**
+  //  * Компактное описание карты для чат-промпта: «Полития: регион1, регион2».
+  //  */
+  // private buildChatMapContext(): string {
+  //   const byOwner = new Map<string, RegionState[]>();
+  //   for (const region of this.regions.values()) {
+  //     if (region.owner === 'neutral') continue;
+  //     if (!byOwner.has(region.owner)) byOwner.set(region.owner, []);
+  //     byOwner.get(region.owner)!.push(region);
+  //   }
+  //   const lines: string[] = [];
+  //   for (const regions of byOwner.values()) {
+  //     lines.push(`${regions[0].name}: ${regions.map(r => r.name).join(', ')}`);
+  //   }
+  //   return lines.join('\n');
+  // }
+  //
+  // /**
+  //  * Предформатированные транскрипты последних чатов для промпта симуляции:
+  //  * до 3 самых свежих чатов, до 15 последних сообщений каждого.
+  //  */
+  // private buildChatTranscripts(): string {
+  //   const chats = chatRepository.getChatsByGame(this.id).slice(0, 3);
+  //   const parts: string[] = [];
+  //
+  //   for (const chat of chats) {
+  //     const messages = chatRepository.getMessages(chat.id).slice(-15);
+  //     if (messages.length === 0) continue;
+  //     const lines = messages.map(m =>
+  //       m.role === 'player' ? `Игрок: ${m.content}` : `${chat.polityName}: ${m.content}`
+  //     );
+  //     parts.push(`[Переговоры с ${chat.polityName}]\n${lines.join('\n')}`);
+  //   }
+  //
+  //   return parts.join('\n\n');
+  // }
 
   /**
    * Initialize session from existing world data
@@ -1452,27 +1462,28 @@ ${toSummarize.map(r => `Раунд ${r.turn}: ${r.narration}`).join('\n\n')}
         this.applyWorldChanges(promptResult.worldChanges);
       }
 
-      // Этап 3: LLM-initiated дипломатические чаты. Полития по итогам событий
-      // сама выходит на переговоры — создаём чат и кладём её первое сообщение.
-      for (const startChat of promptResult.startChat || []) {
-        try {
-          const chat = this.ensureChat(startChat.polityName);
-          const firstMessage = chatRepository.addMessage(
-            chat.id,
-            'polity',
-            startChat.topic || 'Хотим обсудить текущую ситуацию',
-            this.currentTurn
-          );
-          this.broadcast('chat_message', {
-            chatId: chat.id,
-            polityId: chat.polityId,
-            polityName: chat.polityName,
-            message: firstMessage,
-          });
-        } catch (e) {
-          console.warn('[GameSession] startChat: полития не найдена:', startChat.polityName, e);
-        }
-      }
+      // ОТКЛЮЧЕНО: переговоры — LLM-initiated дипломатические чаты.
+      // Симуляция больше не создаёт чаты по startChat из promptResult:
+      // фича выключена решением владельца, LLM-вызовы/сообщения не создаются.
+      // for (const startChat of promptResult.startChat || []) {
+      //   try {
+      //     const chat = this.ensureChat(startChat.polityName);
+      //     const firstMessage = chatRepository.addMessage(
+      //       chat.id,
+      //       'polity',
+      //       startChat.topic || 'Хотим обсудить текущую ситуацию',
+      //       this.currentTurn
+      //     );
+      //     this.broadcast('chat_message', {
+      //       chatId: chat.id,
+      //       polityId: chat.polityId,
+      //       polityName: chat.polityName,
+      //       message: firstMessage,
+      //     });
+      //   } catch (e) {
+      //     console.warn('[GameSession] startChat: полития не найдена:', startChat.polityName, e);
+      //   }
+      // }
 
       // Detect and create objects
       const createdObjects = this.detectAndCreateObjects(

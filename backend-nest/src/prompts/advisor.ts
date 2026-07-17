@@ -7,9 +7,11 @@
 import { PromptVariables, AdvisorMessage } from './types';
 
 /**
- * Построить промпт для советника
+ * Секции диалога советника: история переписки + текущее сообщение игрока.
+ * Вынесено в экспорт: prompt-builder дописывает их после переопределённого
+ * пресетного шаблона советника, чтобы вопрос игрока всегда доходил до модели.
  */
-export function buildAdvisorPrompt(vars: PromptVariables, message?: string, chatHistory?: AdvisorMessage[]): string {
+export function buildAdvisorDialogSuffix(message?: string, chatHistory?: AdvisorMessage[]): string {
   const historySection = chatHistory && chatHistory.length > 0
     ? `\n[История чата]\n${chatHistory.map(m =>
         m.role === 'user' ? `Игрок: ${m.content}` : `Советник: ${m.content}`
@@ -20,6 +22,13 @@ export function buildAdvisorPrompt(vars: PromptVariables, message?: string, chat
     ? `\n[Сообщение от игрока]\n${message}`
     : '';
 
+  return `${historySection}\n${currentMessage}`;
+}
+
+/**
+ * Построить промпт для советника
+ */
+export function buildAdvisorPrompt(vars: PromptVariables, message?: string, chatHistory?: AdvisorMessage[]): string {
   return `Ты играешь роль главного советника игрока, который играет за политию ${vars.PLAYER_POLITY}.
 
 Первый раунд игры установлен на дату ${vars.STARTING_ROUND_DATE}.
@@ -64,8 +73,7 @@ ${vars.PLAYER_EVERY_ACTION_NOT_PREVIOUS || 'Нет прошлых действи
 
 Это важно: ${vars.ORIGIN_ROUND_GRAMMATICAL_DATE}
 
-${historySection}
-${currentMessage}
+${buildAdvisorDialogSuffix(message, chatHistory)}
 
 ---
 

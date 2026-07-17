@@ -5,6 +5,10 @@
  *   preset.json   — обязательные: id, name, description, start_date,
  *                   country_codes[], base_prompt; опциональные:
  *                   historical_accuracy, countries[{code,name,color}],
+ *                   country_colors{code: "#RRGGBB"} (кураторская палитра карты),
+ *                   prompts{"<механика>": "<текст промпта>"} — переопределение
+ *                   дефолтных промптов ИИ (simulation/jump, converter,
+ *                   suggestions, advisor; плейсхолдеры ${VAR} / {{VAR}}),
  *                   author, version
  *   rules.md      — кастомные правила симуляции (→ HISTORICAL_PRESET_SIMULATION_RULES)
  *   lore.md       — расширенный лор мира (→ WORLD_BEFORE_ROUND_ONE_TEXT)
@@ -37,6 +41,10 @@ export interface PresetPackage {
   historical_accuracy?: number;
   /** Кастомные страны (имена/цвета), перекрывают data/countries.json */
   countries?: PresetCountry[];
+  /** Кураторская палитра карты: код страны → приглушённый цвет (#RRGGBB) */
+  country_colors?: Record<string, string>;
+  /** Переопределённые промпты ИИ пресета: механика → текст шаблона с ${VAR} */
+  prompts?: Record<string, string>;
   /** rules.md — правила симуляции */
   simulation_rules?: string;
   /** lore.md — расширенный лор */
@@ -94,6 +102,29 @@ export function validatePresetJson(raw: any, context = 'preset.json'): Omit<Pres
       }
     }
   }
+  if (raw.country_colors !== undefined) {
+    if (!raw.country_colors || typeof raw.country_colors !== 'object' || Array.isArray(raw.country_colors)) {
+      throw new Error(`${context}: country_colors должен быть объектом { "USA": "#RRGGBB" }`);
+    }
+    for (const [code, color] of Object.entries(raw.country_colors)) {
+      if (!/^[A-Z]{3}$/.test(code)) {
+        throw new Error(`${context}: country_colors — невалидный код страны "${code}" (нужен ISO_A3)`);
+      }
+      if (typeof color !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(color)) {
+        throw new Error(`${context}: country_colors["${code}"] должен быть цветом вида "#RRGGBB"`);
+      }
+    }
+  }
+  if (raw.prompts !== undefined) {
+    if (!raw.prompts || typeof raw.prompts !== 'object' || Array.isArray(raw.prompts)) {
+      throw new Error(`${context}: prompts должен быть объектом { "<механика>": "<текст промпта>" }`);
+    }
+    for (const [mechanic, text] of Object.entries(raw.prompts)) {
+      if (typeof text !== 'string' || !text.trim()) {
+        throw new Error(`${context}: prompts["${mechanic}"] должен быть непустой строкой`);
+      }
+    }
+  }
   return {
     id: raw.id,
     name: raw.name,
@@ -103,6 +134,8 @@ export function validatePresetJson(raw: any, context = 'preset.json'): Omit<Pres
     base_prompt: raw.base_prompt,
     historical_accuracy: typeof raw.historical_accuracy === 'number' ? raw.historical_accuracy : undefined,
     countries: raw.countries,
+    country_colors: raw.country_colors,
+    prompts: raw.prompts,
     author: typeof raw.author === 'string' ? raw.author : undefined,
     version: typeof raw.version === 'string' ? raw.version : undefined,
   };

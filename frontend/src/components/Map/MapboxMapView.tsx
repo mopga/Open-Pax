@@ -228,7 +228,7 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
   const fittedRegionIds = useRef<string>('');
   const [mapLoaded, setMapLoaded] = useState(false);
   const [hoveredRegionId, setHoveredRegionId] = useState<string | null>(null);
-  const [tooltipInfo, setTooltipInfo] = useState<{ x: number; y: number; name: string; population: number; gdp: number; militaryPower: number } | null>(null);
+  const [tooltipInfo, setTooltipInfo] = useState<{ x: number; y: number; name: string; owner: string | null; population: number; gdp: number; militaryPower: number } | null>(null);
 
   // Актуальные значения для обработчиков карты (регистрируются один раз)
   const regionsRef = useRef(regions);
@@ -443,10 +443,25 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
         if (id) {
           const region = regionsRef.current.find(r => r.id === id);
           if (region) {
+            // Строка «Контроль: X» — только если регионом владеет другая полития
+            // (как в оригинале: тултип «West Germany / Northern Bavaria»).
+            // Имя политии берём из её «домашнего» региона (id вида `${worldId}_${polityId}`).
+            let ownerName: string | null = null;
+            const owner = region.owner;
+            if (owner && owner !== 'neutral' && owner !== region.name) {
+              const homeRegion = regionsRef.current.find(
+                r => r.owner === owner && r.id.endsWith(`_${owner}`)
+              );
+              const resolved = homeRegion?.name || owner;
+              if (resolved !== region.name) {
+                ownerName = resolved;
+              }
+            }
             setTooltipInfo({
               x: e.point.x,
               y: e.point.y,
               name: region.name,
+              owner: ownerName,
               population: region.population,
               gdp: region.gdp,
               militaryPower: region.militaryPower,
@@ -661,6 +676,9 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
           <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '6px', color: '#667eea' }}>
             {tooltipInfo.name}
           </div>
+          {tooltipInfo.owner && (
+            <div style={{ color: '#ccc', marginBottom: '6px' }}>Контроль: {tooltipInfo.owner}</div>
+          )}
           <div style={{ color: '#aaa' }}>👥 {tooltipInfo.population?.toLocaleString()}</div>
           <div style={{ color: '#aaa' }}>💰 {tooltipInfo.gdp}</div>
           <div style={{ color: '#aaa' }}>⚔️ {tooltipInfo.militaryPower}</div>
