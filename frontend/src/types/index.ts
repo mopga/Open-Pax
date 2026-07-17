@@ -80,7 +80,7 @@ export interface Region {
   svgPath?: string;  // SVG path d attribute (fallback)
   geojson?: string;  // GeoJSON polygon (for Mapbox)
   color: string;    // Current color (hex)
-  owner: string;    // Player ID or "neutral"
+  owner: string;    // polityId владельца (код страны / 'player' / 'ai-N') или "neutral"
   population: number;
   gdp: number;
   militaryPower: number;
@@ -121,6 +121,8 @@ export interface Player {
   name: string;
   regionId: string;
   color: string;
+  /** Полития игрока (код страны для шаблонов, 'player' для кастомных карт) */
+  polityId?: string;
 }
 
 export interface Game {
@@ -169,6 +171,7 @@ export interface CreateGameRequest {
   world_id: string;
   player_name: string;
   player_region_id: string;
+  difficulty?: string;
 }
 
 export interface CreateGameResponse {

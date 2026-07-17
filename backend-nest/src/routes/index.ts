@@ -12,8 +12,9 @@ import { mapsRouter } from './maps.routes';
 import { worldsRouter } from './worlds.routes';
 import { gamesRouter } from './games.routes';
 import { savesRouter } from './saves.routes';
+import { llmRouter } from './llm.routes';
 
-export { healthRouter, countriesRouter, templatesRouter, mapsRouter, worldsRouter, gamesRouter, savesRouter };
+export { healthRouter, countriesRouter, templatesRouter, mapsRouter, worldsRouter, gamesRouter, savesRouter, llmRouter };
 
 // Combined router for mounting all routes
 export function registerRoutes(app: Router): void {
@@ -27,4 +28,5 @@ export function registerRoutes(app: Router): void {
   app.use('/api/worlds', worldsRouter);
   app.use('/api/games', gamesRouter);
   app.use('/api/saves', savesRouter);
+  app.use('/api/llm', llmRouter);
 }

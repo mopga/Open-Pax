@@ -1992,3 +1992,76 @@ body {
   cursor: not-allowed;
   transform: none;
 }
+
+/* Этап 2: баннер прогресса хода + Intervene */
+.turn-progress-banner {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(26, 26, 34, 0.95);
+  border: 1px solid #333;
+  border-radius: 10px;
+  padding: 10px 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  max-width: 80%;
+}
+
+.turn-progress-text {
+  color: #ccc;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.btn-intervene {
+  background: #3a1f2b;
+  border: 1px solid #8b3550;
+  color: #ff8ba0;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+
+.btn-intervene:hover {
+  background: #4d2838;
+  border-color: #ff8ba0;
+}
+
+/* Этап 2: выбор сложности */
+.difficulty-selector {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px;
+  background: #14141a;
+  border-bottom: 1px solid #222;
+}
+
+.difficulty-selector label {
+  color: #888;
+  font-size: 0.9rem;
+}
+
+.difficulty-selector select {
+  background: #1a1a22;
+  border: 1px solid #333;
+  color: #ccc;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.difficulty-selector select:hover {
+  border-color: #667eea;
+}

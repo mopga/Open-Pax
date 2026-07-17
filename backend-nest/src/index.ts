@@ -5,7 +5,7 @@
 
 import express from 'express';
 import cors from 'cors';
-import { MiniMaxProvider } from './llm';
+import { initLLMRouter } from './llm';
 import { initDatabase } from './database';
 import { initSessionRegistry } from './session-registry';
 import { registerRoutes } from './routes';
@@ -26,9 +26,12 @@ app.use((req, res, next) => {
 // Initialize Database
 initDatabase();
 
-// Initialize Session Registry
-const llmProvider = new MiniMaxProvider();
-const sessionRegistry = initSessionRegistry(llmProvider);
+// Initialize LLM router (providers from llm.config.json / env)
+const llmRouter = initLLMRouter();
+const sessionRegistry = initSessionRegistry(llmRouter);
+for (const [mechanic, cfg] of Object.entries(llmRouter.describe())) {
+  console.log(`[LLM] ${mechanic}: ${cfg.provider} / ${cfg.model}`);
+}
 
 // Register all route files
 registerRoutes(app);

@@ -1,0 +1,46 @@
+{
+  "_readme": [
+    "Скопируй этот файл в llm.config.json (рядом с package.json backend-nest) и отредактируй под себя.",
+    "Секция default задаёт провайдера/модель для ВСЕХ механик; mechanics.<имя> переопределяет отдельные механики.",
+    "Механики: jump (симуляция прыжка), converter, advisor, suggestions, narration, npc, chat, consolidation, balance.",
+    "apiKey может быть строкой-ключом или \"env:ИМЯ_ПЕРЕМЕННОЙ\" — значение возьмётся из окружения.",
+    "provider: \"openai-compatible\" покрывает Ollama, LM Studio, OpenRouter, vLLM и любой OpenAI-совместимый сервер.",
+    "",
+    "Пример 1 — локальная Ollama (всё на ней):",
+    "{ \"default\": { \"provider\": \"openai-compatible\", \"baseUrl\": \"http://localhost:11434/v1\", \"apiKey\": \"ollama\", \"model\": \"qwen2.5:14b\" } }",
+    "",
+    "Пример 2 — OpenRouter:",
+    "{ \"default\": { \"provider\": \"openai-compatible\", \"baseUrl\": \"https://openrouter.ai/api/v1\", \"apiKey\": \"env:OPENROUTER_API_KEY\", \"model\": \"anthropic/claude-sonnet-4\" } }",
+    "",
+    "Пример 3 — смешанный: прыжки на сильной облачной модели, чаты/советник локально:",
+    "(см. секции ниже)"
+  ],
+
+  "default": {
+    "provider": "openai-compatible",
+    "baseUrl": "http://localhost:11434/v1",
+    "apiKey": "ollama",
+    "model": "qwen2.5:14b",
+    "timeoutMs": 120000,
+    "retries": 2,
+    "stream": true
+  },
+
+  "mechanics": {
+    "jump": {
+      "provider": "openai-compatible",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "apiKey": "env:OPENROUTER_API_KEY",
+      "model": "anthropic/claude-sonnet-4",
+      "timeoutMs": 180000
+    },
+    "advisor": {
+      "model": "qwen2.5:7b",
+      "cache": true
+    },
+    "suggestions": {
+      "model": "qwen2.5:7b",
+      "cache": true
+    }
+  }
+}

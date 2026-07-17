@@ -6,23 +6,23 @@
  */
 
 import { shortId } from './utils/short-id';
-import { MiniMaxProvider } from './llm';
+import { LLMRouter } from './llm';
 import { GameSession, SaveData } from './game-session';
 import { gameRepository, worldRepository } from './repositories';
 import db from './database';
 
 class SessionRegistry {
   private sessions: Map<string, GameSession> = new Map();
-  private provider: MiniMaxProvider;
+  private provider: LLMRouter;
 
-  constructor(provider: MiniMaxProvider) {
+  constructor(provider: LLMRouter) {
     this.provider = provider;
   }
 
   /**
    * Create a new game session
    */
-  createSession(worldId: string, playerName: string, playerRegionId: string, playerColor: string = '#FF0000'): { session: GameSession; playerId: string; gameId: string } {
+  createSession(worldId: string, playerName: string, playerRegionId: string, playerColor: string = '#FF0000', difficulty?: string): { session: GameSession; playerId: string; gameId: string } {
     const gameId = shortId();
 
     // Verify world exists
@@ -44,9 +44,11 @@ class SessionRegistry {
       currentTurn: 1,
       maxTurns: 100,
       status: 'playing',
+      difficulty,
     });
 
-    // Add player to database
+    // Add player to database. polityId = owner of the chosen region
+    // (unified polity-id convention: 'USA' for templates, 'player' for custom maps).
     const playerId = shortId();
     gameRepository.addPlayer({
       id: playerId,
@@ -54,13 +56,14 @@ class SessionRegistry {
       name: playerName || 'Player',
       regionId: playerRegionId,
       color: playerColor,
+      polityId: region.owner,
     });
 
     // Create session
     const session = new GameSession(gameId, worldId, this.provider);
 
     // Initialize session (sets up agents, loads regions)
-    session.initialize(playerRegionId, playerName, playerColor);
+    session.initialize(playerRegionId, playerName, playerColor, difficulty);
 
     // Cache session
     this.sessions.set(gameId, session);
@@ -110,11 +113,15 @@ class SessionRegistry {
     session.reconstructFromDB({
       currentTurn: game.current_turn,
       currentDate: game.current_date || game.world?.start_date || '1951-01-01',
+      difficulty: game.difficulty,
+      consolidatedHistory: game.consolidated_history,
+      consolidatedUpTo: game.consolidated_up_to,
       players: players.map(p => ({
         id: p.id,
         name: p.name,
         regionId: p.regionId,
         color: p.color,
+        polityId: p.polityId,
       })),
       regionStates,
     });
@@ -206,12 +213,19 @@ class SessionRegistry {
 
         session.reconstructFromDB({
           currentTurn: game.current_turn,
-          currentDate: game.world?.start_date || '1951-01-01',
+          // Bug fix: restore the persisted in-game date; game is a raw row
+          // here (no world join), so game.world was always undefined and the
+          // date snapped back to 1951-01-01 on every server restart.
+          currentDate: game.current_date || '1951-01-01',
+          difficulty: game.difficulty,
+          consolidatedHistory: game.consolidated_history,
+          consolidatedUpTo: game.consolidated_up_to,
           players: players.map((p: any) => ({
             id: p.id,
             name: p.name,
             regionId: p.regionId,
             color: p.color,
+            polityId: p.polityId,
           })),
           regionStates,
         });
@@ -278,7 +292,7 @@ class SessionRegistry {
 // Singleton instance - will be initialized in index.ts with provider
 let registry: SessionRegistry | null = null;
 
-export function initSessionRegistry(provider: MiniMaxProvider): SessionRegistry {
+export function initSessionRegistry(provider: LLMRouter): SessionRegistry {
   registry = new SessionRegistry(provider);
   return registry;
 }

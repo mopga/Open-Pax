@@ -10,8 +10,9 @@ import path from 'path';
 import { worldRepository, relationshipRepository } from '../repositories';
 import { svgPathToGeoJSON } from '../utils/svg-to-geojson';
 import { BalanceAgent } from '../agents/balance-agent';
-import { llmProvider } from '../llm';
+import { getLLMRouter } from '../llm';
 import { resolveInside, safeReadJson } from '../utils/safe-path';
+import { computeBorders } from '../utils/borders';
 
 export const worldsRouter = Router();
 
@@ -50,7 +51,7 @@ worldsRouter.post('/generate', async (req, res) => {
       }
     }
 
-    const balanceAgent = new BalanceAgent(llmProvider);
+    const balanceAgent = new BalanceAgent(getLLMRouter());
     const worldState = await balanceAgent.generateInitialWorldState(template);
 
     const countriesObj: Record<string, any> = {};
@@ -66,7 +67,9 @@ worldsRouter.post('/generate', async (req, res) => {
           name: state.name,
           color: state.color || '#888888',
           geojson: JSON.stringify(geojson),
-          owner: code === playerCountryCode ? 'player' : `ai-${code}`,
+          // Unified polity-id convention: owner IS the polity id (country code).
+          // Player's polity is identified via players.polity_id, not by a 'player' marker.
+          owner: code,
           population: state.population || 0,
           gdp: state.gdp || 0,
           militaryPower: state.military || 0,
@@ -96,6 +99,17 @@ worldsRouter.post('/generate', async (req, res) => {
 
     // Convert regionsObj to array and use createWithRegions (which wraps in transaction)
     // Prefix region IDs with worldId to ensure global uniqueness (since id is PRIMARY KEY)
+    // Borders are computed from actual geometry (turf) once, here — the NPC
+    // expansion logic depends on them to only spread into adjacent regions.
+    const templateCodes = Object.keys(regionsObj);
+    const bordersMap = computeBorders(
+      Object.fromEntries(
+        templateCodes
+          .filter(code => geojsonFeatures[code])
+          .map(code => [code, geojsonFeatures[code].geometry ?? geojsonFeatures[code]])
+      )
+    );
+
     const regionsArray = Object.entries(regionsObj).map(([code, region]) => ({
       id: `${worldId}_${code}`,
       worldId,
@@ -107,6 +121,8 @@ worldsRouter.post('/generate', async (req, res) => {
       gdp: region.gdp,
       militaryPower: region.militaryPower,
       flag: region.flag,
+      // GameSession keys regions by full id — store borders in the same id space
+      borders: (bordersMap[code] ?? []).map(c => `${worldId}_${c}`),
     }));
 
     worldRepository.createWithRegions(worldData, regionsArray);
@@ -191,7 +207,7 @@ worldsRouter.patch('/:id/prompt', (req, res) => {
   }
 
   worldRepository.update(req.params.id, { basePrompt });
-  llmProvider.clearCache(); // Invalidate cached narrations when world prompt changes
+  getLLMRouter().clearCache(); // Invalidate cached narrations when world prompt changes
   res.json({ success: true, basePrompt });
 });
 
@@ -270,6 +286,26 @@ worldsRouter.post('/from-map', (req, res) => {
       militaryPower,
     };
   });
+
+  // Borders from converted SVG geometry — same NPC-expansion dependency as in /generate
+  const bordersById = computeBorders(
+    Object.fromEntries(
+      regions
+        .filter((r: any) => r.geojson)
+        .map((r: any) => {
+          try {
+            const gj = JSON.parse(r.geojson);
+            return [r.id, gj.geometry ?? gj];
+          } catch {
+            return null;
+          }
+        })
+        .filter((entry: [string, any] | null): entry is [string, any] => entry !== null)
+    )
+  );
+  for (const r of regions) {
+    (r as any).borders = bordersById[r.id] ?? [];
+  }
 
   worldRepository.createWithRegions({
     id: worldId,

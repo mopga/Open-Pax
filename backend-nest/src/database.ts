@@ -8,7 +8,8 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 
-const DB_PATH = path.join(process.cwd(), 'data', 'open-pax.db');
+// DB path can be overridden for tests (vitest sets OPEN_PAX_DB_PATH to a temp file)
+const DB_PATH = process.env.OPEN_PAX_DB_PATH || path.join(process.cwd(), 'data', 'open-pax.db');
 
 // Ensure data directory exists
 const dataDir = path.dirname(DB_PATH);
@@ -116,6 +117,32 @@ export function initDatabase() {
     )
   `);
 
+  // Migration: dedupe relationships, then add the UNIQUE index that
+  // relationshipRepository.bulkUpsert's ON CONFLICT(world_id, from_region_id, to_region_id)
+  // requires (without it every upsert threw "ON CONFLICT clause does not match...").
+  db.exec(`
+    DELETE FROM country_relationships
+    WHERE id NOT IN (
+      SELECT MIN(id) FROM country_relationships
+      GROUP BY world_id, from_region_id, to_region_id
+    )
+  `);
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_country_relationships_pair
+    ON country_relationships(world_id, from_region_id, to_region_id)
+  `);
+
+  // Migration: unified polity-id convention. Region owner is the polity id
+  // itself (template worlds: country code like 'USA', stored in `flag`;
+  // custom-map worlds keep their 'player' / 'ai-N' ids, which are valid
+  // polity ids as-is). Previously owners were 'player' / 'ai-USA' while
+  // relationships were seeded with bare codes, so seeded diplomacy never
+  // matched engine keys.
+  db.exec(`
+    UPDATE world_regions SET owner = flag
+    WHERE flag IS NOT NULL AND flag != '' AND (owner = 'player' OR owner LIKE 'ai-%')
+  `);
+
   // Games table
   db.exec(`
     CREATE TABLE IF NOT EXISTS games (
@@ -141,6 +168,23 @@ export function initDatabase() {
     }
   }
 
+  // Migration (Этап 2): сложность игры (story/easy/normal/hard/very_hard)
+  try {
+    db.exec("ALTER TABLE games ADD COLUMN difficulty TEXT DEFAULT 'normal'");
+    console.log('[Migration] Added difficulty to games');
+  } catch (e: any) {
+    if (!e.message.includes('duplicate column name')) { /* уже есть */ }
+  }
+
+  // Migration (Этап 2): консолидированная история + до какого раунда она покрывает
+  try {
+    db.exec("ALTER TABLE games ADD COLUMN consolidated_history TEXT DEFAULT ''");
+    db.exec("ALTER TABLE games ADD COLUMN consolidated_up_to INTEGER DEFAULT 0");
+    console.log('[Migration] Added consolidation columns to games');
+  } catch (e: any) {
+    if (!e.message.includes('duplicate column name')) { /* уже есть */ }
+  }
+
   // Players table
   db.exec(`
     CREATE TABLE IF NOT EXISTS players (
@@ -151,6 +195,27 @@ export function initDatabase() {
       color TEXT DEFAULT '#FF0000',
       FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
     )
+  `);
+
+  // Migration: players.polity_id — the polity the player controls.
+  // Needed because region owners change hands (conquest), so the player's
+  // polity cannot be derived from region ownership after the fact.
+  try {
+    db.exec("ALTER TABLE players ADD COLUMN polity_id TEXT");
+    console.log('[Migration] Added polity_id to players');
+  } catch (e: any) {
+    if (!e.message.includes('duplicate column name') && !e.message.includes('no such column')) {
+      // Column already exists
+    }
+  }
+  // Backfill polity_id for existing players from their home region's owner.
+  db.exec(`
+    UPDATE players SET polity_id = (
+      SELECT wr.owner FROM world_regions wr
+      JOIN games g ON g.world_id = wr.world_id
+      WHERE wr.id = players.region_id AND g.id = players.game_id
+    )
+    WHERE polity_id IS NULL
   `);
 
   // Actions table

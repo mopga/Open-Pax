@@ -60,6 +60,56 @@ npm start
 
 ---
 
+## Настройка LLM
+
+Бэкенд работает с любым OpenAI-совместимым API, а также с Anthropic. Настройка — через `backend-nest/llm.config.json` (пример — `backend-nest/llm.config.example.json`) или переменные окружения.
+
+**Механики** (каждой можно назначить свою модель — аналог тиров Light/Pro/Max):
+`jump` (симуляция прыжка, самая тяжёлая), `converter`, `advisor`, `suggestions`, `narration`, `npc`, `chat`, `consolidation`, `balance`.
+
+### Ollama (всё локально)
+
+```json
+{
+  "default": {
+    "provider": "openai-compatible",
+    "baseUrl": "http://localhost:11434/v1",
+    "apiKey": "ollama",
+    "model": "qwen2.5:14b"
+  }
+}
+```
+
+### OpenRouter
+
+```json
+{
+  "default": {
+    "provider": "openai-compatible",
+    "baseUrl": "https://openrouter.ai/api/v1",
+    "apiKey": "env:OPENROUTER_API_KEY",
+    "model": "anthropic/claude-sonnet-4"
+  }
+}
+```
+
+### Смешанный: прыжки в облаке, чаты локально
+
+```json
+{
+  "default": { "provider": "openai-compatible", "baseUrl": "http://localhost:11434/v1", "apiKey": "ollama", "model": "qwen2.5:7b" },
+  "mechanics": {
+    "jump": { "provider": "openai-compatible", "baseUrl": "https://openrouter.ai/api/v1", "apiKey": "env:OPENROUTER_API_KEY", "model": "anthropic/claude-sonnet-4" }
+  }
+}
+```
+
+**Без файла** работают env-переменные: `LLM_PROVIDER` / `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` (по умолчанию — MiniMax через `MINIMAX_API_KEY`, как раньше).
+
+Текущую конфигурацию показывает `GET /api/llm/status`.
+
+---
+
 ## Как выглядит
 
 ```
@@ -110,7 +160,7 @@ npm start
 **Frontend:** React 18 + TypeScript + Vite
 **Backend:** Node.js + Express + TypeScript
 **Database:** SQLite (better-sqlite3)
-**AI:** MiniMax API
+**AI:** любой OpenAI-совместимый API (Ollama, LM Studio, OpenRouter), Anthropic или MiniMax — конфиг per-механика
 
 ---
 

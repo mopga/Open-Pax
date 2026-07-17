@@ -15,6 +15,9 @@ interface UseSSEOptions {
   onTurnStart?: (data: any) => void;
   onTurnComplete?: (data: any) => void;
   onGeneratingNarration?: (data: any) => void;
+  onLLMProgress?: (data: { mechanic: string; chars: number }) => void;
+  onJumpEvent?: (data: { index: number; total: number; event: any }) => void;
+  onActionVoided?: (data: { action: string; reason: string }) => void;
   onError?: (error: any) => void;
   onConnected?: () => void;
 }
@@ -31,7 +34,9 @@ export function useSSE(gameId: string | null, options: UseSSEOptions) {
       eventSourceRef.current.close();
     }
 
-    const url = `http://localhost:8000/api/games/${gameId}/events`;
+    // Базовый URL API из env (без хардкода), тот же что и в services/api.ts
+    const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+    const url = `${apiBase}/games/${gameId}/events`;
     console.log('[SSE] Connecting to:', url);
 
     const eventSource = new EventSource(url);
@@ -92,6 +97,33 @@ export function useSSE(gameId: string | null, options: UseSSEOptions) {
 
     eventSource.addEventListener('narration_generated', (e) => {
       console.log('[SSE] Narration generated:', e.data);
+    });
+
+    eventSource.addEventListener('llm_progress', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        options.onLLMProgress?.(data);
+      } catch (err) {
+        console.error('[SSE] Failed to parse llm_progress:', err);
+      }
+    });
+
+    eventSource.addEventListener('jump_event', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        options.onJumpEvent?.(data);
+      } catch (err) {
+        console.error('[SSE] Failed to parse jump_event:', err);
+      }
+    });
+
+    eventSource.addEventListener('action_voided', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        options.onActionVoided?.(data);
+      } catch (err) {
+        console.error('[SSE] Failed to parse action_voided:', err);
+      }
     });
 
     eventSource.addEventListener('ping', () => {

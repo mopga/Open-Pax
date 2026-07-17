@@ -4,18 +4,24 @@
  * Сервис для построения переменных промптов
  */
 
-import { PromptVariables, SimulationResult, ConvertedAction, Suggestion, AdvisorMessage } from './prompts';
+import { PromptVariables, SimulationResult, ConvertedAction, Suggestion, AdvisorMessage, difficultyPromptBlock, normalizeDifficulty } from './prompts';
 import { buildSimulationPrompt, parseSimulationResponse } from './prompts/simulation';
 import { buildAdvisorPrompt, parseAdvisorResponse } from './prompts/advisor';
 import { buildSuggestionsPrompt, parseSuggestionsResponse } from './prompts/suggestions';
 import { buildConverterPrompt, parseConverterResponse, buildBatchConverterPrompt, parseBatchConverterResponse } from './prompts/converter';
 import { buildNarrationPrompt, parseNarrationResponse } from './prompts/narration';
-import { MiniMaxProvider } from './llm';
+import { LLMRouter } from './llm';
 
 interface GameData {
   id: string;
   currentDate: string;
   currentTurn: number;
+  /** Сложность игры (Этап 2) */
+  difficulty?: string;
+  /** Консолидированная история ранних раундов (Этап 2) */
+  consolidatedHistory?: string;
+  /** Сколько последних раундов держать сырыми при консолидации */
+  consolidationTail?: number;
   world: {
     name: string;
     basePrompt: string;
@@ -23,6 +29,8 @@ interface GameData {
     regions: any; // может быть Map или объект
   };
   players: PlayerData[];
+  /** Полития игрока (polityId) — для пометки в описании карты */
+  playerPolityId?: string;
   actions: ActionData[];
   results: TurnResultData[];
 }
@@ -41,6 +49,7 @@ interface PlayerData {
   id: string;
   name: string;
   regionId: string;
+  polityId?: string;
 }
 
 // Хелпер для работы с regions (может быть Map или объектом)
@@ -97,7 +106,7 @@ export class PromptBuilder {
 
       WORLD_BEFORE_ROUND_ONE_TEXT: this.game.world.basePrompt || 'Альтернативная история',
       HISTORICAL_PRESET_SIMULATION_RULES: 'События развиваются логично. Учитывай экономику и военную мощь.',
-      DIFFICULTY_DESCRIPTION_JUMP_FORWARD: 'Сложность игры отражается в сложности долгосрочных целей.',
+      DIFFICULTY_DESCRIPTION_JUMP_FORWARD: difficultyPromptBlock(normalizeDifficulty(this.game.difficulty)),
 
       PLAYER_POLITY: playerPolityName,
       PLAYER_POLITY_REGIONS: this.buildPlayerRegions(player.regionId),
@@ -126,6 +135,23 @@ export class PromptBuilder {
     };
   }
 
+  /**
+   * Отображаемое имя политии для LLM: имя «главного» региона (для шаблонов
+   * это название страны). Раньше LLM видел внутренние id ('ai-USA'), а не
+   * имена — и не мог осмысленно адресовать политии в mapChanges.
+   */
+  private polityDisplayName(owner: string, regionList: RegionData[]): string {
+    return regionList[0]?.name || owner;
+  }
+
+  private polityHeader(owner: string, regionList: RegionData[]): string {
+    const displayName = this.polityDisplayName(owner, regionList);
+    const playerMark = owner === this.game.playerPolityId ? ' (ИГРОК)' : '';
+    // Показываем и имя, и id-алиас: LLM адресует политию по имени,
+    // движок резолвит и то, и другое (см. utils/name-resolver).
+    return `Полития "${displayName}" [${owner}]${playerMark} (цвет ${regionList[0].color}):`;
+  }
+
   // Описание карты (полное)
   private buildMapDescription(): string {
     const regions = getAllRegions(this.game.world.regions);
@@ -141,9 +167,9 @@ export class PromptBuilder {
         ? capitals.map(r => `${r.name} (столица)`).join(', ')
         : '';
 
-      description += `Полития "${owner}" (${regionList[0].color}):\n`;
+      description += `${this.polityHeader(owner, regionList)}\n`;
       if (capitalsStr) description += `- ${capitalsStr}\n`;
-      description += `- ${regionList.map(r => r.name).join(', ')}\n`;
+      description += `- Регионы: ${regionList.map(r => r.name).join(', ')}\n`;
       description += `\n`;
     }
 
@@ -168,10 +194,11 @@ export class PromptBuilder {
       if (owner === 'neutral') {
         description += `Нейтральные регионы:\n`;
         description += regionList.map(r => r.name).join(', ');
+        description += '\n\n';
         continue;
       }
 
-      description += `Полития "${owner}" (${regionList[0].color}):\n`;
+      description += `${this.polityHeader(owner, regionList)}\n`;
       description += regionList.map(r => r.name).join(', ');
       description += '\n\n';
     }
@@ -225,13 +252,25 @@ export class PromptBuilder {
     return result;
   }
 
-  // История событий
+  // История событий: консолидированное саммари ранних раундов + сырой хвост
   private buildEventHistory(): string {
-    if (this.game.results.length === 0) return '';
+    if (this.game.results.length === 0 && !this.game.consolidatedHistory) return '';
 
-    return this.game.results.map(r =>
-      `Раунд ${r.turn}: ${r.narration}`
-    ).join('\n\n');
+    const consolidated = this.game.consolidatedHistory?.trim();
+    if (!consolidated) {
+      return this.game.results.map(r =>
+        `Раунд ${r.turn}: ${r.narration}`
+      ).join('\n\n');
+    }
+
+    const tail = this.game.consolidationTail ?? 10;
+    const rawTail = this.game.results.slice(-tail);
+    let out = `[Консолидированная история ранних раундов]\n${consolidated}`;
+    if (rawTail.length > 0) {
+      out += `\n\n[Последние раунды — подробно]\n` +
+        rawTail.map(r => `Раунд ${r.turn}: ${r.narration}`).join('\n\n');
+    }
+    return out;
   }
 
   // Группировка регионов по владельцам
@@ -269,13 +308,19 @@ export class PromptBuilder {
 
 // Класс для работы с LLM через промпты
 export class PromptEngine {
-  private llm: MiniMaxProvider;
+  private llm: LLMRouter;
 
-  constructor(llm: MiniMaxProvider) {
+  constructor(llm: LLMRouter) {
     this.llm = llm;
   }
 
-  async runSimulation(game: GameData, actions: string[], jumpDays: number): Promise<SimulationResult> {
+  async runSimulation(
+    game: GameData,
+    actions: string[],
+    jumpDays: number,
+    onProgress?: (charsSoFar: number) => void,
+    autoJump?: boolean
+  ): Promise<SimulationResult> {
     const builder = new PromptBuilder(game);
 
     // Обновляем целевую дату
@@ -284,8 +329,17 @@ export class PromptEngine {
     vars.TARGET_ROUND_GRAMMATICAL_DATE = this.toGrammaticalDate(vars.TARGET_ROUND_DATE);
     vars.PLAYER_ACTIONS_THIS_ROUND = actions.join('\n');
 
-    const prompt = buildSimulationPrompt(vars);
-    const response = await this.llm.generate(prompt, '', { temperature: 0.7 });
+    const prompt = buildSimulationPrompt(vars, { autoJump });
+    // system — короткая ролевая инструкция, user — большой промпт.
+    // Раньше весь промпт шёл в system, а user был пустым: часть моделей
+    // (особенно локальные) на это реагирует заметно хуже.
+    const response = await this.llm.stream(
+      'jump',
+      'Ты — симулятор альтернативной истории. Строго следуй формату ответа из инструкции.',
+      prompt,
+      onProgress ?? (() => {}),
+      { temperature: 0.7 }
+    );
 
     return parseSimulationResponse(response.content);
   }
@@ -295,7 +349,12 @@ export class PromptEngine {
     const vars = builder.buildVariablesForAction(actionText);
 
     const prompt = buildConverterPrompt(vars);
-    const response = await this.llm.generate(prompt, '', { temperature: 0.5 });
+    const response = await this.llm.generate(
+      'converter',
+      'Ты — аналитик приказов в глобальной стратегической игре. Отвечай только JSON.',
+      prompt,
+      { temperature: 0.5 }
+    );
 
     return parseConverterResponse(response.content);
   }
@@ -315,7 +374,12 @@ export class PromptEngine {
     const vars = builder.buildVariables();
 
     const prompt = buildBatchConverterPrompt(vars, actionTexts);
-    const response = await this.llm.generate(prompt, '', { temperature: 0.5 });
+    const response = await this.llm.generate(
+      'converter',
+      'Ты — аналитик приказов в глобальной стратегической игре. Отвечай только JSON.',
+      prompt,
+      { temperature: 0.5 }
+    );
 
     return parseBatchConverterResponse(response.content);
   }
@@ -325,7 +389,12 @@ export class PromptEngine {
     const vars = builder.buildVariables();
 
     const prompt = buildAdvisorPrompt(vars, message, history);
-    const response = await this.llm.generate(prompt, '', { temperature: 0.7 });
+    const response = await this.llm.generate(
+      'advisor',
+      'Ты — мудрый советник лидера государства в альтернативной истории.',
+      prompt,
+      { temperature: 0.7 }
+    );
 
     return parseAdvisorResponse(response.content);
   }
@@ -335,7 +404,12 @@ export class PromptEngine {
     const vars = builder.buildVariables();
 
     const prompt = buildSuggestionsPrompt(vars);
-    const response = await this.llm.generate(prompt, '', { temperature: 0.8 });
+    const response = await this.llm.generate(
+      'suggestions',
+      'Ты — штабной аналитик, предлагающий варианты действий. Отвечай только JSON.',
+      prompt,
+      { temperature: 0.8 }
+    );
 
     return parseSuggestionsResponse(response.content);
   }
@@ -358,7 +432,12 @@ export class PromptEngine {
       language,
     });
 
-    const response = await this.llm.generate(prompt, '', { temperature: 0.7 });
+    const response = await this.llm.generate(
+      'narration',
+      'Ты — летописец альтернативной истории. Пиши живым, но сдержанным стилем.',
+      prompt,
+      { temperature: 0.7 }
+    );
 
     return parseNarrationResponse(response.content);
   }

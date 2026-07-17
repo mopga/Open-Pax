@@ -5,6 +5,7 @@
  */
 
 import { PromptVariables, ConvertedAction } from './types';
+import { parseJsonLoose } from '../utils/json-repair';
 
 /**
  * Построить промпт для конвертации действия
@@ -84,12 +85,7 @@ VERY IMPORTANT: Отвечай ТОЛЬКО валидным JSON.`;
 
 export function parseConverterResponse(text: string): ConvertedAction {
   try {
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('No JSON found');
-    }
-
-    const parsed = JSON.parse(jsonMatch[0]);
+    const parsed = parseJsonLoose<any>(text);
 
     return {
       type: parsed.type === 'chat' ? 'chat' : 'action',
@@ -192,12 +188,7 @@ VERY IMPORTANT: Отвечай ТОЛЬКО валидным JSON массиво
  */
 export function parseBatchConverterResponse(text: string): ConvertedAction[] {
   try {
-    const jsonMatch = text.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) {
-      throw new Error('No JSON array found');
-    }
-
-    const parsed = JSON.parse(jsonMatch[0]);
+    const parsed = parseJsonLoose<any[]>(text);
 
     if (!Array.isArray(parsed)) {
       throw new Error('Response is not an array');
