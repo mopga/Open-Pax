@@ -2658,3 +2658,144 @@ body {
     max-height: 280px;
   }
 }
+
+/* ============================================================
+   Этап 5: пресеты-пакеты — бейджи, экспорт/импорт
+   ============================================================ */
+
+/* Карточке нужен якорь для кнопки экспорта в углу */
+.template-card {
+  position: relative;
+}
+
+/* Шапка карточки: название + бейдж источника */
+.template-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding-right: 36px;
+}
+
+.template-card-top .template-name {
+  margin-bottom: 0;
+}
+
+/* Бейдж источника шаблона */
+.template-badge {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Пакет-пресет (data/presets) — акцентный */
+.template-badge.preset {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+}
+
+/* Легаси-шаблон (data/templates) — нейтральный */
+.template-badge.legacy {
+  background: #2a2a3a;
+  border: 1px solid #3a3a4a;
+  color: #999;
+}
+
+/* Иконки возможностей пакета — подсказка по наведению */
+.template-meta span[title] {
+  cursor: help;
+}
+
+/* Кнопка экспорта zip в правом верхнем углу карточки */
+.template-export-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid #2a2a3a;
+  border-radius: 8px;
+  color: #888;
+  font-size: 0.95rem;
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.2s;
+}
+
+.template-card:hover .template-export-btn {
+  opacity: 1;
+}
+
+.template-export-btn:hover {
+  background: #22222e;
+  border-color: #667eea;
+  color: #fff;
+}
+
+/* Кнопка импорта пресета в шапке селектора */
+.import-controls {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-import {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #1a1a24;
+  border: 1px solid #2a2a3a;
+  border-radius: 10px;
+  color: #ccc;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-import:hover:not(:disabled) {
+  border-color: #667eea;
+  color: #fff;
+}
+
+.btn-import:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+/* Мини-спиннер во время импорта */
+.import-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #444;
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: import-spin 0.8s linear infinite;
+}
+
+@keyframes import-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Ошибка импорта под кнопкой */
+.import-error {
+  margin: -15px 0 20px;
+  padding: 12px 16px;
+  background: rgba(229, 72, 77, 0.1);
+  border: 1px solid rgba(229, 72, 77, 0.4);
+  border-radius: 10px;
+  color: #e5484d;
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

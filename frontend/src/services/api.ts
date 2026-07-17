@@ -508,19 +508,28 @@ export const countriesApi = {
 // Templates API
 // ============================================================================
 
+/** Информация о шаблоне в списке (Этап 5: пресеты как пакеты) */
+export interface TemplateInfo {
+  id: string;
+  name: string;
+  description: string;
+  start_date: string;
+  country_count: number;
+  /** preset — пакет из data/presets, legacy — старый шаблон из data/templates */
+  source: 'preset' | 'legacy';
+  /** Есть ли кастомные правила симуляции */
+  has_rules: boolean;
+  /** Есть ли своя карта (map.geojson) */
+  has_map: boolean;
+  /** Количество флагов в пакете */
+  flags_count: number;
+}
+
 export const templatesApi = {
   /**
    * Получить все шаблоны
    */
-  list: (): Promise<{
-    templates: {
-      id: string;
-      name: string;
-      description: string;
-      start_date: string;
-      country_count: number;
-    }[];
-  }> => {
+  list: (): Promise<{ templates: TemplateInfo[] }> => {
     return fetchApi('/templates');
   },
 
@@ -529,6 +538,58 @@ export const templatesApi = {
    */
   get: (templateId: string): Promise<WorldTemplate> => {
     return fetchApi(`/templates/${templateId}`);
+  },
+
+  /**
+   * Экспорт пресета как zip-архива: получаем blob и инициируем скачивание
+   */
+  exportPreset: async (templateId: string): Promise<void> => {
+    const response = await fetch(`${API_BASE}/templates/${templateId}/export`);
+    if (!response.ok) {
+      const text = await response.text();
+      console.error('[API Error]', response.status, `/templates/${templateId}/export`, text);
+      throw new Error(text || `Ошибка экспорта (${response.status})`);
+    }
+    const blob = await response.blob();
+    // Имя файла — из Content-Disposition, иначе <id>.zip
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="?([^";]+)"?/);
+    const filename = match?.[1] || `${templateId}.zip`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
+
+  /**
+   * Импорт пресета из zip-архива (тело — байты файла).
+   * При 409 (уже существует) бросает ошибку с code === 'EXISTS' —
+   * вызывающий код показывает confirm и повторяет с overwrite = true.
+   */
+  importPreset: async (file: File, overwrite = false): Promise<{ template: TemplateInfo }> => {
+    const response = await fetch(
+      `${API_BASE}/templates/import${overwrite ? '?overwrite=1' : ''}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/zip' },
+        body: file,
+      }
+    );
+    if (response.status === 409) {
+      const error = new Error('Пресет с таким ID уже существует') as Error & { code?: string };
+      error.code = 'EXISTS';
+      throw error;
+    }
+    if (!response.ok) {
+      const text = await response.text();
+      console.error('[API Error]', response.status, '/templates/import', text);
+      throw new Error(text || `Ошибка импорта (${response.status})`);
+    }
+    return response.json();
   },
 };
 

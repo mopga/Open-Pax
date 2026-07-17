@@ -11,7 +11,7 @@ import { worldRepository, relationshipRepository } from '../repositories';
 import { svgPathToGeoJSON } from '../utils/svg-to-geojson';
 import { BalanceAgent } from '../agents/balance-agent';
 import { getLLMRouter } from '../llm';
-import { resolveInside, safeReadJson } from '../utils/safe-path';
+import { loadPreset, loadPresetMap } from '../utils/preset-loader';
 import { computeBorders } from '../utils/borders';
 
 export const worldsRouter = Router();
@@ -46,34 +46,43 @@ worldsRouter.post('/generate', async (req, res) => {
     return;
   }
 
-  // Confine the user-supplied templateId to data/templates; reject any
-  // path traversal attempt before touching the filesystem.
-  const resolved = resolveInside('data/templates', templateId, '.json');
-  if (!resolved.ok || !resolved.path) {
-    res.status(resolved.statusCode ?? 400).json({ error: resolved.error });
-    return;
-  }
-  const template = safeReadJson<any>(resolved.path);
-  if (!template) {
-    res.status(404).json({ error: 'Template not found' });
+  // Этап 5: пресет-пакет (data/presets/<id>/) или легаси-шаблон
+  // (data/templates/<id>.json). loadPreset валидирует id через PRESET_ID_RE,
+  // поэтому path traversal исключён без resolveInside.
+  const preset = loadPreset(templateId);
+  if (!preset) {
+    res.status(404).json({ error: `Preset not found: ${templateId}` });
     return;
   }
 
   try {
-    const geojsonPath = path.join(process.cwd(), 'data', 'geojson', 'countries.geojson');
+    // Геометрия регионов: кастомная карта пакета (map.geojson) или
+    // стандартная Natural Earth (data/geojson/countries.geojson)
     let geojsonFeatures: Record<string, any> = {};
-    if (fs.existsSync(geojsonPath)) {
-      const geojsonData = JSON.parse(fs.readFileSync(geojsonPath, 'utf-8'));
-      for (const feature of geojsonData.features || []) {
+    if (preset.has_custom_map) {
+      const customMap = loadPresetMap(templateId);
+      for (const feature of customMap?.features || []) {
         const code = feature.properties?.code;
         if (code) {
           geojsonFeatures[code] = feature;
         }
       }
+    } else {
+      const geojsonPath = path.join(process.cwd(), 'data', 'geojson', 'countries.geojson');
+      if (fs.existsSync(geojsonPath)) {
+        const geojsonData = JSON.parse(fs.readFileSync(geojsonPath, 'utf-8'));
+        for (const feature of geojsonData.features || []) {
+          const code = feature.properties?.code;
+          if (code) {
+            geojsonFeatures[code] = feature;
+          }
+        }
+      }
     }
 
     const balanceAgent = new BalanceAgent(getLLMRouter());
-    const worldState = await balanceAgent.generateInitialWorldState(template);
+    // Кастомные страны пакета (имена/цвета) перекрывают реестр data/countries.json
+    const worldState = await balanceAgent.generateInitialWorldState(preset, preset.countries);
 
     const countriesObj: Record<string, any> = {};
     const regionsObj: Record<string, any> = {};
@@ -117,11 +126,14 @@ worldsRouter.post('/generate', async (req, res) => {
     const worldId = shortId();
     const worldData = {
       id: worldId,
-      name: `${template.name} - ${new Date().toLocaleDateString()}`,
-      description: template.description || template.base_prompt?.substring(0, 200) || '',
+      name: `${preset.name} - ${new Date().toLocaleDateString()}`,
+      description: preset.description || preset.base_prompt?.substring(0, 200) || '',
       startDate: worldState.date,
-      basePrompt: template.base_prompt,
-      historicalAccuracy: 0.8,
+      // Лор пакета (lore.md) дополняет базовый промпт мира
+      basePrompt: preset.base_prompt + (preset.lore ? '\n\n' + preset.lore : ''),
+      historicalAccuracy: preset.historical_accuracy ?? 0.8,
+      // Этап 5: кастомные правила симуляции пресета (rules.md) едут с миром
+      simulationRules: preset.simulation_rules ?? null,
     };
 
     // Convert regionsObj to array and use createWithRegions (which wraps in transaction)

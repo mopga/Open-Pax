@@ -12,6 +12,8 @@ export interface WorldRecord {
   start_date: string;
   base_prompt: string;
   historical_accuracy: number;
+  /** Этап 5: кастомные правила симуляции пресета (rules.md) */
+  simulation_rules: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -32,10 +34,10 @@ export interface RegionRecord {
 }
 
 export const worldRepository = {
-  create: (world: { id: string; name: string; description?: string; startDate?: string; basePrompt?: string; historicalAccuracy?: number }) => {
+  create: (world: { id: string; name: string; description?: string; startDate?: string; basePrompt?: string; historicalAccuracy?: number; simulationRules?: string | null }) => {
     const stmt = db.prepare(`
-      INSERT INTO worlds (id, name, description, start_date, base_prompt, historical_accuracy)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO worlds (id, name, description, start_date, base_prompt, historical_accuracy, simulation_rules)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       world.id,
@@ -43,7 +45,9 @@ export const worldRepository = {
       world.description || '',
       world.startDate || '1951-01-01',
       world.basePrompt || 'Альтернативная история',
-      world.historicalAccuracy ?? 0.8
+      world.historicalAccuracy ?? 0.8,
+      // Этап 5: правила симуляции пресета (NULL для обычных миров)
+      world.simulationRules ?? null
     );
     return world;
   },
@@ -132,6 +136,7 @@ export const worldRepository = {
     startDate: string;
     basePrompt: string;
     historicalAccuracy: number;
+    simulationRules: string | null;
   }>) => {
     const fields: string[] = [];
     const values: any[] = [];
@@ -141,6 +146,7 @@ export const worldRepository = {
     if (updates.startDate !== undefined) { fields.push('start_date = ?'); values.push(updates.startDate); }
     if (updates.basePrompt !== undefined) { fields.push('base_prompt = ?'); values.push(updates.basePrompt); }
     if (updates.historicalAccuracy !== undefined) { fields.push('historical_accuracy = ?'); values.push(updates.historicalAccuracy); }
+    if (updates.simulationRules !== undefined) { fields.push('simulation_rules = ?'); values.push(updates.simulationRules); }
 
     if (fields.length === 0) return;
 
@@ -149,7 +155,7 @@ export const worldRepository = {
     stmt.run(...values);
   },
 
-  createWithRegions: (world: { id: string; name: string; description?: string; startDate?: string; basePrompt?: string; historicalAccuracy?: number }, regions: any[]) => {
+  createWithRegions: (world: { id: string; name: string; description?: string; startDate?: string; basePrompt?: string; historicalAccuracy?: number; simulationRules?: string | null }, regions: any[]) => {
     const createWorld = db.transaction(() => {
       worldRepository.create(world);
       for (const region of regions) {

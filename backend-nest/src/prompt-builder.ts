@@ -24,6 +24,8 @@ interface GameData {
   consolidationTail?: number;
   /** Этап 3: предформатированные транскрипты дипломатических чатов */
   chatTranscripts?: string;
+  /** Этап 5: кастомные правила симуляции мира (rules.md пресет-пакета) */
+  simulationRules?: string;
   world: {
     name: string;
     basePrompt: string;
@@ -107,7 +109,8 @@ export class PromptBuilder {
       CURRENT_ROUND_NUMBER: this.game.currentTurn,
 
       WORLD_BEFORE_ROUND_ONE_TEXT: this.game.world.basePrompt || 'Альтернативная история',
-      HISTORICAL_PRESET_SIMULATION_RULES: 'События развиваются логично. Учитывай экономику и военную мощь.',
+      // Этап 5: правила симуляции пресета переопределяют дефолт
+      HISTORICAL_PRESET_SIMULATION_RULES: this.game.simulationRules ?? 'События развиваются логично. Учитывай экономику и военную мощь.',
       DIFFICULTY_DESCRIPTION_JUMP_FORWARD: difficultyPromptBlock(normalizeDifficulty(this.game.difficulty)),
 
       PLAYER_POLITY: playerPolityName,

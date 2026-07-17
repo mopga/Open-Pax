@@ -54,6 +54,15 @@ export function initDatabase() {
     )
   `);
 
+  // Migration (Этап 5): кастомные правила симуляции пресета (rules.md),
+  // сохранённые с миром при генерации из пресет-пакета
+  try {
+    db.exec("ALTER TABLE worlds ADD COLUMN simulation_rules TEXT DEFAULT NULL");
+    console.log('[Migration] Added simulation_rules to worlds');
+  } catch (e: any) {
+    if (!e.message.includes('duplicate column name')) { /* уже есть */ }
+  }
+
   // Regions table (world regions)
   db.exec(`
     CREATE TABLE IF NOT EXISTS world_regions (

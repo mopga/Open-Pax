@@ -49,16 +49,21 @@ export class BalanceAgent {
       country_codes: string[];
       base_prompt: string;
       start_date: string;
-    }
+    },
+    countriesOverride?: { code: string; name: string; color: string }[]
   ): Promise<WorldState> {
     console.log('[BalanceAgent] Generating initial world state for template:', template.name, '(batch size:', this.BATCH_SIZE, ')');
 
     const countries = new Map<string, CountryState>();
 
-    // Get valid countries (filter out missing ones upfront)
-    const validCountries = template.country_codes
-      .map(code => getCountry(code))
-      .filter((c): c is Country => c !== null && c !== undefined);
+    // Этап 5: у пресет-пакета могут быть свои страны (имена/цвета) —
+    // тогда доверяем пресету и не фильтруем через data/countries.json.
+    // Иначе — прежнее поведение: только коды, известные реестру.
+    const validCountries: Country[] = countriesOverride && countriesOverride.length > 0
+      ? countriesOverride.map(c => ({ code: c.code, name: c.name, color: c.color }))
+      : template.country_codes
+          .map(code => getCountry(code))
+          .filter((c): c is Country => c !== null && c !== undefined);
 
     const total = validCountries.length;
     console.log('[BalanceAgent] Processing', total, 'countries in parallel batches');

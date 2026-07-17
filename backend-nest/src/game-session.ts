@@ -122,6 +122,8 @@ export class GameSession {
   private worldName: string = '';
   private worldBasePrompt: string = '';
   private worldStartDate: string = '';
+  /** Этап 5: кастомные правила симуляции мира (rules.md пресет-пакета) */
+  private worldSimulationRules: string | undefined = undefined;
 
   /** Полития игрока по конвенции polityId (см. utils/name-resolver.ts) */
   private playerPolityId: string = 'player';
@@ -234,6 +236,8 @@ export class GameSession {
         startDate: this.worldStartDate || this.currentDate,
         regions: regionsObj,
       },
+      // Этап 5: правила симуляции мира → HISTORICAL_PRESET_SIMULATION_RULES
+      simulationRules: this.worldSimulationRules ?? undefined,
       players: this.players.map(p => ({
         id: p.id,
         name: p.name,
@@ -405,6 +409,7 @@ export class GameSession {
     this.worldName = world.name || '';
     this.worldBasePrompt = world.base_prompt || '';
     this.worldStartDate = world.start_date || '1951-01-01';
+    this.worldSimulationRules = world.simulation_rules || undefined;
     this.difficulty = normalizeDifficulty(difficulty);
 
     // Load all regions into session state
@@ -489,6 +494,7 @@ export class GameSession {
     this.worldName = world?.name || '';
     this.worldBasePrompt = data.basePrompt || world?.base_prompt || '';
     this.worldStartDate = world?.start_date || '';
+    this.worldSimulationRules = world?.simulation_rules || undefined;
 
     // Restore player's polity (persisted in players.polity_id; fallback —
     // owner of the home region for legacy rows).
