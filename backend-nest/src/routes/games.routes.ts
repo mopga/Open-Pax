@@ -36,7 +36,9 @@ gamesRouter.post('/', (req, res) => {
     const { session, playerId, gameId } = getSessionRegistry().createSession(
       worldId,
       playerName || 'Player',
-      playerRegionId
+      playerRegionId,
+      req.body.playerColor || req.body.player_color || '#FF0000',
+      req.body.difficulty
     );
 
     const player = session.getPlayer();
@@ -106,14 +108,22 @@ gamesRouter.post('/:id/action', async (req, res) => {
 
   try {
     const session = getSessionRegistry().getSessionOrThrow(gameId);
-    const result = await session.applyTurn(text, timeJump);
+    // Этап 2: единый движок — LLM-очередь (детерминированный applyTurn удалён)
+    session.queueAction(text);
+    const processed = await session.processAllPendingActions(timeJump);
+    const action = processed[processed.length - 1];
+
+    if (!action || !action.result) {
+      res.status(409).json({ error: 'Другой ход уже обрабатывается — попробуйте позже' });
+      return;
+    }
 
     res.json({
-      turn: result.turn,
-      narration: result.narration,
-      country_response: result.countryResponse,
-      events: result.events,
-      objects: result.objects,
+      turn: action.result.turn,
+      narration: action.result.narration,
+      country_response: action.result.countryResponse,
+      events: action.result.events,
+      objects: action.result.objects,
     });
   } catch (e: any) {
     console.error('[POST /api/games/:id/action] Error:', e);
@@ -326,6 +336,16 @@ gamesRouter.post('/:id/time-skip', async (req, res) => {
         processedCount: processed.length,
         actions: processed,
       });
+    } else if (jump_days <= 0) {
+      // Auto-jump «к следующему важному событию» без действий игрока:
+      // ставим служебное действие наблюдения и прогоняем симуляцию
+      session.queueAction('Наблюдать за развитием мира и вести внутреннюю политику');
+      const processed = await session.processAllPendingActions(0);
+      res.json({
+        type: 'actions_processed',
+        processedCount: processed.length,
+        actions: processed,
+      });
     } else {
       const result = session.advanceDate(jump_days);
       res.json({
@@ -338,5 +358,46 @@ gamesRouter.post('/:id/time-skip', async (req, res) => {
   } catch (e: any) {
     console.error('[TIME-SKIP] Error:', e);
     respondRouteError(res, e, 'Failed to time-skip');
+  }
+});
+
+// Этап 2: Rewind — откат на ход назад
+gamesRouter.post('/:id/rewind', (req, res) => {
+  const gameId = req.params.id;
+  try {
+    const session = getSessionRegistry().getSessionOrThrow(gameId);
+    const result = session.rewind();
+    if (!result) {
+      res.status(404).json({ error: 'Нет снапшота для отката (сделайте хотя бы один ход)' });
+      return;
+    }
+    res.json({ type: 'rewound', newTurn: result.turn, newDate: result.date });
+  } catch (e: any) {
+    console.error('[REWIND] Error:', e);
+    respondRouteError(res, e, 'Failed to rewind');
+  }
+});
+
+// Этап 2: можно ли откатиться (для UI)
+gamesRouter.get('/:id/rewind', (req, res) => {
+  const gameId = req.params.id;
+  try {
+    const session = getSessionRegistry().getSessionOrThrow(gameId);
+    res.json({ canRewind: session.canRewind() });
+  } catch (e: any) {
+    respondRouteError(res, e, 'Failed to check rewind');
+  }
+});
+
+// Этап 2: Intervene — прервать применение оставшихся событий пачки
+gamesRouter.post('/:id/intervene', (req, res) => {
+  const gameId = req.params.id;
+  try {
+    const session = getSessionRegistry().getSessionOrThrow(gameId);
+    session.requestIntervene();
+    res.json({ ok: true });
+  } catch (e: any) {
+    console.error('[INTERVENE] Error:', e);
+    respondRouteError(res, e, 'Failed to intervene');
   }
 });

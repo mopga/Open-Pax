@@ -5,6 +5,7 @@
  */
 
 import { PromptVariables, Suggestion } from './types';
+import { parseJsonLoose } from '../utils/json-repair';
 
 /**
  * Построить промпт для генерации подсказок
@@ -73,12 +74,7 @@ VERY IMPORTANT: Отвечай ТОЛЬКО валидным JSON.`;
 
 export function parseSuggestionsResponse(text: string): Suggestion[] {
   try {
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('No JSON found');
-    }
-
-    const parsed = JSON.parse(jsonMatch[0]);
+    const parsed = parseJsonLoose<any>(text);
     return parsed.suggestions || [];
   } catch (e) {
     console.error('[PARSER] Failed to parse suggestions:', e);

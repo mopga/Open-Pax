@@ -4,12 +4,21 @@
  * Основной движок симуляции (time-rewind.md)
  */
 
-import { PromptVariables, SimulationResult } from './types';
+import { PromptVariables, SimulationResult, SimulationEvent, VoidedAction } from './types';
+import { parseJsonLoose } from '../utils/json-repair';
 
 /**
  * Построить промпт для симуляции хода
+ * @param opts.autoJump — режим «к следующему важному событию»: модель сама
+ *   выбирает фактическую целевую дату и возвращает её в targetDate.
  */
-export function buildSimulationPrompt(vars: PromptVariables): string {
+export function buildSimulationPrompt(vars: PromptVariables, opts?: { autoJump?: boolean }): string {
+  const autoJumpInstruction = opts?.autoJump
+    ? `\nПравила auto-jump:
+- Игрок попросил промотать время ДО СЛЕДУЮЩЕГО ВАЖНОГО СОБЫТИЯ (в пределах горизонта до ${vars.TARGET_ROUND_DATE}).
+- Останови симуляцию на первом по-настоящему значимом событии и верни его дату в поле "targetDate" (YYYY-MM-DD).
+- Событий может быть мало (1-3) — это нормально для этого режима.`
+    : '';
   return `Ты симулируешь пошаговую стратегическую игру. Игрок играет за политию ${vars.PLAYER_POLITY}.
 
 ${vars.DIFFICULTY_DESCRIPTION_JUMP_FORWARD}
@@ -108,7 +117,7 @@ ${vars.CHATS_NON_CONSOLIDATED_ROUNDS || '(Дипломатии не было)'}
       "date": "YYYY-MM-DD",
       "mapChanges": [
         {
-          "type": "transfer|create|update|delete",
+          "type": "transfer|create|update|delete|spawn_battalion|move_battalion|create_polity",
           "regionName": "ИМЯ региона из описания карты",
           "newOwner": "ИМЯ политии из описания карты (если transfer/create)",
           "newColor": "#hex (если update или новая полития)"
@@ -117,6 +126,12 @@ ${vars.CHATS_NON_CONSOLIDATED_ROUNDS || '(Дипломатии не было)'}
     }
   ],
   "narration": "Общий нарратив о произошедшем за этот период (3-5 предложений)",
+  "voided": [
+    { "action": "текст действия игрока", "reason": "почему оно нереалистично" }
+  ],
+  "startChat": [
+    { "polityName": "ИМЯ политии", "topic": "что она хочет обсудить" }
+  ],
   "worldChanges": {
     "regionOwners": { "ИМЯ региона": "ИМЯ политии" },
     "regionColors": { "ИМЯ региона": "#hex" }
@@ -124,34 +139,63 @@ ${vars.CHATS_NON_CONSOLIDATED_ROUNDS || '(Дипломатии не было)'}
 }
 
 Правила mapChanges:
+- "type": "transfer" (передать регион), "create"/"update"/"delete" (политии),
+  "spawn_battalion" (появление батальона в регионе),
+  "move_battalion" (с targetRegionName), "create_polity" (новая полития).
 - "regionName" и "newOwner" — ТОЛЬКО имена из [Описание карты] (или имя новой
   политии, если ты её создаёшь). НЕ используй id и координаты.
 - Если границы не менялись — оставляй "mapChanges" пустым массивом.
 - "worldChanges.regionOwners" дублирует итоговые смены владельцев по именам.
 
+Правила voided:
+- Если действие игрока нереалистично для этого мира и периода (например,
+  "захватить весь мир за неделю", технологии из будущего) — НЕ выполняй его,
+  а добавь в "voided" с понятным игроку объяснением. Остальные действия
+  выполняй как обычно. Если всё реалистично — "voided": [].
+- "startChat": если какая-то полития по итогам событий хочет вступить в
+  переговоры с игроком — укажи её. Если нет — "startChat": [].
+${autoJumpInstruction}
+
 VERY IMPORTANT: Отвечай ТОЛЬКО валидным JSON, без markdown форматирования, без пояснений.`;
 }
 
 export function parseSimulationResponse(text: string): SimulationResult {
+  const emptyWorldChanges = { regionOwners: {}, regionColors: {}, newFeatures: [], deletedFeatures: [] };
   try {
-    // Найти JSON в ответе
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('No JSON found in response');
+    const parsed = parseJsonLoose<any>(text);
+
+    // Строгая нормализация событий: мусорные элементы выбрасываем, а не падаем
+    const events: SimulationEvent[] = [];
+    for (const raw of Array.isArray(parsed.events) ? parsed.events : []) {
+      if (!raw || typeof raw.headline !== 'string' || raw.headline.trim() === '') continue;
+      events.push({
+        headline: String(raw.headline),
+        description: typeof raw.description === 'string' ? raw.description : '',
+        date: typeof raw.date === 'string' ? raw.date : '',
+        mapChanges: (Array.isArray(raw.mapChanges) ? raw.mapChanges : []).filter(
+          (mc: any) => mc && typeof mc === 'object' && typeof mc.type === 'string'
+        ),
+      });
     }
 
-    const parsed = JSON.parse(jsonMatch[0]);
+    const voided: VoidedAction[] = [];
+    for (const raw of Array.isArray(parsed.voided) ? parsed.voided : []) {
+      if (!raw || typeof raw.action !== 'string') continue;
+      voided.push({ action: raw.action, reason: typeof raw.reason === 'string' ? raw.reason : '' });
+    }
+
+    const startChat = (Array.isArray(parsed.startChat) ? parsed.startChat : [])
+      .filter((c: any) => c && typeof c.polityName === 'string')
+      .map((c: any) => ({ polityName: String(c.polityName), topic: String(c.topic ?? '') }));
 
     return {
-      events: parsed.events || [],
-      narration: parsed.narration || 'Мир изменился...',
-      diplomacy: parsed.diplomacy || [],
-      worldChanges: parsed.worldChanges || {
-        regionOwners: {},
-        regionColors: {},
-        newFeatures: [],
-        deletedFeatures: [],
-      },
+      events,
+      narration: typeof parsed.narration === 'string' ? parsed.narration : 'Мир изменился...',
+      diplomacy: Array.isArray(parsed.diplomacy) ? parsed.diplomacy : [],
+      worldChanges: { ...emptyWorldChanges, ...(parsed.worldChanges ?? {}) },
+      voided,
+      startChat,
+      targetDate: typeof parsed.targetDate === 'string' ? parsed.targetDate : undefined,
     };
   } catch (e) {
     console.error('[PARSER] Failed to parse simulation response:', e);
@@ -161,7 +205,8 @@ export function parseSimulationResponse(text: string): SimulationResult {
       events: [],
       narration: text.substring(0, 500),
       diplomacy: [],
-      worldChanges: { regionOwners: {}, regionColors: {}, newFeatures: [], deletedFeatures: [] },
+      worldChanges: emptyWorldChanges,
+      voided: [],
     };
   }
 }

@@ -10,6 +10,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@turf/bbox": "^7.3.5",
+    "@turf/boolean-intersects": "^7.3.5",
     "better-sqlite3": "^12.8.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",

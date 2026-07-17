@@ -4,7 +4,7 @@
  * Сервис для построения переменных промптов
  */
 
-import { PromptVariables, SimulationResult, ConvertedAction, Suggestion, AdvisorMessage } from './prompts';
+import { PromptVariables, SimulationResult, ConvertedAction, Suggestion, AdvisorMessage, difficultyPromptBlock, normalizeDifficulty } from './prompts';
 import { buildSimulationPrompt, parseSimulationResponse } from './prompts/simulation';
 import { buildAdvisorPrompt, parseAdvisorResponse } from './prompts/advisor';
 import { buildSuggestionsPrompt, parseSuggestionsResponse } from './prompts/suggestions';
@@ -16,6 +16,12 @@ interface GameData {
   id: string;
   currentDate: string;
   currentTurn: number;
+  /** Сложность игры (Этап 2) */
+  difficulty?: string;
+  /** Консолидированная история ранних раундов (Этап 2) */
+  consolidatedHistory?: string;
+  /** Сколько последних раундов держать сырыми при консолидации */
+  consolidationTail?: number;
   world: {
     name: string;
     basePrompt: string;
@@ -100,7 +106,7 @@ export class PromptBuilder {
 
       WORLD_BEFORE_ROUND_ONE_TEXT: this.game.world.basePrompt || 'Альтернативная история',
       HISTORICAL_PRESET_SIMULATION_RULES: 'События развиваются логично. Учитывай экономику и военную мощь.',
-      DIFFICULTY_DESCRIPTION_JUMP_FORWARD: 'Сложность игры отражается в сложности долгосрочных целей.',
+      DIFFICULTY_DESCRIPTION_JUMP_FORWARD: difficultyPromptBlock(normalizeDifficulty(this.game.difficulty)),
 
       PLAYER_POLITY: playerPolityName,
       PLAYER_POLITY_REGIONS: this.buildPlayerRegions(player.regionId),
@@ -246,13 +252,25 @@ export class PromptBuilder {
     return result;
   }
 
-  // История событий
+  // История событий: консолидированное саммари ранних раундов + сырой хвост
   private buildEventHistory(): string {
-    if (this.game.results.length === 0) return '';
+    if (this.game.results.length === 0 && !this.game.consolidatedHistory) return '';
 
-    return this.game.results.map(r =>
-      `Раунд ${r.turn}: ${r.narration}`
-    ).join('\n\n');
+    const consolidated = this.game.consolidatedHistory?.trim();
+    if (!consolidated) {
+      return this.game.results.map(r =>
+        `Раунд ${r.turn}: ${r.narration}`
+      ).join('\n\n');
+    }
+
+    const tail = this.game.consolidationTail ?? 10;
+    const rawTail = this.game.results.slice(-tail);
+    let out = `[Консолидированная история ранних раундов]\n${consolidated}`;
+    if (rawTail.length > 0) {
+      out += `\n\n[Последние раунды — подробно]\n` +
+        rawTail.map(r => `Раунд ${r.turn}: ${r.narration}`).join('\n\n');
+    }
+    return out;
   }
 
   // Группировка регионов по владельцам
@@ -300,7 +318,8 @@ export class PromptEngine {
     game: GameData,
     actions: string[],
     jumpDays: number,
-    onProgress?: (charsSoFar: number) => void
+    onProgress?: (charsSoFar: number) => void,
+    autoJump?: boolean
   ): Promise<SimulationResult> {
     const builder = new PromptBuilder(game);
 
@@ -310,7 +329,7 @@ export class PromptEngine {
     vars.TARGET_ROUND_GRAMMATICAL_DATE = this.toGrammaticalDate(vars.TARGET_ROUND_DATE);
     vars.PLAYER_ACTIONS_THIS_ROUND = actions.join('\n');
 
-    const prompt = buildSimulationPrompt(vars);
+    const prompt = buildSimulationPrompt(vars, { autoJump });
     // system — короткая ролевая инструкция, user — большой промпт.
     // Раньше весь промпт шёл в system, а user был пустым: часть моделей
     // (особенно локальные) на это реагирует заметно хуже.

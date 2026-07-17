@@ -35,6 +35,7 @@ let failJump = false;
 
 /** Заглушка LLM: детерминированные ответы по механике (сигнатура LLMRouter) */
 const stubProvider: any = {
+  consolidation: { startRound: 25, chunkSize: 5, keepRawTail: 10 },
   async generate(mechanic: string, system: string, user: string) {
     seenMechanics.push(mechanic);
     if (mechanic === 'converter') {

@@ -6,12 +6,13 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { LLMRouter } from '../src/llm/router';
 import { OpenAICompatibleProvider } from '../src/llm/openai-compatible';
-import { LLMError, ALL_MECHANICS, type LLMConfig, type LLMProvider, type Mechanic } from '../src/llm';
+import { LLMError, ALL_MECHANICS, type LLMProvider, type Mechanic } from '../src/llm';
+import type { LLMConfig, LLMFullConfig } from '../src/llm/config';
 
-function makeConfig(): LLMConfig {
-  const cfg = {} as LLMConfig;
+function makeConfig(): LLMFullConfig {
+  const mechanics = {} as LLMConfig;
   for (const m of ALL_MECHANICS) {
-    cfg[m] = {
+    mechanics[m] = {
       provider: 'openai-compatible',
       baseUrl: 'http://test.local/v1',
       apiKey: 'k',
@@ -22,7 +23,7 @@ function makeConfig(): LLMConfig {
       cache: ['advisor', 'suggestions', 'converter'].includes(m),
     };
   }
-  return cfg;
+  return { mechanics, consolidation: { startRound: 25, chunkSize: 5, keepRawTail: 10 } };
 }
 
 /** Stub-провайдер, считающий вызовы */
@@ -67,7 +68,7 @@ describe('LLMRouter: per-механика резолвинг', () => {
 
   it('неизвестный провайдер — понятная ошибка', async () => {
     const cfg = makeConfig();
-    (cfg.jump as any).provider = 'bogus';
+    (cfg.mechanics.jump as any).provider = 'bogus';
     const router = new LLMRouter(cfg); // дефолтная фабрика
     await expect(router.generate('jump', 's', 'u')).rejects.toThrow(/Неизвестный LLM-провайдер/);
   });

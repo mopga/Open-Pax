@@ -293,6 +293,7 @@ function App() {
             world_id: result.world_id,
             player_name: 'Player',
             player_region_id: initialPlayerRegionId,
+            difficulty,
           });
           const game = await gameApi.get(gameResponse.game_id);
           setCurrentGame(game);
@@ -536,6 +537,61 @@ function App() {
     setLoading(false);
   };
 
+  // Этап 2: Rewind — откат на ход назад
+  const handleRewind = async () => {
+    if (!currentGame || loading) return;
+    if (!window.confirm('Откатить последний ход? Мир вернётся к предыдущему состоянию.')) return;
+
+    setLoading(true);
+    try {
+      await gameApi.rewind(currentGame.id);
+      const updatedGame = await gameApi.get(currentGame.id);
+      setCurrentGame(updatedGame);
+
+      if (updatedGame.world && currentWorld) {
+        const newRegions = { ...currentWorld.regions };
+        const gameRegions = Array.isArray(updatedGame.world.regions)
+          ? updatedGame.world.regions
+          : Object.values(updatedGame.world.regions);
+        gameRegions.forEach((r: any) => {
+          if (newRegions[r.id]) {
+            newRegions[r.id] = {
+              ...newRegions[r.id],
+              owner: r.owner,
+              color: r.color,
+              population: r.population,
+              militaryPower: r.militaryPower,
+              gdp: r.gdp,
+            };
+          }
+        });
+        setCurrentWorld({ ...currentWorld, regions: newRegions });
+      }
+
+      addHistory({
+        turn: updatedGame.currentTurn,
+        action: '⏪ Откат',
+        result: 'Последний ход отменён, мир возвращён к предыдущему состоянию',
+      });
+    } catch (e) {
+      console.error('Rewind failed:', e);
+      alert('Не удалось откатить ход — снапшот появляется после первого сыгранного хода.');
+    }
+
+    setLoading(false);
+  };
+
+  // Этап 2: Intervene — прервать применение оставшихся событий пачки
+  const handleIntervene = async () => {
+    if (!currentGame) return;
+    try {
+      await gameApi.intervene(currentGame.id);
+      setTurnProgress('⏸ Intervene: останавливаем после текущего события…');
+    } catch (e) {
+      console.error('Intervene failed:', e);
+    }
+  };
+
   // Выбрать страну
   const handleCountryChange = (regionId: string) => {
     setSelectedRegion(regionId);
@@ -615,6 +671,8 @@ function App() {
   // SSE real-time updates
   const [isProcessingTurn, setIsProcessingTurn] = useState(false);
   const [turnProgress, setTurnProgress] = useState<string>('');
+  // Этап 2: сложность новой игры
+  const [difficulty, setDifficulty] = useState<string>('normal');
 
   // Action type selector
   const [selectedActionType, setSelectedActionType] = useState<string | null>(null);
@@ -632,6 +690,12 @@ function App() {
     },
     onLLMProgress: (data) => {
       setTurnProgress(`Модель генерирует… ${data.chars} зн.`);
+    },
+    onJumpEvent: (data) => {
+      setTurnProgress(`Событие ${data.index + 1}/${data.total}: ${data.event?.headline || ''}`);
+    },
+    onActionVoided: (data) => {
+      setTurnProgress(`⊘ Действие отклонено: ${data.reason || data.action}`);
     },
     onTurnComplete: (data) => {
       console.log('[SSE] Turn complete:', data);
@@ -696,6 +760,14 @@ function App() {
               <span className="date-display">📅 {formatDate(currentGame?.currentDate || '1951-01-01')}</span>
               <button
                 className="btn-time-skip"
+                onClick={handleRewind}
+                title="Откат на ход назад"
+                disabled={loading}
+              >
+                ⏪
+              </button>
+              <button
+                className="btn-time-skip"
                 onClick={() => setShowJumpMenu(!showJumpMenu)}
                 title="Тайм-скип"
               >
@@ -704,6 +776,8 @@ function App() {
               {showJumpMenu && (
                 <div className="time-skip-dropdown">
                   <div className="dropdown-header">Тайм-скип</div>
+                  <button onClick={() => handleTimeSkip(0)}>⏭ До следующего события</button>
+                  <div className="dropdown-divider"></div>
                   <button onClick={() => handleTimeSkip(7)}>1 неделя</button>
                   <button onClick={() => handleTimeSkip(30)}>1 месяц</button>
                   <button onClick={() => handleTimeSkip(90)}>3 месяца</button>
@@ -734,6 +808,19 @@ function App() {
         </div>
 
         <div className="game-container">
+          {/* Этап 2: баннер прогресса хода + Intervene */}
+          {isProcessingTurn && (
+            <div className="turn-progress-banner">
+              <span className="turn-progress-text">{turnProgress || 'Обработка хода...'}</span>
+              <button
+                className="btn-intervene"
+                onClick={handleIntervene}
+                title="Прервать симуляцию после текущего события (остальные события пачки будут отменены)"
+              >
+                ⏸ Intervene
+              </button>
+            </div>
+          )}
           {/* Карта слева */}
           <div className="game-map">
             {import.meta.env.VITE_MAPBOX_TOKEN ? (
@@ -1334,7 +1421,22 @@ function App() {
         />
       )}
       {currentView === 'select-country' && selectedTemplate && (
-        <CountrySelector
+        <div>
+          <div className="difficulty-selector">
+            <label htmlFor="difficulty-select">Сложность:</label>
+            <select
+              id="difficulty-select"
+              value={difficulty}
+              onChange={(e) => setDifficulty(e.target.value)}
+            >
+              <option value="story">История (очень легко)</option>
+              <option value="easy">Легко</option>
+              <option value="normal">Обычная</option>
+              <option value="hard">Сложно</option>
+              <option value="very_hard">Очень сложно</option>
+            </select>
+          </div>
+          <CountrySelector
           template={selectedTemplate}
           onSelect={async (countryCode) => {
             setSelectedCountry(countryCode);
@@ -1353,6 +1455,7 @@ function App() {
                 world_id: worldData.worldId,
                 player_name: 'Player',
                 player_region_id: actualRegionId,
+                difficulty,
               });
 
               const game = await gameApi.get(gameResponse.game_id);
@@ -1370,6 +1473,7 @@ function App() {
           }}
           onBack={() => setCurrentView('select-template')}
         />
+        </div>
       )}
       {currentView === 'game' && renderGame()}
       {currentView === 'editor' && renderEditor()}

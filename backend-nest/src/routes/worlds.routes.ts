@@ -12,6 +12,7 @@ import { svgPathToGeoJSON } from '../utils/svg-to-geojson';
 import { BalanceAgent } from '../agents/balance-agent';
 import { getLLMRouter } from '../llm';
 import { resolveInside, safeReadJson } from '../utils/safe-path';
+import { computeBorders } from '../utils/borders';
 
 export const worldsRouter = Router();
 
@@ -98,6 +99,17 @@ worldsRouter.post('/generate', async (req, res) => {
 
     // Convert regionsObj to array and use createWithRegions (which wraps in transaction)
     // Prefix region IDs with worldId to ensure global uniqueness (since id is PRIMARY KEY)
+    // Borders are computed from actual geometry (turf) once, here — the NPC
+    // expansion logic depends on them to only spread into adjacent regions.
+    const templateCodes = Object.keys(regionsObj);
+    const bordersMap = computeBorders(
+      Object.fromEntries(
+        templateCodes
+          .filter(code => geojsonFeatures[code])
+          .map(code => [code, geojsonFeatures[code].geometry ?? geojsonFeatures[code]])
+      )
+    );
+
     const regionsArray = Object.entries(regionsObj).map(([code, region]) => ({
       id: `${worldId}_${code}`,
       worldId,
@@ -109,6 +121,8 @@ worldsRouter.post('/generate', async (req, res) => {
       gdp: region.gdp,
       militaryPower: region.militaryPower,
       flag: region.flag,
+      // GameSession keys regions by full id — store borders in the same id space
+      borders: (bordersMap[code] ?? []).map(c => `${worldId}_${c}`),
     }));
 
     worldRepository.createWithRegions(worldData, regionsArray);
@@ -272,6 +286,26 @@ worldsRouter.post('/from-map', (req, res) => {
       militaryPower,
     };
   });
+
+  // Borders from converted SVG geometry — same NPC-expansion dependency as in /generate
+  const bordersById = computeBorders(
+    Object.fromEntries(
+      regions
+        .filter((r: any) => r.geojson)
+        .map((r: any) => {
+          try {
+            const gj = JSON.parse(r.geojson);
+            return [r.id, gj.geometry ?? gj];
+          } catch {
+            return null;
+          }
+        })
+        .filter((entry: [string, any] | null): entry is [string, any] => entry !== null)
+    )
+  );
+  for (const r of regions) {
+    (r as any).borders = bordersById[r.id] ?? [];
+  }
 
   worldRepository.createWithRegions({
     id: worldId,

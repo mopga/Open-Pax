@@ -1,5 +1,5 @@
 import type { LLMProvider, Mechanic, LLMGenerateOptions, LLMResponse } from './types';
-import type { LLMConfig, MechanicConfig } from './config';
+import type { LLMFullConfig, MechanicConfig, ConsolidationConfig } from './config';
 import { OpenAICompatibleProvider } from './openai-compatible';
 import { AnthropicProvider } from './anthropic';
 import { createMiniMaxProvider } from './minimax';
@@ -31,27 +31,34 @@ export class LLMRouter {
   private cache = new Map<string, CacheEntry>();
 
   constructor(
-    private config: LLMConfig,
+    private config: LLMFullConfig,
     private providerFactory: (cfg: MechanicConfig) => LLMProvider = buildProvider,
   ) {}
+
+  /** Настройки консолидации истории (Этап 2). */
+  get consolidation(): ConsolidationConfig {
+    return this.config.consolidation;
+  }
 
   private provider(mechanic: Mechanic): LLMProvider {
     let p = this.providers.get(mechanic);
     if (!p) {
-      p = this.providerFactory(this.config[mechanic]);
+      p = this.providerFactory(this.config.mechanics[mechanic]);
       this.providers.set(mechanic, p);
     }
     return p;
   }
 
   async generate(mechanic: Mechanic, system: string, user: string, options?: LLMGenerateOptions): Promise<LLMResponse> {
-    const cfg = this.config[mechanic];
+    const cfg = this.config.mechanics[mechanic];
+    // jsonMode из конфига механики, если вызов не задал его явно
+    const opts: LLMGenerateOptions = { ...options, jsonMode: options?.jsonMode ?? cfg.jsonMode ?? false };
     const key = cfg.cache ? JSON.stringify([mechanic, system, user]) : null;
     if (key) {
       const hit = this.cache.get(key);
       if (hit && Date.now() - hit.at < CACHE_TTL_MS) return { content: hit.content, tokensUsed: hit.tokensUsed };
     }
-    const res = await this.provider(mechanic).generate(system, user, options);
+    const res = await this.provider(mechanic).generate(system, user, opts);
     if (key) {
       if (this.cache.size >= CACHE_MAX) {
         const oldest = this.cache.keys().next().value;
@@ -69,10 +76,11 @@ export class LLMRouter {
     onToken: (charsSoFar: number) => void,
     options?: LLMGenerateOptions,
   ): Promise<LLMResponse> {
-    const cfg = this.config[mechanic];
+    const cfg = this.config.mechanics[mechanic];
     const p = this.provider(mechanic);
-    if (cfg.stream && p.stream) return p.stream(system, user, onToken, options);
-    const res = await this.generate(mechanic, system, user, options);
+    const opts: LLMGenerateOptions = { ...options, jsonMode: options?.jsonMode ?? cfg.jsonMode ?? false };
+    if (cfg.stream && p.stream) return p.stream(system, user, onToken, opts);
+    const res = await this.generate(mechanic, system, user, opts);
     onToken(res.content.length);
     return res;
   }
@@ -80,7 +88,7 @@ export class LLMRouter {
   /** Описание текущей конфигурации без секретов — для /api/llm/status. */
   describe(): Record<Mechanic, { provider: string; model: string; baseUrl: string }> {
     const out = {} as Record<Mechanic, { provider: string; model: string; baseUrl: string }>;
-    for (const [m, cfg] of Object.entries(this.config) as [Mechanic, MechanicConfig][]) {
+    for (const [m, cfg] of Object.entries(this.config.mechanics) as [Mechanic, MechanicConfig][]) {
       out[m] = { provider: cfg.provider, model: cfg.model, baseUrl: cfg.baseUrl };
     }
     return out;

@@ -16,6 +16,8 @@ interface UseSSEOptions {
   onTurnComplete?: (data: any) => void;
   onGeneratingNarration?: (data: any) => void;
   onLLMProgress?: (data: { mechanic: string; chars: number }) => void;
+  onJumpEvent?: (data: { index: number; total: number; event: any }) => void;
+  onActionVoided?: (data: { action: string; reason: string }) => void;
   onError?: (error: any) => void;
   onConnected?: () => void;
 }
@@ -103,6 +105,24 @@ export function useSSE(gameId: string | null, options: UseSSEOptions) {
         options.onLLMProgress?.(data);
       } catch (err) {
         console.error('[SSE] Failed to parse llm_progress:', err);
+      }
+    });
+
+    eventSource.addEventListener('jump_event', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        options.onJumpEvent?.(data);
+      } catch (err) {
+        console.error('[SSE] Failed to parse jump_event:', err);
+      }
+    });
+
+    eventSource.addEventListener('action_voided', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        options.onActionVoided?.(data);
+      } catch (err) {
+        console.error('[SSE] Failed to parse action_voided:', err);
       }
     });
 

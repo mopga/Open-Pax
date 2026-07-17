@@ -52,7 +52,7 @@ export interface SimulationEvent {
 }
 
 export interface MapChange {
-  type: 'transfer' | 'create' | 'update' | 'delete';
+  type: 'transfer' | 'create' | 'update' | 'delete' | 'spawn_battalion' | 'move_battalion' | 'create_polity';
   /** Имя региона, как показано LLM в описании карты (основной способ адресации) */
   regionName?: string;
   /** Legacy: прямой id региона (принимается для совместимости) */
@@ -61,6 +61,8 @@ export interface MapChange {
   newOwner?: string;
   newColor?: string;
   newName?: string;
+  /** Для move_battalion: куда перемещается батальон (имя региона) */
+  targetRegionName?: string;
   feature?: MapFeature;
 }
 
@@ -77,6 +79,18 @@ export interface SimulationResult {
   narration: string;
   diplomacy: DiplomacyChat[];
   worldChanges: WorldChanges;
+  /** Нереалистичные действия игрока, отклонённые симуляцией, с пояснением */
+  voided: VoidedAction[];
+  /** ИИ инициирует дипломатический чат (полноценная обработка — Этап 3) */
+  startChat?: { polityName: string; topic: string }[];
+  /** Для auto-jump: фактическая целевая дата, выбранная симуляцией */
+  targetDate?: string;
+}
+
+/** Действие игрока, отклонённое как нереалистичное («захватить мир за день») */
+export interface VoidedAction {
+  action: string;
+  reason: string;
 }
 
 export interface DiplomacyChat {

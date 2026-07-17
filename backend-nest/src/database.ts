@@ -168,6 +168,23 @@ export function initDatabase() {
     }
   }
 
+  // Migration (Этап 2): сложность игры (story/easy/normal/hard/very_hard)
+  try {
+    db.exec("ALTER TABLE games ADD COLUMN difficulty TEXT DEFAULT 'normal'");
+    console.log('[Migration] Added difficulty to games');
+  } catch (e: any) {
+    if (!e.message.includes('duplicate column name')) { /* уже есть */ }
+  }
+
+  // Migration (Этап 2): консолидированная история + до какого раунда она покрывает
+  try {
+    db.exec("ALTER TABLE games ADD COLUMN consolidated_history TEXT DEFAULT ''");
+    db.exec("ALTER TABLE games ADD COLUMN consolidated_up_to INTEGER DEFAULT 0");
+    console.log('[Migration] Added consolidation columns to games');
+  } catch (e: any) {
+    if (!e.message.includes('duplicate column name')) { /* уже есть */ }
+  }
+
   // Players table
   db.exec(`
     CREATE TABLE IF NOT EXISTS players (

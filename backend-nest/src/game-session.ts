@@ -11,9 +11,9 @@ import { GameController } from './agents';
 import { PromptEngine } from './prompt-builder';
 import { worldRepository, gameRepository, relationshipRepository } from './repositories';
 import db from './database';
-import { SimulationEngine, ActionParser, type ValidatedAction, type SimulationDelta, type DeterministicEvent, type RelationshipChange } from './core/simulation';
 import { RelationshipMatrix } from './core/RelationshipMatrix';
 import { RegionResolver, PolityResolver } from './utils/name-resolver';
+import { Difficulty, normalizeDifficulty } from './prompts/difficulty';
 import type { MapChange } from './prompts/types';
 
 export interface RegionState {
@@ -85,6 +85,14 @@ export interface SaveData {
   players: PlayerInfo[];
   regions: [string, RegionState][]; // [regionId, state] pairs
   relationships?: Record<string, Record<string, string>>;
+  /** Этап 2: история ходов — иначе rewind/лоад теряет контекст для LLM */
+  actions?: ActionRecord[];
+  results?: TurnResultRecord[];
+  /** Этап 2: консолидированная история и граница её покрытия */
+  consolidatedHistory?: string;
+  consolidatedUpTo?: number;
+  /** Этап 2: сложность игры */
+  difficulty?: Difficulty;
 }
 
 export class GameSession {
@@ -97,10 +105,7 @@ export class GameSession {
   // Session-specific agents (not shared!)
   private gameController: GameController;
   private promptEngine: PromptEngine;
-
-  // Deterministic simulation engine (NO LLM)
-  private simulationEngine: SimulationEngine | null = null;
-  private actionParser: ActionParser;
+  private llm: LLMRouter;
 
   // Game state
   private players: PlayerInfo[] = [];
@@ -118,6 +123,13 @@ export class GameSession {
 
   /** Полития игрока по конвенции polityId (см. utils/name-resolver.ts) */
   private playerPolityId: string = 'player';
+  /** Сложность игры (Этап 2) */
+  private difficulty: Difficulty = 'normal';
+  /** Консолидированная история ранних раундов и граница её покрытия (Этап 2) */
+  private consolidatedHistory: string = '';
+  private consolidatedUpTo: number = 0;
+  /** Флаг «Intervene»: остановить применение оставшихся событий пачки (Этап 2) */
+  private interveneRequested: boolean = false;
   private actions: ActionRecord[] = [];
   private results: TurnResultRecord[] = [];
   private status: 'waiting' | 'playing' | 'finished' = 'playing';
@@ -127,7 +139,7 @@ export class GameSession {
 
   /**
    * Per-session mutex around any read-modify-write sequence that mutates
-   * `this.regions` / `this.currentTurn` / `this.currentDate` (applyTurn,
+   * `this.regions` / `this.currentTurn` / `this.currentDate` (processNextAction,
    * processNextAction, processAllPendingActions, syncRegionsToDB after a
    * write, etc.).
    *
@@ -174,9 +186,9 @@ export class GameSession {
   constructor(gameId: string, worldId: string, provider: LLMRouter) {
     this.id = gameId;
     this.worldId = worldId;
+    this.llm = provider;
     this.gameController = new GameController(provider);
     this.promptEngine = new PromptEngine(provider);
-    this.actionParser = new ActionParser();
   }
 
   /**
@@ -196,15 +208,6 @@ export class GameSession {
   }
 
   /**
-   * Initialize simulation engine with current regions
-   */
-  private initSimulationEngine(): void {
-    if (!this.simulationEngine) {
-      this.simulationEngine = new SimulationEngine(this.regions);
-    }
-  }
-
-  /**
    * Build game data object for prompt engine
    */
   private buildGameData(): any {
@@ -220,6 +223,9 @@ export class GameSession {
       id: this.id,
       currentDate: this.currentDate,
       currentTurn: this.currentTurn,
+      difficulty: this.difficulty,
+      consolidatedHistory: this.consolidatedHistory,
+      consolidationTail: this.llm.consolidation.keepRawTail,
       world: {
         name: this.worldName,
         basePrompt: this.worldBasePrompt,
@@ -241,7 +247,7 @@ export class GameSession {
   /**
    * Initialize session from existing world data
    */
-  async initialize(playerRegionId: string, playerName: string, playerColor: string = '#FF0000'): Promise<string> {
+  async initialize(playerRegionId: string, playerName: string, playerColor: string = '#FF0000', difficulty?: string): Promise<string> {
     // Load world from DB
     const world = worldRepository.findById(this.worldId);
     if (!world) throw new Error('World not found');
@@ -250,6 +256,7 @@ export class GameSession {
     this.worldName = world.name || '';
     this.worldBasePrompt = world.base_prompt || '';
     this.worldStartDate = world.start_date || '1951-01-01';
+    this.difficulty = normalizeDifficulty(difficulty);
 
     // Load all regions into session state
     for (const region of world.regions) {
@@ -316,10 +323,16 @@ export class GameSession {
     players: PlayerInfo[];
     regionStates?: [string, RegionState][];
     basePrompt?: string;
+    difficulty?: string;
+    consolidatedHistory?: string;
+    consolidatedUpTo?: number;
   }): void {
     this.currentTurn = data.currentTurn;
     this.currentDate = data.currentDate;
     this.players = data.players || [];
+    this.difficulty = normalizeDifficulty(data.difficulty);
+    this.consolidatedHistory = data.consolidatedHistory || '';
+    this.consolidatedUpTo = data.consolidatedUpTo || 0;
 
     // Cache world metadata for prompts BEFORE buildGameData runs below
     // (bug fix: lore never reached the LLM because buildGameData sent basePrompt: '').
@@ -429,187 +442,6 @@ export class GameSession {
   }
 
   /**
-   * Apply a turn - main game logic entry point
-   * Uses SimulationEngine for deterministic calculations, LLM only for narration
-   */
-  async applyTurn(playerAction: string, jumpDays: number): Promise<{
-    turn: number;
-    narration: string;
-    countryResponse: string;
-    events: string[];
-    objects: any[];
-    validationErrors?: { action: string; reason: string }[];
-  }> {
-    const player = this.players[0];
-    if (!player) throw new Error('No player in session');
-
-    const playerRegion = this.regions.get(player.regionId);
-    if (!playerRegion) throw new Error('Player region not found');
-
-    const timeJump = jumpDays || 30;
-
-    // Broadcast turn start
-    this.broadcast('turn_start', { turn: this.currentTurn, action: playerAction });
-
-    // Initialize simulation engine
-    this.initSimulationEngine();
-
-    // Parse player action into ValidatedAction (with validation)
-    const parseWithValidation = (text: string) => this.actionParser.parse(text, this.regions, (action) =>
-      this.simulationEngine!.validateAction(action, player.id),
-      this.playerPolityId
-    );
-    const actions = playerAction.split(' | ').map(parseWithValidation).filter((a): a is ValidatedAction => a !== null);
-
-    // Collect failed actions (validation errors)
-    const failedActions = actions.filter(a => !a.validation?.valid);
-    const validActions = actions.filter(a => a.validation?.valid);
-
-    // Log failed actions
-    for (const action of failedActions) {
-      console.warn('[GameSession] Invalid action:', action.validation?.reason);
-    }
-
-    // Process player actions through simulation engine
-    const allNarrativeFacts: string[] = [];
-    const allEvents: DeterministicEvent[] = [];
-    const allRelationshipChanges: RelationshipChange[] = [];
-
-    for (const action of validActions) {
-      // Apply action through simulation engine
-      const delta = this.simulationEngine!.applyAction(action, timeJump, this.relationships);
-
-      // Collect facts and events
-      allNarrativeFacts.push(...delta.narrativeFacts);
-      allEvents.push(...delta.events);
-      if (delta.relationshipChanges) allRelationshipChanges.push(...delta.relationshipChanges);
-
-      // Apply delta to regions
-      this.applySimulationDelta(delta);
-      // Sync updated regions back to engine for next action/NPC decision
-      this.simulationEngine!.syncRegions(this.regions);
-    }
-
-    // Process NPC turns through simulation engine
-    // NPC = любая полития, кроме игрока и 'neutral'
-    const npcIds = new Set<string>();
-    for (const region of this.regions.values()) {
-      if (region.owner !== 'neutral' && region.owner !== this.playerPolityId) {
-        npcIds.add(region.owner);
-      }
-    }
-
-    for (const npcId of npcIds) {
-      const npcDelta = this.simulationEngine!.processNPCTurn(npcId, timeJump, this.relationships);
-      allNarrativeFacts.push(...npcDelta.narrativeFacts);
-      allEvents.push(...npcDelta.events);
-      if (npcDelta.relationshipChanges) allRelationshipChanges.push(...npcDelta.relationshipChanges);
-      this.applySimulationDelta(npcDelta);
-      // Sync after each NPC turn too
-      this.simulationEngine!.syncRegions(this.regions);
-    }
-
-    // Apply natural changes ONCE per turn (not per action)
-    const naturalDelta = this.simulationEngine!.applyTurnNaturalChanges(timeJump);
-    this.applySimulationDelta(naturalDelta);
-    // Sync after natural changes too
-    this.simulationEngine!.syncRegions(this.regions);
-
-    // Apply random events
-    const randomEvents = this.applyRandomEvents();
-
-    // Broadcast NPC processing complete
-    this.broadcast('processing_npcs_complete', { turn: this.currentTurn, npcCount: npcIds.size });
-
-    // Generate narration from facts (LLM only for this) - this is the slow part
-    this.broadcast('generating_narration', { turn: this.currentTurn });
-    const narration = await this.generateNarration(allNarrativeFacts, timeJump);
-    this.broadcast('narration_generated', { turn: this.currentTurn });
-
-    // Detect and create objects
-    const createdObjects = this.detectAndCreateObjects(playerRegion, playerAction);
-
-    // Record action
-    const actionRecord: ActionRecord = {
-      id: shortId(),
-      playerId: player.id,
-      turn: this.currentTurn,
-      text: playerAction,
-      createdAt: new Date().toISOString(),
-    };
-    this.actions.push(actionRecord);
-
-    // Persist action to DB
-    gameRepository.addAction({
-      id: actionRecord.id,
-      gameId: this.id,
-      playerId: player.id,
-      turn: this.currentTurn,
-      text: playerAction,
-    });
-
-    // Create turn result
-    const turnResult: TurnResultRecord = {
-      id: shortId(),
-      turn: this.currentTurn,
-      narration,
-      countryResponse: actions.map(a => a.description).join('\n'),
-      events: [...allEvents.map(e => e.headline), ...randomEvents, ...createdObjects.map(o => o.text)],
-    };
-    this.results.push(turnResult);
-
-    // Persist turn result to DB
-    gameRepository.addTurnResult({
-      id: turnResult.id,
-      gameId: this.id,
-      turn: this.currentTurn,
-      narration: turnResult.narration,
-      countryResponse: turnResult.countryResponse,
-      events: turnResult.events,
-    });
-
-    // Persist ALL region changes to DB (FIXES: was only persisting player region)
-    await this.syncRegionsToDB();
-
-    // Persist relationship changes to DB
-    if (allRelationshipChanges.length > 0) {
-      relationshipRepository.bulkUpsert(this.worldId, allRelationshipChanges);
-    }
-
-    // Advance turn
-    this.currentTurn++;
-    const date = new Date(this.currentDate);
-    date.setDate(date.getDate() + timeJump);
-    this.currentDate = date.toISOString().split('T')[0];
-
-    // Persist turn and date to DB in single operation
-    gameRepository.updateTurnAndDate(this.id, this.currentTurn, this.currentDate);
-
-    // Broadcast turn complete
-    this.broadcast('turn_complete', {
-      turn: this.currentTurn - 1,
-      narration: turnResult.narration,
-      countryResponse: turnResult.countryResponse,
-      events: turnResult.events,
-      objects: playerRegion.objects,
-      newTurn: this.currentTurn,
-      newDate: this.currentDate,
-    });
-
-    return {
-      turn: this.currentTurn - 1,
-      narration: turnResult.narration,
-      countryResponse: turnResult.countryResponse,
-      events: turnResult.events,
-      objects: playerRegion.objects,
-      validationErrors: failedActions.map(a => ({
-        action: a.description,
-        reason: a.validation?.reason || 'Unknown error'
-      })),
-    };
-  }
-
-  /**
    * Build name resolvers from the current region state.
    * "ИИ по именам, движок по id": LLM видит только имена, движок резолвит их
    * обратно в regionId/polityId (bug fix: раньше LLM просили вернуть regionId,
@@ -681,6 +513,75 @@ export class GameSession {
   }
 
   /**
+   * Гибкий резолвинг региона: id → имя (fuzzy) → override-форматы оригинала
+   * ('random', 'coastal', 'west/east/north/south' и русские аналоги, 'target X').
+   */
+  private resolveRegionFlexible(key: string | undefined | null, resolver: RegionResolver): RegionState | undefined {
+    if (!key) return undefined;
+    const direct = this.regions.get(key) || resolver.resolve(key);
+    if (direct) return this.regions.get(direct.id);
+
+    const norm = key.trim().toLowerCase();
+    const all = Array.from(this.regions.values());
+    if (all.length === 0) return undefined;
+
+    // Детерминированный «случайный» выбор — от длины строки, чтобы ход был воспроизводим
+    const pickDeterministic = (pool: RegionState[]) =>
+      pool[key.length % pool.length];
+
+    if (norm === 'random') return pickDeterministic(all);
+
+    if (norm === 'coastal') {
+      const coastal = all.filter(r => (r.objects || []).some((o: any) => o.type === 'port'));
+      return pickDeterministic(coastal.length > 0 ? coastal : all);
+    }
+
+    if (norm.startsWith('target ')) {
+      const inner = this.regions.get(norm.slice(7)) || resolver.resolve(key.slice(7));
+      return inner ? this.regions.get(inner.id) : undefined;
+    }
+
+    const dirMap: Record<string, 'west' | 'east' | 'north' | 'south'> = {
+      west: 'west', western: 'west', запад: 'west',
+      east: 'east', eastern: 'east', восток: 'east',
+      north: 'north', northern: 'north', север: 'north',
+      south: 'south', southern: 'south', юг: 'south',
+    };
+    const dir = Object.entries(dirMap).find(([k]) => norm === k || norm.startsWith(k + ' '))?.[1];
+    if (dir) {
+      const withCentroid = all
+        .map(r => ({ r, c: this.svgCentroid(r.svgPath) }))
+        .filter((x): x is { r: RegionState; c: { x: number; y: number } } => !!x.c);
+      if (withCentroid.length === 0) return pickDeterministic(all);
+      withCentroid.sort((a, b) => {
+        switch (dir) {
+          case 'west': return a.c.x - b.c.x;
+          case 'east': return b.c.x - a.c.x;
+          case 'north': return a.c.y - b.c.y; // SVG: y растёт вниз
+          case 'south': return b.c.y - a.c.y;
+        }
+      });
+      return withCentroid[0].r;
+    }
+
+    return undefined;
+  }
+
+  /** Центроид региона из SVG-пути (среднее всех координат). */
+  private svgCentroid(path: string | undefined): { x: number; y: number } | null {
+    if (!path) return null;
+    const nums = path.match(/-?\d+\.?\d*/g);
+    if (!nums || nums.length < 4) return null;
+    let sumX = 0, sumY = 0, count = 0;
+    for (let i = 0; i < nums.length; i += 2) {
+      sumX += Number(nums[i]);
+      sumY += Number(nums[i + 1] || 0);
+      count++;
+    }
+    return count > 0 ? { x: sumX / count, y: sumY / count } : null;
+  }
+
+  /**
    * Apply mapChanges from a single simulation event (transfer/create/update/delete).
    * Регионы и политии адресуются ИМЕНАМИ (так их видит LLM в описании карты).
    */
@@ -690,13 +591,11 @@ export class GameSession {
 
     for (const change of mapChanges) {
       const regionKey = change.regionName || change.regionId;
-      const region = (regionKey && this.regions.get(regionKey)) || resolvers.regions.resolve(regionKey);
-      if (!region) {
+      const liveRegion = this.resolveRegionFlexible(regionKey, resolvers.regions);
+      if (!liveRegion) {
         console.warn('[GameSession] mapChange: region not resolved:', regionKey);
         continue;
       }
-      const liveRegion = this.regions.get(region.id);
-      if (!liveRegion) continue;
 
       switch (change.type) {
         case 'transfer': {
@@ -718,6 +617,7 @@ export class GameSession {
           liveRegion.color = '#888888';
           break;
         }
+        case 'create_polity':
         case 'create': {
           // Создание новой политии: регион получает нового владельца (+ цвет)
           const ownerResolution = resolvers.polities.resolve(change.newOwner || change.newName);
@@ -727,83 +627,31 @@ export class GameSession {
           }
           break;
         }
+        case 'spawn_battalion': {
+          liveRegion.objects = liveRegion.objects || [];
+          const c = this.svgCentroid(liveRegion.svgPath);
+          liveRegion.objects.push({
+            id: shortId(),
+            type: 'battalion',
+            name: change.feature?.name || `Батальон ${liveRegion.name} ${(liveRegion.objects.filter((o: any) => o.type === 'battalion').length) + 1}`,
+            x: c?.x ?? 500,
+            y: c?.y ?? 400,
+            level: 1,
+          });
+          break;
+        }
+        case 'move_battalion': {
+          const target = this.resolveRegionFlexible(change.targetRegionName, resolvers.regions);
+          if (!target) break;
+          const idx = (liveRegion.objects || []).findIndex((o: any) => o.type === 'battalion');
+          if (idx >= 0) {
+            const [b] = liveRegion.objects.splice(idx, 1);
+            target.objects = target.objects || [];
+            target.objects.push(b);
+          }
+          break;
+        }
       }
-    }
-  }
-
-  /**
-   * Apply SimulationDelta to regions
-   */
-  private applySimulationDelta(delta: SimulationDelta): void {
-    // Apply region changes
-    for (const change of delta.regionChanges) {
-      const region = this.regions.get(change.regionId);
-      if (region) {
-        if (change.newOwner) region.owner = change.newOwner;
-        if (change.newColor) region.color = change.newColor;
-        if (change.status) region.status = change.status as any;
-      }
-    }
-
-    // Apply GDP changes
-    for (const [regionId, change] of Object.entries(delta.gdpChanges)) {
-      const region = this.regions.get(regionId);
-      if (region) {
-        region.gdp = Math.max(1, region.gdp + change);
-      }
-    }
-
-    // Apply population changes
-    for (const [regionId, change] of Object.entries(delta.populationChanges)) {
-      const region = this.regions.get(regionId);
-      if (region) {
-        region.population = Math.max(1000, region.population + change);
-      }
-    }
-
-    // Apply military changes
-    for (const [regionId, change] of Object.entries(delta.militaryChanges)) {
-      const region = this.regions.get(regionId);
-      if (region) {
-        region.militaryPower = Math.max(0, region.militaryPower + change);
-      }
-    }
-
-    // Add new objects
-    for (const obj of delta.newObjects) {
-      const region = this.regions.get(obj.owner || '');
-      if (region) {
-        region.objects = region.objects || [];
-        region.objects.push(obj);
-      }
-    }
-  }
-
-  /**
-   * Generate narration from narrative facts using LLM
-   */
-  private async generateNarration(facts: string[], jumpDays: number): Promise<string> {
-    if (facts.length === 0) {
-      return `Мир развивался ${jumpDays} дней. Изменений не произошло.`;
-    }
-
-    try {
-      const player = this.players[0];
-      const playerRegion = this.regions.get(player?.regionId);
-      const playerPolity = playerRegion?.name || player?.name || 'Unknown';
-
-      const result = await this.promptEngine.generateNarration(
-        facts,
-        jumpDays,
-        this.currentDate,
-        playerPolity,
-        'russian'
-      );
-
-      return result || `Произошло ${facts.length} событий за ${jumpDays} дней.`;
-    } catch (e) {
-      console.error('[GameSession] Failed to generate narration:', e);
-      return `Произошло ${facts.length} событий за ${jumpDays} дней.`;
     }
   }
 
@@ -889,9 +737,8 @@ export class GameSession {
       const npcRegion = this.regions.get(npcRegionId);
       if (!npcRegion) continue;
 
-      // Build neighbors: реальные границы, если посчитаны (пока borders пусты
-      // у большинства миров — fallback на первые 8 регионов; настоящее
-      // соседство появится на этапе с turf.js).
+      // Build neighbors: реальные границы, посчитанные turf при генерации мира;
+      // для старых миров (borders пуст) — прежний fallback на первые 8 регионов.
       const bordered = (npcRegion.borders || [])
         .map(id => this.regions.get(id))
         .filter((r): r is RegionState => !!r && r.id !== npcRegionId);
@@ -1024,6 +871,11 @@ export class GameSession {
       players: this.players,
       regions: Array.from(this.regions.entries()),
       relationships: this.relationships.toJSON(),
+      actions: this.actions,
+      results: this.results,
+      consolidatedHistory: this.consolidatedHistory,
+      consolidatedUpTo: this.consolidatedUpTo,
+      difficulty: this.difficulty,
     };
 
     const stmt = db.prepare(`
@@ -1063,13 +915,146 @@ export class GameSession {
       this.relationships = RelationshipMatrix.fromJSON(saveData.relationships);
     }
 
+    // Этап 2: история, консолидация, сложность (без них rewind терял контекст)
+    this.actions = saveData.actions || [];
+    this.results = saveData.results || [];
+    this.consolidatedHistory = saveData.consolidatedHistory || '';
+    this.consolidatedUpTo = saveData.consolidatedUpTo || 0;
+    this.difficulty = normalizeDifficulty(saveData.difficulty);
+    this.interveneRequested = false;
+    // Очередь — про «будущую» ветку времени, после отката она невалидна
+    this.pendingActions = [];
+
     // Update game in DB
     gameRepository.updateTurnAndDate(this.id, this.currentTurn, this.currentDate);
+    gameRepository.updateConsolidation(this.id, this.consolidatedHistory, this.consolidatedUpTo);
 
     // Sync restored regions to DB
     this.syncRegionsToDB();
 
     console.log('[GameSession] Loaded from save, turn:', this.currentTurn);
+  }
+
+  // =========================================================================
+  // Этап 2: Rewind-снапшоты, Intervene, консолидация истории
+  // =========================================================================
+
+  /**
+   * Снапшот перед ходом — основа rewind. Хранится в saves под служебным
+   * именем '__rewind__'; держим только один (последний) снапшот на игру.
+   */
+  private saveRewindSnapshot(): void {
+    const saveData: SaveData = {
+      currentTurn: this.currentTurn,
+      currentDate: this.currentDate,
+      players: this.players,
+      regions: Array.from(this.regions.entries()),
+      relationships: this.relationships.toJSON(),
+      actions: this.actions,
+      results: this.results,
+      consolidatedHistory: this.consolidatedHistory,
+      consolidatedUpTo: this.consolidatedUpTo,
+      difficulty: this.difficulty,
+    };
+    const id = shortId();
+    db.prepare(`
+      INSERT INTO saves (id, game_id, name, current_turn, current_date, data, saved_at)
+      VALUES (?, ?, '__rewind__', ?, ?, ?, ?)
+    `).run(id, this.id, this.currentTurn, this.currentDate, JSON.stringify(saveData), new Date().toISOString());
+
+    // Держим только последний rewind-снапшот
+    db.prepare("DELETE FROM saves WHERE game_id = ? AND name = '__rewind__' AND id != ?").run(this.id, id);
+  }
+
+  /**
+   * Откат на ход назад: восстанавливает снапшот, снятый перед последним ходом,
+   * и вычищает «будущие» записи действий/результатов из БД.
+   * Возвращает новое состояние или null, если откатываться некуда.
+   */
+  rewind(): { turn: number; date: string } | null {
+    const save = db.prepare(
+      "SELECT * FROM saves WHERE game_id = ? AND name = '__rewind__' ORDER BY saved_at DESC LIMIT 1"
+    ).get(this.id) as any;
+    if (!save) return null;
+
+    let saveData: SaveData;
+    try {
+      saveData = JSON.parse(save.data);
+    } catch (e) {
+      console.error('[GameSession] Rewind: повреждённый снапшот:', e);
+      return null;
+    }
+
+    this.loadFromSave(saveData);
+    // Результат откаченного хода записан с turn == восстановленному currentTurn
+    gameRepository.deleteAfterTurn(this.id, this.currentTurn - 1);
+    // Снапшот потреблён — повторный rewind подряд невозможен
+    db.prepare('DELETE FROM saves WHERE id = ?').run(save.id);
+
+    this.broadcast('turn_complete', {
+      turn: this.currentTurn,
+      narration: '⏪ Откат на ход назад',
+      events: ['⏪ Ход отменён, мир возвращён к предыдущему состоянию'],
+      newTurn: this.currentTurn,
+      newDate: this.currentDate,
+      rewound: true,
+    });
+
+    console.log('[GameSession] Rewound to turn:', this.currentTurn, 'date:', this.currentDate);
+    return { turn: this.currentTurn, date: this.currentDate };
+  }
+
+  /** Есть ли куда откатиться (для UI-кнопки). */
+  canRewind(): boolean {
+    const row = db.prepare(
+      "SELECT 1 FROM saves WHERE game_id = ? AND name = '__rewind__' LIMIT 1"
+    ).get(this.id);
+    return !!row;
+  }
+
+  /**
+   * Intervene: попросить движок остановиться после текущего события
+   * (оставшиеся события пачки будут откачены — просто не применятся).
+   */
+  requestIntervene(): void {
+    this.interveneRequested = true;
+    console.log('[GameSession] Intervene requested');
+  }
+
+  /**
+   * Консолидация истории (механика оригинала): когда раундов накопилось
+   * больше consolidation.chunkSize поверх consolidatedUpTo — LLM-саммари
+   * старых раундов дописывается в consolidated_history, а в промпты
+   * подаётся саммари + сырой хвост последних раундов.
+   */
+  private async maybeConsolidate(): Promise<void> {
+    const cfg = this.llm.consolidation;
+    const lastTurn = this.currentTurn - 1;
+    if (lastTurn < cfg.startRound) return;
+    if (lastTurn - this.consolidatedUpTo < cfg.chunkSize) return;
+
+    const toSummarize = this.results.filter(
+      r => r.turn > this.consolidatedUpTo && r.turn <= lastTurn
+    );
+    if (toSummarize.length === 0) return;
+
+    console.log(`[GameSession] Consolidating rounds ${this.consolidatedUpTo + 1}..${lastTurn} (${toSummarize.length} раундов)`);
+
+    const system = 'Ты — летописец стратегической игры. Сжимай историю, сохраняя факты.';
+    const user = `Ниже — летопись уже прожитых раундов стратегической игры (раунды ${this.consolidatedUpTo + 1}–${lastTurn}).
+${this.consolidatedHistory ? `\n[Уже консолидированная ранняя история]\n${this.consolidatedHistory}\n` : ''}
+[Новые раунды для сжатия]
+${toSummarize.map(r => `Раунд ${r.turn}: ${r.narration}`).join('\n\n')}
+
+Сожми ВСЮ историю (старый конспект + новые раунды) в связный конспект до ~400 слов.
+Обязательно сохрани: смены владельцев регионов, войны и мирные договоры, союзы,
+ключевые решения игрока и их последствия. Не добавляй новых фактов.`;
+
+    const res = await this.llm.generate('consolidation', system, user, { temperature: 0.3, maxTokens: 2000 });
+    this.consolidatedHistory = res.content;
+    this.consolidatedUpTo = lastTurn;
+    gameRepository.updateConsolidation(this.id, this.consolidatedHistory, this.consolidatedUpTo);
+    console.log('[GameSession] Consolidated history updated, length:', this.consolidatedHistory.length);
   }
 
   /**
@@ -1156,14 +1141,20 @@ export class GameSession {
     console.log('[GameSession] Processing action:', action.id, 'text:', action.text.substring(0, 50));
 
     try {
-      // Call the existing applyTurn logic but for a single action
       const player = this.players[0];
       if (!player) throw new Error('No player in session');
 
       const playerRegion = this.regions.get(player.regionId);
       if (!playerRegion) throw new Error('Player region not found');
 
-      const timeJump = jumpDays || 30;
+      // Этап 2: снапшот для rewind — ДО любых мутаций состояния
+      this.saveRewindSnapshot();
+
+      // jumpDays <= 0 — auto-jump «к следующему важному событию» (горизонт — год)
+      const autoJump = jumpDays <= 0;
+      const timeJump = autoJump ? 365 : jumpDays;
+
+      this.broadcast('turn_start', { turn: this.currentTurn, action: action.text });
 
       // Build game data for prompt engine
       const gameData = this.buildGameData();
@@ -1173,21 +1164,47 @@ export class GameSession {
         gameData,
         [action.text], // Single action as array
         timeJump,
-        (chars) => this.broadcast('llm_progress', { mechanic: 'jump', chars })
+        (chars) => this.broadcast('llm_progress', { mechanic: 'jump', chars }),
+        autoJump
       );
 
-      // Apply world changes from simulation (верхнеуровневый словарь)
-      if (promptResult.worldChanges) {
-        this.applyWorldChanges(promptResult.worldChanges);
+      // Нереалистичные действия, отклонённые симуляцией
+      const voided = promptResult.voided || [];
+      for (const v of voided) {
+        this.broadcast('action_voided', { turn: this.currentTurn, action: v.action, reason: v.reason });
       }
 
-      // Apply mapChanges from each simulation event (bug fix: раньше события
-      // с mapChanges вообще игнорировались — применялся только worldChanges,
-      // да и тот требовал regionId, которых LLM никогда не видел)
-      for (const event of promptResult.events || []) {
+      // События применяются ПО ОДНОМУ с SSE-рассылкой — между ними игрок
+      // может нажать Intervene и откатить остаток пачки (Этап 2).
+      this.interveneRequested = false;
+      const events = promptResult.events || [];
+      const appliedEvents: typeof events = [];
+      let intervened = false;
+      for (let i = 0; i < events.length; i++) {
+        if (this.interveneRequested) {
+          intervened = true;
+          break;
+        }
+        const event = events[i];
         if (event.mapChanges && event.mapChanges.length > 0) {
           this.applyMapChanges(event.mapChanges);
         }
+        appliedEvents.push(event);
+        this.broadcast('jump_event', { turn: this.currentTurn, index: i, total: events.length, event });
+        // Пауза, чтобы фронт успел показать событие (только при живом SSE)
+        if (this.sseBroadcaster && i < events.length - 1) {
+          await new Promise(r => setTimeout(r, 350));
+        }
+      }
+      if (intervened) {
+        console.log(`[GameSession] Intervene: применено ${appliedEvents.length}/${events.length} событий`);
+      }
+
+      // Итоговые worldChanges — только если пачка применена целиком;
+      // при Intervene итоговое состояние недостижимо, применяем только
+      // mapChanges уже показанных событий.
+      if (!intervened && promptResult.worldChanges) {
+        this.applyWorldChanges(promptResult.worldChanges);
       }
 
       // Detect and create objects
@@ -1221,14 +1238,16 @@ export class GameSession {
         text: action.text,
       });
 
-      // Create turn result (включаем заголовки событий из LLM-симуляции)
-      const llmEventHeadlines = (promptResult.events || []).map((e: any) => e.headline).filter(Boolean);
+      // Create turn result (заголовки только ПРИМЕНЁННЫХ событий + voided)
+      const llmEventHeadlines = appliedEvents.map((e: any) => e.headline).filter(Boolean);
+      const voidedHeadlines = voided.map(v => `⊘ Отклонено: ${v.action}${v.reason ? ` — ${v.reason}` : ''}`);
+      if (intervened) llmEventHeadlines.push('⏸ Симуляция прервана игроком (Intervene)');
       const turnResult: TurnResultRecord = {
         id: shortId(),
         turn: this.currentTurn,
         narration: promptResult.narration,
         countryResponse: promptResult.convertedActions.map((a: any) => a.text).join('\n'),
-        events: [...llmEventHeadlines, ...npcEvents, ...randomEvents, ...createdObjects.map(o => o.text)],
+        events: [...voidedHeadlines, ...llmEventHeadlines, ...npcEvents, ...randomEvents, ...createdObjects.map(o => o.text)],
       };
       this.results.push(turnResult);
 
@@ -1260,15 +1279,43 @@ export class GameSession {
 
       // Advance turn and date
       this.currentTurn++;
-      const date = new Date(this.currentDate);
-      date.setDate(date.getDate() + timeJump);
-      this.currentDate = date.toISOString().split('T')[0];
+      const lastEventDate = appliedEvents
+        .map(e => e.date)
+        .filter(d => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}/.test(d))
+        .sort()
+        .pop();
+      if (intervened && lastEventDate) {
+        // Пачка откачена частично — дата по последнему применённому событию
+        this.currentDate = lastEventDate;
+      } else if (autoJump && promptResult.targetDate && /^\d{4}-\d{2}-\d{2}/.test(promptResult.targetDate)) {
+        this.currentDate = promptResult.targetDate;
+      } else {
+        const date = new Date(this.currentDate);
+        date.setDate(date.getDate() + timeJump);
+        this.currentDate = date.toISOString().split('T')[0];
+      }
 
       // Now set periodEnd (after advancing)
       action.result.periodEnd = this.currentDate;
 
       // Persist turn and date to DB in single operation
       gameRepository.updateTurnAndDate(this.id, this.currentTurn, this.currentDate);
+
+      // Этап 2: консолидация истории — не должна ронять успешный ход
+      try {
+        await this.maybeConsolidate();
+      } catch (e) {
+        console.error('[GameSession] Consolidation failed (turn kept):', e);
+      }
+
+      this.broadcast('turn_complete', {
+        turn: this.currentTurn - 1,
+        narration: turnResult.narration,
+        events: turnResult.events,
+        newTurn: this.currentTurn,
+        newDate: this.currentDate,
+        intervened,
+      });
 
       console.log('[GameSession] Action processed, new date:', this.currentDate);
       return action;

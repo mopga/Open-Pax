@@ -171,6 +171,7 @@ export interface CreateGameRequest {
   world_id: string;
   player_name: string;
   player_region_id: string;
+  difficulty?: string;
 }
 
 export interface CreateGameResponse {

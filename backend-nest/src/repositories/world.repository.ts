@@ -80,10 +80,10 @@ export const worldRepository = {
     }));
   },
 
-  addRegion: (region: { id: string; worldId: string; name: string; svgPath?: string; geojson?: string; color?: string; owner?: string; population?: number; gdp?: number; militaryPower?: number; flag?: string }) => {
+  addRegion: (region: { id: string; worldId: string; name: string; svgPath?: string; geojson?: string; color?: string; owner?: string; population?: number; gdp?: number; militaryPower?: number; flag?: string; borders?: string[] }) => {
     const stmt = db.prepare(`
-      INSERT INTO world_regions (id, world_id, name, svg_path, geojson, color, owner, population, gdp, military_power, flag)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO world_regions (id, world_id, name, svg_path, geojson, color, owner, population, gdp, military_power, flag, borders)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       region.id,
@@ -96,7 +96,8 @@ export const worldRepository = {
       region.population || 1000000,
       region.gdp || 100,
       region.militaryPower || 100,
-      region.flag || null
+      region.flag || null,
+      JSON.stringify(region.borders ?? [])
     );
     return region;
   },
@@ -162,6 +163,7 @@ export const worldRepository = {
           gdp: region.gdp,
           militaryPower: region.militaryPower,
           flag: region.flag,
+          borders: region.borders,
         });
       }
     });

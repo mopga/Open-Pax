@@ -15,17 +15,18 @@ export interface PlayerRecord {
 }
 
 export const gameRepository = {
-  create: (game: { id: string; worldId: string; currentTurn?: number; maxTurns?: number; status?: string }) => {
+  create: (game: { id: string; worldId: string; currentTurn?: number; maxTurns?: number; status?: string; difficulty?: string }) => {
     const stmt = db.prepare(`
-      INSERT INTO games (id, world_id, current_turn, max_turns, status)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO games (id, world_id, current_turn, max_turns, status, difficulty)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       game.id,
       game.worldId,
       game.currentTurn || 1,
       game.maxTurns || 100,
-      game.status || 'playing'
+      game.status || 'playing',
+      game.difficulty || 'normal'
     );
     return game;
   },
@@ -107,5 +108,17 @@ export const gameRepository = {
   updateTurnAndDate: (gameId: string, turn: number, date: string) => {
     const stmt = db.prepare('UPDATE games SET current_turn = ?, current_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
     stmt.run(turn, date, gameId);
+  },
+
+  /** Этап 2: сохранить консолидированную историю (саммари старых раундов). */
+  updateConsolidation: (gameId: string, history: string, upToTurn: number) => {
+    const stmt = db.prepare('UPDATE games SET consolidated_history = ?, consolidated_up_to = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+    stmt.run(history, upToTurn, gameId);
+  },
+
+  /** Этап 2 (rewind): удалить действия и результаты ходов новее указанного. */
+  deleteAfterTurn: (gameId: string, turn: number) => {
+    db.prepare('DELETE FROM actions WHERE game_id = ? AND turn > ?').run(gameId, turn);
+    db.prepare('DELETE FROM turn_results WHERE game_id = ? AND turn > ?').run(gameId, turn);
   },
 };

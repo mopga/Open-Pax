@@ -39,12 +39,16 @@ export class GameController {
     gameData: any,
     actions: string[],
     jumpDays: number,
-    onProgress?: (charsSoFar: number) => void
+    onProgress?: (charsSoFar: number) => void,
+    autoJump?: boolean
   ): Promise<{
     narration: string;
     events: SimulationEvent[];
     worldChanges: any;
     convertedActions: any[];
+    voided?: { action: string; reason: string }[];
+    startChat?: { polityName: string; topic: string }[];
+    targetDate?: string;
   }> {
     if (!this.promptEngine) {
       this.initPromptEngine(gameData);
@@ -61,7 +65,8 @@ export class GameController {
       gameData,
       convertedActions.map(a => a.text),
       jumpDays,
-      onProgress
+      onProgress,
+      autoJump
     );
 
     console.log('[GameController] Simulation result:', simulationResult.narration.substring(0, 100));
@@ -72,6 +77,9 @@ export class GameController {
       events: simulationResult.events,
       worldChanges: simulationResult.worldChanges,
       convertedActions,
+      voided: simulationResult.voided,
+      startChat: simulationResult.startChat,
+      targetDate: simulationResult.targetDate,
     };
   }
 

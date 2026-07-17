@@ -14,9 +14,34 @@ export interface MechanicConfig {
   stream: boolean;
   /** Разрешить кэширование ответов (по умолчанию только advisor/suggestions/converter). */
   cache?: boolean;
+  /**
+   * Просить у провайдера строгий JSON (OpenAI response_format / Ollama format).
+   * Включай только если провайдер это поддерживает — часть API отвечает 400.
+   */
+  jsonMode?: boolean;
 }
 
 export type LLMConfig = Record<Mechanic, MechanicConfig>;
+
+/**
+ * Настройки консолидации истории (Этап 2).
+ * Целевые модели — облачные с контекстом 256K+, поэтому дефолты выше
+ * оригинальных (15 раундов): startRound=25. Для локальных моделей 8–32B
+ * стоит понизить до 10–15 через llm.config.json или env.
+ */
+export interface ConsolidationConfig {
+  /** С какого раунда начинать консолидировать */
+  startRound: number;
+  /** Размер чанка консолидации (раундов за одно саммари) */
+  chunkSize: number;
+  /** Сколько последних раундов всегда держать сырыми */
+  keepRawTail: number;
+}
+
+export interface LLMFullConfig {
+  mechanics: LLMConfig;
+  consolidation: ConsolidationConfig;
+}
 
 const DEFAULT_CACHE_MECHANICS = new Set<Mechanic>(['advisor', 'suggestions', 'converter']);
 
@@ -44,30 +69,39 @@ function defaultConfig(): LLMConfig {
 
 /**
  * Загружает конфигурацию LLM. Приоритет:
- * 1. llm.config.json (путь из LLM_CONFIG_PATH или рядом с cwd) — секции default + mechanics.
+ * 1. llm.config.json (путь из LLM_CONFIG_PATH или рядом с cwd) — секции default + mechanics (+ consolidation).
  * 2. Env-переменные LLM_PROVIDER/LLM_BASE_URL/LLM_API_KEY/LLM_MODEL.
  * 3. Обратная совместимость: MINIMAX_API_KEY/MINIMAX_BASE_URL → все механики на MiniMax.
  */
-export function loadLLMConfig(configPath?: string): LLMConfig {
+export function loadLLMConfig(configPath?: string): LLMFullConfig {
   const file = configPath
     ?? process.env.LLM_CONFIG_PATH
     ?? path.join(process.cwd(), 'llm.config.json');
   const cfg = defaultConfig();
-  if (!fs.existsSync(file)) return cfg;
-
-  const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as {
-    default?: Partial<MechanicConfig>;
-    mechanics?: Partial<Record<Mechanic, Partial<MechanicConfig>>>;
+  const consolidation: ConsolidationConfig = {
+    startRound: Number(process.env.LLM_CONSOLIDATION_START_ROUND) || 25,
+    chunkSize: Number(process.env.LLM_CONSOLIDATION_CHUNK_SIZE) || 5,
+    keepRawTail: Number(process.env.LLM_CONSOLIDATION_KEEP_RAW_TAIL) || 10,
   };
-  const base: Partial<MechanicConfig> = raw.default ?? {};
-  for (const m of ALL_MECHANICS) {
-    const merged = { ...cfg[m], ...base, ...(raw.mechanics?.[m] ?? {}) };
-    merged.apiKey = resolveApiKey(merged.apiKey);
-    if (merged.cache === undefined) merged.cache = DEFAULT_CACHE_MECHANICS.has(m);
-    if (!merged.baseUrl || !merged.model) {
-      throw new Error(`llm.config.json: механика "${m}": нужно указать baseUrl и model`);
+
+  if (fs.existsSync(file)) {
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as {
+      default?: Partial<MechanicConfig>;
+      mechanics?: Partial<Record<Mechanic, Partial<MechanicConfig>>>;
+      consolidation?: Partial<ConsolidationConfig>;
+    };
+    const base: Partial<MechanicConfig> = raw.default ?? {};
+    for (const m of ALL_MECHANICS) {
+      const merged = { ...cfg[m], ...base, ...(raw.mechanics?.[m] ?? {}) };
+      merged.apiKey = resolveApiKey(merged.apiKey);
+      if (merged.cache === undefined) merged.cache = DEFAULT_CACHE_MECHANICS.has(m);
+      if (!merged.baseUrl || !merged.model) {
+        throw new Error(`llm.config.json: механика "${m}": нужно указать baseUrl и model`);
+      }
+      cfg[m] = merged;
     }
-    cfg[m] = merged;
+    Object.assign(consolidation, raw.consolidation ?? {});
   }
-  return cfg;
+
+  return { mechanics: cfg, consolidation };
 }

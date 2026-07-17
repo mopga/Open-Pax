@@ -285,8 +285,22 @@ export const gameApi = {
   }> => {
     return fetchApi(`/games/${gameId}/time-skip`, {
       method: 'POST',
-      body: JSON.stringify({ jump_days: jumpDays || 30 }),
+      body: JSON.stringify({ jump_days: jumpDays ?? 30 }),
     });
+  },
+
+  /**
+   * Этап 2: откат на ход назад
+   */
+  rewind: (gameId: string): Promise<{ type: string; newTurn: number; newDate: string }> => {
+    return fetchApi(`/games/${gameId}/rewind`, { method: 'POST' });
+  },
+
+  /**
+   * Этап 2: Intervene — прервать применение оставшихся событий пачки
+   */
+  intervene: (gameId: string): Promise<{ ok: boolean }> => {
+    return fetchApi(`/games/${gameId}/intervene`, { method: 'POST' });
   },
 
   /**
