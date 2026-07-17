@@ -1,17 +1,25 @@
 /**
- * Open-Pax — Mapbox GL JS Map View
- * =================================
- * Renders game map using Mapbox GL JS instead of SVG.
- * Supports: region fills, borders, labels, selection, hover, object markers.
+ * Open-Pax — игровая карта на MapLibre GL
+ * =======================================
+ * Компонент сохранил историческое имя MapboxMapView (используется в App.tsx),
+ * но внутри работает на MapLibre GL — без токена и без внешних тайлов.
+ * Базовый стиль — офлайн (inline StyleSpecification): тёмный фон + координатная
+ * сетка из собственного geojson. Регионы, границы, лейблы и объекты рисуются
+ * только из данных игры (region.geojson).
+ *
+ * Поддерживает: заливки регионов, границы, подписи имён, выбор, hover,
+ * тултип со статами, подсветку изменённых регионов, маркеры объектов,
+ * клавиатурную навигацию (+/-/0/стрелки).
  */
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import mapboxgl from 'mapbox-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import maplibregl from 'maplibre-gl';
+import type { StyleSpecification } from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';
 import type { Region } from '../../types';
 import type { MapObject } from '../../types';
 
-// ISO 3166-1 alpha-3 to alpha-2 mapping for flagcdn.com
+// Соответствие ISO 3166-1 alpha-3 → alpha-2 для flagcdn.com
 const ISO3_TO_ISO2: Record<string, string> = {
   USA: 'us', RUS: 'ru', CHN: 'cn', GBR: 'gb', FRA: 'fr',
   DEU: 'de', JPN: 'jp', IND: 'in', BRA: 'br', CAN: 'ca',
@@ -38,7 +46,7 @@ const ISO3_TO_ISO2: Record<string, string> = {
   KGZ: 'kg', TJK: 'tj',
 };
 
-// Convert ISO 3166-1 alpha-3 to flag emoji
+// Конвертация ISO 3166-1 alpha-3 в флаг-эмодзи
 const codeToEmoji = (code: string): string => {
   if (!code || code.length !== 3) return '';
   const toAlpha2 = ISO3_TO_ISO2[code];
@@ -48,11 +56,10 @@ const codeToEmoji = (code: string): string => {
   ).join('');
 };
 
-// Returns flagcdn.com PNG URL for a 3-letter country code
+// URL PNG-флага на flagcdn.com по 3-буквенному коду страны
 const getFlagUrl = (code3: string, size: number = 40): string | null => {
   const code2 = ISO3_TO_ISO2[code3];
   if (!code2) return null;
-  // Use flagpedia.net which serves proper RGBA PNGs
   return `https://flagcdn.com/w${size}/${code2}.png`;
 };
 
@@ -67,9 +74,14 @@ interface MapboxMapViewProps {
   showMinimap?: boolean;
 }
 
+// Иконки игровых объектов на карте
 const OBJECT_ICONS: Record<string, { color: string; label: string }> = {
   city: { color: '#ffffff', label: '●' },
+  // Столица: золотая звезда — визуально отличается от обычного города
+  capital: { color: '#ffd700', label: '★' },
   army: { color: '#ff4444', label: '▲' },
+  // Батальон: красный треугольник (как армия — оба типа рендерятся)
+  battalion: { color: '#ff4444', label: '▲' },
   fleet: { color: '#4488ff', label: '◆' },
   missile: { color: '#ff8800', label: '✈' },
   radar: { color: '#44ff44', label: '◎' },
@@ -78,8 +90,110 @@ const OBJECT_ICONS: Record<string, { color: string; label: string }> = {
   university: { color: '#aa44ff', label: '★' },
 };
 
-// Mapbox access token from env
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || '';
+// Офлайн-стиль: без внешних тайлов, источников и глифов.
+// Фон океана — тёмный; суша рисуется только из geojson регионов игры.
+const OFFLINE_STYLE: StyleSpecification = {
+  version: 8,
+  name: 'open-pax-offline',
+  sources: {},
+  layers: [
+    {
+      id: 'background',
+      type: 'background',
+      paint: { 'background-color': '#0d1117' },
+    },
+  ],
+};
+
+const REGIONS_SOURCE_ID = 'regions';
+const FILL_LAYER_ID = 'regions-fill';
+const LINE_LAYER_ID = 'regions-line';
+const GRATICULE_SOURCE_ID = 'graticule';
+const GRATICULE_LAYER_ID = 'graticule-line';
+
+const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
+
+// Координатная сетка (градусная) как собственный geojson — без внешних источников
+const buildGraticule = (): GeoJSON.FeatureCollection => {
+  const features: GeoJSON.Feature[] = [];
+  const STEP = 30;
+  for (let lng = -180; lng <= 180; lng += STEP) {
+    features.push({
+      type: 'Feature',
+      properties: {},
+      geometry: { type: 'LineString', coordinates: [[lng, -85], [lng, 85]] },
+    });
+  }
+  for (let lat = -60; lat <= 60; lat += STEP) {
+    features.push({
+      type: 'Feature',
+      properties: {},
+      geometry: { type: 'LineString', coordinates: [[-180, lat], [180, lat]] },
+    });
+  }
+  return { type: 'FeatureCollection', features };
+};
+
+// Рекурсивный обход всех координат геометрии (Polygon и MultiPolygon)
+const eachPosition = (geometry: GeoJSON.Geometry, cb: (pos: GeoJSON.Position) => void): void => {
+  const walk = (coords: unknown): void => {
+    if (!Array.isArray(coords)) return;
+    if (typeof coords[0] === 'number' && typeof coords[1] === 'number') {
+      cb(coords as GeoJSON.Position);
+      return;
+    }
+    coords.forEach(walk);
+  };
+  walk('coordinates' in geometry ? geometry.coordinates : undefined);
+};
+
+// Внешние кольца полигонов (для подписи берём самое большое)
+const getOuterRings = (geometry: GeoJSON.Geometry): GeoJSON.Position[][] => {
+  if (geometry.type === 'Polygon') {
+    return geometry.coordinates[0] ? [geometry.coordinates[0]] : [];
+  }
+  if (geometry.type === 'MultiPolygon') {
+    return geometry.coordinates.map(poly => poly[0]).filter(Boolean);
+  }
+  return [];
+};
+
+// Площадь кольца по формуле шнурка (для выбора главного полигона)
+const ringArea = (ring: GeoJSON.Position[]): number => {
+  let area = 0;
+  for (let i = 0; i < ring.length - 1; i++) {
+    area += ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1];
+  }
+  return Math.abs(area / 2);
+};
+
+// Центроид кольца (взвешенный; при вырождении — среднее вершин)
+const ringCentroid = (ring: GeoJSON.Position[]): [number, number] => {
+  let twiceArea = 0;
+  let cx = 0;
+  let cy = 0;
+  for (let i = 0; i < ring.length - 1; i++) {
+    const [x0, y0] = ring[i];
+    const [x1, y1] = ring[i + 1];
+    const f = x0 * y1 - x1 * y0;
+    twiceArea += f;
+    cx += (x0 + x1) * f;
+    cy += (y0 + y1) * f;
+  }
+  if (Math.abs(twiceArea) < 1e-12) {
+    const sum = ring.reduce((acc, p) => [acc[0] + p[0], acc[1] + p[1]], [0, 0]);
+    return [sum[0] / ring.length, sum[1] / ring.length];
+  }
+  return [cx / (3 * twiceArea), cy / (3 * twiceArea)];
+};
+
+// Точка подписи региона: центроид наибольшего внешнего кольца
+const getLabelPoint = (geometry: GeoJSON.Geometry): [number, number] | null => {
+  const rings = getOuterRings(geometry);
+  if (rings.length === 0) return null;
+  const mainRing = rings.reduce((best, ring) => (ringArea(ring) > ringArea(best) ? ring : best));
+  return ringCentroid(mainRing);
+};
 
 export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
   regions,
@@ -89,15 +203,61 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
   changedRegionIds = [],
   showFlags = false,
   playerCountryCode,
+  // Пропс сохранён для совместимости API; миникарта в офлайн-режиме не используется
   showMinimap = true,
 }) => {
   const mapContainer = useRef<HTMLDivElement>(null);
-  const map = useRef<mapboxgl.Map | null>(null);
+  const map = useRef<maplibregl.Map | null>(null);
+  const objectMarkers = useRef<maplibregl.Marker[]>([]);
+  const labelMarkers = useRef<maplibregl.Marker[]>([]);
+  const fittedRegionIds = useRef<string>('');
   const [mapLoaded, setMapLoaded] = useState(false);
   const [hoveredRegionId, setHoveredRegionId] = useState<string | null>(null);
   const [tooltipInfo, setTooltipInfo] = useState<{ x: number; y: number; name: string; population: number; gdp: number; militaryPower: number } | null>(null);
 
-  // Zoom in/out functions for keyboard shortcuts
+  // Актуальные значения для обработчиков карты (регистрируются один раз)
+  const regionsRef = useRef(regions);
+  regionsRef.current = regions;
+  const onRegionClickRef = useRef(onRegionClick);
+  onRegionClickRef.current = onRegionClick;
+  const onRegionHoverRef = useRef(onRegionHover);
+  onRegionHoverRef.current = onRegionHover;
+
+  // Границы карты по регионам (обход всех координат, включая MultiPolygon)
+  const getBounds = useCallback((): [[number, number], [number, number]] => {
+    let minLng = Infinity, maxLng = -Infinity;
+    let minLat = Infinity, maxLat = -Infinity;
+
+    regionsRef.current.forEach(region => {
+      if (!region.geojson) return;
+      try {
+        const geojson = JSON.parse(region.geojson);
+        if (!geojson.geometry) return;
+        eachPosition(geojson.geometry, (pos) => {
+          minLng = Math.min(minLng, pos[0]);
+          maxLng = Math.max(maxLng, pos[0]);
+          minLat = Math.min(minLat, pos[1]);
+          maxLat = Math.max(maxLat, pos[1]);
+        });
+      } catch (e) { /* пропускаем битый geojson */ }
+    });
+
+    if (!isFinite(minLng)) {
+      return [[-180, -85], [180, 85]];
+    }
+
+    // Отступ от краёв
+    const padding = 0.1;
+    const lngPad = (maxLng - minLng) * padding;
+    const latPad = (maxLat - minLat) * padding;
+
+    return [
+      [minLng - lngPad, minLat - latPad],
+      [maxLng + lngPad, maxLat + latPad]
+    ];
+  }, []);
+
+  // Функции зума для клавиатуры и кнопок
   const zoomIn = useCallback(() => {
     map.current?.zoomIn({ duration: 300 });
   }, []);
@@ -107,11 +267,10 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
   }, []);
 
   const resetView = useCallback(() => {
-    const bounds = getBounds();
-    map.current?.fitBounds(bounds, { padding: 50, duration: 500 });
-  }, []);
+    map.current?.fitBounds(getBounds(), { padding: 50, duration: 500 });
+  }, [getBounds]);
 
-  // Keyboard navigation shortcuts
+  // Клавиатурная навигация: + / - / 0 / стрелки
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!map.current) return;
@@ -154,235 +313,119 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [zoomIn, zoomOut, resetView]);
 
-  // Calculate map bounds from regions
-  const getBounds = () => {
-    let minLng = Infinity, maxLng = -Infinity;
-    let minLat = Infinity, maxLat = -Infinity;
-
-    regions.forEach(region => {
-      if (!region.geojson) return;
-      try {
-        const geojson = JSON.parse(region.geojson);
-        if (geojson.geometry?.coordinates?.[0]) {
-          geojson.geometry.coordinates[0].forEach((coord: number[]) => {
-            minLng = Math.min(minLng, coord[0]);
-            maxLng = Math.max(maxLng, coord[0]);
-            minLat = Math.min(minLat, coord[1]);
-            maxLat = Math.max(maxLat, coord[1]);
-          });
-        }
-      } catch (e) { /* skip invalid geojson */ }
-    });
-
-    if (!isFinite(minLng)) {
-      return [[-180, -85], [180, 85]] as [[number, number], [number, number]];
-    }
-
-    // Add padding
-    const padding = 0.1;
-    const lngPad = (maxLng - minLng) * padding;
-    const latPad = (maxLat - minLat) * padding;
-
-    return [
-      [minLng - lngPad, minLat - latPad],
-      [maxLng + lngPad, maxLat + latPad]
-    ] as [[number, number], [number, number]];
-  };
-
-  // Initialize map
+  // Инициализация карты (один раз)
   useEffect(() => {
-    console.log('[Mapbox] Mounting component, token:', !!MAPBOX_TOKEN, 'regions:', regions?.length);
     if (!mapContainer.current || map.current) return;
-    if (!MAPBOX_TOKEN) {
-      console.error('Mapbox token not configured. Set VITE_MAPBOX_TOKEN in .env');
-      return;
-    }
 
-    mapboxgl.accessToken = MAPBOX_TOKEN;
-
-    map.current = new mapboxgl.Map({
+    map.current = new maplibregl.Map({
       container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/dark-v11',
+      style: OFFLINE_STYLE,
       center: [0, 20],
       zoom: 1,
-      projection: 'mercator',
       attributionControl: false,
     });
 
+    // Кнопки зума/компаса MapLibre
+    map.current.addControl(new maplibregl.NavigationControl(), 'top-right');
+
     map.current.on('load', () => {
-      console.log('[Mapbox] Map loaded!');
-      setMapLoaded(true);
-    });
+      if (!map.current) return;
+      const m = map.current;
 
-    // Add navigation controls
-    map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+      // Координатная сетка под регионами
+      m.addSource(GRATICULE_SOURCE_ID, { type: 'geojson', data: buildGraticule() });
+      m.addLayer({
+        id: GRATICULE_LAYER_ID,
+        type: 'line',
+        source: GRATICULE_SOURCE_ID,
+        paint: {
+          'line-color': '#1c2333',
+          'line-width': 1,
+        },
+      });
 
-    return () => {
-      if (map.current) {
-        map.current.remove();
-        map.current = null;
-      }
-    };
-  }, []);
+      // Источник и слои регионов (данные придут позже через setData)
+      m.addSource(REGIONS_SOURCE_ID, { type: 'geojson', data: EMPTY_FC });
 
-  // Add/update regions source and layers
-  useEffect(() => {
-    console.log('[Mapbox] useEffect triggered, regions:', regions.length, 'mapLoaded:', mapLoaded);
-    if (!map.current || !mapLoaded || regions.length === 0) return;
+      // Заливка регионов
+      m.addLayer({
+        id: FILL_LAYER_ID,
+        type: 'fill',
+        source: REGIONS_SOURCE_ID,
+        paint: {
+          'fill-color': [
+            'case',
+            ['get', 'isSelected'], '#ffffff',
+            // Полития игрока: owner = polityId (код страны из playerCountryCode;
+            // для кастомных карт — 'player')
+            ['get', 'isPlayer'], '#00ff88',
+            ['get', 'color']
+          ],
+          'fill-opacity': [
+            'case',
+            ['get', 'isSelected'], 0.9,
+            ['get', 'isHovered'], 0.95,
+            0.85
+          ],
+        },
+      });
 
-    const geojsonFeatures: GeoJSON.Feature[] = [];
-    const flagCodes: string[] = [];
+      // Границы регионов
+      m.addLayer({
+        id: LINE_LAYER_ID,
+        type: 'line',
+        source: REGIONS_SOURCE_ID,
+        paint: {
+          'line-color': [
+            'case',
+            ['get', 'isSelected'], '#ffffff',
+            // Подсветка изменённых за ход регионов
+            ['get', 'isChanged'], '#ffd700',
+            ['get', 'isHovered'], '#666666',
+            '#1a1a1a'
+          ],
+          'line-width': [
+            'case',
+            ['get', 'isSelected'], 3,
+            ['get', 'isChanged'], 3,
+            2
+          ],
+        },
+      });
 
-    regions.forEach(region => {
-      if (!region.geojson) return;
-      try {
-        const parsed = JSON.parse(region.geojson);
-        if (region.flag) flagCodes.push(region.flag);
-        const flagEmoji = region.flag ? codeToEmoji(region.flag) : '';
-        parsed.properties = {
-          ...parsed.properties,
-          id: region.id,
-          name: region.name,
-          color: region.color,
-          flag: region.flag || null,
-          flag_emoji: flagEmoji,
-          owner: region.owner || null,
-          isSelected: region.id === selectedRegionId,
-          isHovered: hoveredRegionId === region.id,
-          isChanged: changedRegionIds.includes(region.id),
-        };
-        geojsonFeatures.push(parsed);
-      } catch (e) { /* skip */ }
-    });
-
-    console.log('[Mapbox] Processed features:', geojsonFeatures.length, 'sample:', geojsonFeatures[0]?.properties);
-
-    const sourceId = 'regions';
-    const fillLayerId = 'regions-fill';
-    const lineLayerId = 'regions-line';
-    const labelLayerId = 'regions-label';
-
-    // Remove existing layers if any
-    [labelLayerId, lineLayerId, fillLayerId].forEach(id => {
-      if (map.current?.getLayer(id)) {
-        map.current.removeLayer(id);
-      }
-    });
-
-    // Remove existing source
-    if (map.current?.getSource(sourceId)) {
-      map.current.removeSource(sourceId);
-    }
-
-    // Add new source
-    map.current.addSource(sourceId, {
-      type: 'geojson',
-      data: {
-        type: 'FeatureCollection',
-        features: geojsonFeatures,
-      },
-    });
-
-    // Add fill layer
-    map.current.addLayer({
-      id: fillLayerId,
-      type: 'fill',
-      source: sourceId,
-      paint: {
-        'fill-color': [
-          'case',
-          ['get', 'isSelected'], '#ffffff',
-          // Полития игрока: owner = polityId (код страны из playerCountryCode;
-          // для кастомных карт — 'player')
-          ['==', ['get', 'owner'], playerCountryCode || 'player'], '#00ff88',
-          ['get', 'color']
-        ],
-        'fill-opacity': [
-          'case',
-          ['get', 'isSelected'], 0.9,
-          ['get', 'isHovered'], 0.95,
-          0.85
-        ],
-      },
-    });
-
-    // Add line layer (borders)
-    map.current.addLayer({
-      id: lineLayerId,
-      type: 'line',
-      source: sourceId,
-      paint: {
-        'line-color': [
-          'case',
-          ['get', 'isSelected'], '#ffffff',
-          ['get', 'isHovered'], '#666666',
-          '#1a1a1a'
-        ],
-        'line-width': [
-          'case',
-          ['get', 'isSelected'], 3,
-          2
-        ],
-      },
-    });
-
-    // Add label layer (country name with flag emoji)
-    map.current.addLayer({
-      id: labelLayerId,
-      type: 'symbol',
-      source: sourceId,
-      layout: {
-        'text-field': showFlags
-          ? ['concat', ['to-string', ['get', 'flag_emoji']], ' ', ['get', 'name']]
-          : ['get', 'name'],
-        'text-size': 14,
-        'text-font': ['DIN Pro Bold', 'Arial Unicode MS Bold'],
-        'text-anchor': 'center',
-      },
-      paint: {
-        'text-color': '#ffffff',
-        'text-halo-color': '#000000',
-        'text-halo-width': 2,
-      },
-    });
-
-    console.log('[Mapbox] Labels added, showFlags:', showFlags, 'regions:', regions.length);
-
-    // Click handler for regions
-    map.current.on('click', fillLayerId, (e) => {
-      if (e.features && e.features[0]) {
-        const props = e.features[0].properties;
-        if (props?.id && onRegionClick) {
-          onRegionClick(props.id);
+      // Клик по региону
+      m.on('click', FILL_LAYER_ID, (e) => {
+        const id = e.features?.[0]?.properties?.id;
+        if (id && onRegionClickRef.current) {
+          onRegionClickRef.current(id);
         }
-      }
-    });
+      });
 
-    // Hover handlers
-    map.current.on('mouseenter', fillLayerId, () => {
-      if (map.current) {
-        map.current.getCanvas().style.cursor = 'pointer';
-      }
-    });
-
-    map.current.on('mouseleave', fillLayerId, () => {
-      if (map.current) {
-        map.current.getCanvas().style.cursor = '';
-      }
-      setHoveredRegionId(null);
-      setTooltipInfo(null);
-    });
-
-    map.current.on('mousemove', fillLayerId, (e) => {
-      if (e.features && e.features[0]) {
-        const props = e.features[0].properties;
-        setHoveredRegionId(props?.id || null);
-        if (onRegionHover) {
-          onRegionHover(props?.id || null);
+      // Hover: курсор + локальное состояние + тултип
+      m.on('mouseenter', FILL_LAYER_ID, () => {
+        if (map.current) {
+          map.current.getCanvas().style.cursor = 'pointer';
         }
-        // Update tooltip
-        if (props?.id) {
-          const region = regions.find(r => r.id === props.id);
+      });
+
+      m.on('mouseleave', FILL_LAYER_ID, () => {
+        if (map.current) {
+          map.current.getCanvas().style.cursor = '';
+        }
+        setHoveredRegionId(null);
+        setTooltipInfo(null);
+      });
+
+      m.on('mousemove', FILL_LAYER_ID, (e) => {
+        const props = e.features?.[0]?.properties;
+        const id = props?.id || null;
+        setHoveredRegionId(prev => (prev === id ? prev : id));
+        if (onRegionHoverRef.current) {
+          onRegionHoverRef.current(id);
+        }
+        // Обновление тултипа
+        if (id) {
+          const region = regionsRef.current.find(r => r.id === id);
           if (region) {
             setTooltipInfo({
               x: e.point.x,
@@ -394,49 +437,145 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
             });
           }
         }
-      }
+      });
+
+      setMapLoaded(true);
     });
 
-    // Fit bounds
-    const bounds = getBounds();
-    map.current.fitBounds(bounds, { padding: 50, duration: 500 });
+    return () => {
+      if (map.current) {
+        map.current.remove();
+        map.current = null;
+      }
+    };
+  }, []);
 
-  }, [regions, mapLoaded, selectedRegionId, hoveredRegionId, changedRegionIds, showFlags, playerCountryCode, onRegionHover]);
-
-  // Collect all objects for markers
-  const allObjects: (MapObject & { regionName: string; regionColor: string })[] = [];
-  regions.forEach(region => {
-    if (region.objects) {
-      region.objects.forEach((obj: MapObject) => {
-        allObjects.push({
-          ...obj,
-          regionName: region.name,
-          regionColor: region.color,
-        });
-      });
-    }
-  });
-
-  // Add markers for objects
+  // Данные регионов: пересборка FeatureCollection и setData в источник.
+  // Подсветка (выбор/hover/изменённые) живёт в properties фич, слои не пересоздаются.
   useEffect(() => {
-    if (!map.current || !mapLoaded || allObjects.length === 0) return;
+    if (!map.current || !mapLoaded) return;
+    const m = map.current;
 
-    // Remove existing markers
-    document.querySelectorAll('.mapbox-marker').forEach(el => el.remove());
+    const geojsonFeatures: GeoJSON.Feature[] = [];
+
+    regions.forEach(region => {
+      if (!region.geojson) return;
+      try {
+        const parsed = JSON.parse(region.geojson);
+        parsed.properties = {
+          ...parsed.properties,
+          id: region.id,
+          name: region.name,
+          color: region.color,
+          flag: region.flag || null,
+          flag_emoji: region.flag ? codeToEmoji(region.flag) : '',
+          owner: region.owner || null,
+          isSelected: region.id === selectedRegionId,
+          isHovered: hoveredRegionId === region.id,
+          isChanged: changedRegionIds.includes(region.id),
+          isPlayer: !!region.owner && region.owner === (playerCountryCode || 'player'),
+        };
+        geojsonFeatures.push(parsed);
+      } catch (e) { /* пропускаем битый geojson */ }
+    });
+
+    const source = m.getSource(REGIONS_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+    source?.setData({ type: 'FeatureCollection', features: geojsonFeatures });
+
+    // При смене набора регионов подгоняем видимую область
+    const idsKey = regions.map(r => r.id).sort().join('|');
+    if (idsKey && idsKey !== fittedRegionIds.current) {
+      fittedRegionIds.current = idsKey;
+      m.fitBounds(getBounds(), { padding: 50, duration: 500 });
+    }
+  }, [regions, mapLoaded, selectedRegionId, hoveredRegionId, changedRegionIds, playerCountryCode, getBounds]);
+
+  // Подписи регионов — HTML-маркерами: офлайн-стиль без glyphs не поддерживает
+  // symbol-слой с text-field, поэтому лейблы рисуем DOM-элементами
+  // (pointer-events: none — не мешают клику и hover по регионам).
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+    const m = map.current;
+
+    // Удаляем старые подписи
+    labelMarkers.current.forEach(marker => marker.remove());
+    labelMarkers.current = [];
+
+    regions.forEach(region => {
+      if (!region.geojson) return;
+      try {
+        const geojson = JSON.parse(region.geojson);
+        if (!geojson.geometry) return;
+        const point = getLabelPoint(geojson.geometry);
+        if (!point) return;
+
+        const flagEmoji = region.flag ? codeToEmoji(region.flag) : '';
+        const el = document.createElement('div');
+        el.className = 'openpax-map-label';
+        el.style.cssText = `
+          pointer-events: none;
+          color: #ffffff;
+          font-size: 13px;
+          font-weight: 700;
+          font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+          text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 2px 6px rgba(0,0,0,0.8);
+          white-space: nowrap;
+          user-select: none;
+        `;
+        el.textContent = showFlags && flagEmoji ? `${flagEmoji} ${region.name}` : region.name;
+
+        const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+          .setLngLat(point)
+          .addTo(m);
+        labelMarkers.current.push(marker);
+      } catch (e) { /* пропускаем битый geojson */ }
+    });
+
+    return () => {
+      labelMarkers.current.forEach(marker => marker.remove());
+      labelMarkers.current = [];
+    };
+  }, [regions, mapLoaded, showFlags]);
+
+  // Все игровые объекты всех регионов (для маркеров)
+  const allObjects = useMemo(() => {
+    const result: (MapObject & { regionName: string; regionColor: string })[] = [];
+    regions.forEach(region => {
+      if (region.objects) {
+        region.objects.forEach((obj: MapObject) => {
+          result.push({
+            ...obj,
+            regionName: region.name,
+            regionColor: region.color,
+          });
+        });
+      }
+    });
+    return result;
+  }, [regions]);
+
+  // Маркеры объектов
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+    const m = map.current;
+
+    // Удаляем старые маркеры
+    objectMarkers.current.forEach(marker => marker.remove());
+    objectMarkers.current = [];
 
     allObjects.forEach(obj => {
       if (obj.x === undefined || obj.y === undefined) return;
 
-      // Convert SVG coordinates to lng/lat
-      // Assuming 2000x1500 canvas mapped to -180 to 180 lng, 90 to -90 lat
+      // Конвертация SVG-координат в lng/lat:
+      // канва 2000x1500 → -180..180 lng, 90..-90 lat
       const lng = (obj.x / 2000) * 360 - 180;
       const lat = 90 - (obj.y / 1500) * 180;
 
       const icon = OBJECT_ICONS[obj.type] || OBJECT_ICONS.city;
 
-      // Create custom marker element
+      // Кастомный DOM-элемент маркера
       const el = document.createElement('div');
-      el.className = 'mapbox-marker';
+      el.className = 'openpax-map-object';
       el.style.cssText = `
         width: 24px;
         height: 24px;
@@ -452,36 +591,21 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
       `;
       el.textContent = icon.label;
 
-      new mapboxgl.Marker({ element: el })
+      const marker = new maplibregl.Marker({ element: el })
         .setLngLat([lng, lat])
         .setPopup(
-          new mapboxgl.Popup({ offset: 15 })
+          new maplibregl.Popup({ offset: 15 })
             .setHTML(`<div style="color:#333;padding:4px;"><b>${obj.name}</b><br/>${obj.type}</div>`)
         )
-        .addTo(map.current!);
+        .addTo(m);
+      objectMarkers.current.push(marker);
     });
 
+    return () => {
+      objectMarkers.current.forEach(marker => marker.remove());
+      objectMarkers.current = [];
+    };
   }, [allObjects, mapLoaded]);
-
-  if (!MAPBOX_TOKEN) {
-    return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '100%',
-        background: '#0a0a0f',
-        color: '#888',
-        padding: '40px',
-        textAlign: 'center',
-      }}>
-        <div>
-          <h3>Mapbox Token Not Configured</h3>
-          <p>Set <code>VITE_MAPBOX_TOKEN</code> in <code>frontend/.env</code></p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
@@ -495,11 +619,11 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
           color: '#667eea',
           fontSize: '1.2rem',
         }}>
-          Loading map...
+          Загрузка карты…
         </div>
       )}
 
-      {/* Region tooltip */}
+      {/* Тултип региона */}
       {tooltipInfo && (
         <div
           style={{
@@ -527,7 +651,7 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
         </div>
       )}
 
-      {/* Zoom controls overlay */}
+      {/* Кнопки зума поверх карты */}
       <div style={{
         position: 'absolute',
         top: '10px',
@@ -549,7 +673,7 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
             fontSize: '18px',
             cursor: 'pointer',
           }}
-          title="Zoom in (+)"
+          title="Приблизить (+)"
         >
           +
         </button>
@@ -565,7 +689,7 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
             fontSize: '18px',
             cursor: 'pointer',
           }}
-          title="Zoom out (-)"
+          title="Отдалить (−)"
         >
           −
         </button>
@@ -581,7 +705,7 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
             fontSize: '14px',
             cursor: 'pointer',
           }}
-          title="Reset view (0)"
+          title="Сбросить вид (0)"
         >
           ⌂
         </button>

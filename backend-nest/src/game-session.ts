@@ -730,6 +730,64 @@ export class GameSession {
     return count > 0 ? { x: sumX / count, y: sumY / count } : null;
   }
 
+  /** Кэш геоцентроидов регионов: geojson тяжёлый, считаем один раз на сессию. */
+  private geoCenterCache: Map<string, { lat: number; lng: number } | null> = new Map();
+
+  /**
+   * Центр региона в lat/lng — для маркеров Этапа 4 ({ id, type, name, lat, lng }).
+   * Приоритет: geojson-геометрия из БД (шаблонные миры Natural Earth; кастомные
+   * SVG-карты тоже сконвертированы в lng/lat через svgPathToGeoJSON) →
+   * центроид SVG-пути по конвенции 2000x1500 → null.
+   */
+  private regionCenter(region: RegionState): { lat: number; lng: number } | null {
+    if (!this.geoCenterCache.has(region.id)) {
+      this.geoCenterCache.set(region.id, this.computeGeoCenter(region.id));
+    }
+    const fromGeo = this.geoCenterCache.get(region.id);
+    if (fromGeo) return fromGeo;
+
+    const c = this.svgCentroid(region.svgPath);
+    if (c) {
+      // Та же конвенция SVG→lng/lat, что в svgPathToGeoJSON (холст 2000x1500)
+      return { lng: (c.x / 2000) * 360 - 180, lat: 90 - (c.y / 1500) * 180 };
+    }
+    return null;
+  }
+
+  /**
+   * Центроид региона по geojson из БД: среднее точек внешнего кольца
+   * наибольшего полигона. GeoJSON хранит координаты как [lng, lat].
+   * Для стран через антимеридиан (Россия, США) среднее грубое — для маркера достаточно.
+   */
+  private computeGeoCenter(regionId: string): { lat: number; lng: number } | null {
+    try {
+      const row = db.prepare('SELECT geojson FROM world_regions WHERE id = ?').get(regionId) as any;
+      if (!row?.geojson) return null;
+      const gj = JSON.parse(row.geojson);
+      const geom = gj?.geometry ?? gj;
+      const polygons: any[] = geom?.type === 'Polygon'
+        ? [geom.coordinates]
+        : geom?.type === 'MultiPolygon' ? geom.coordinates : [];
+      let bestRing: any[] | null = null;
+      for (const poly of polygons) {
+        const ring = poly?.[0];
+        if (Array.isArray(ring) && (!bestRing || ring.length > bestRing.length)) bestRing = ring;
+      }
+      if (!bestRing || bestRing.length === 0) return null;
+      let sumLng = 0, sumLat = 0, n = 0;
+      for (const pt of bestRing) {
+        if (Array.isArray(pt) && typeof pt[0] === 'number' && typeof pt[1] === 'number') {
+          sumLng += pt[0];
+          sumLat += pt[1];
+          n++;
+        }
+      }
+      return n > 0 ? { lng: sumLng / n, lat: sumLat / n } : null;
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * Apply mapChanges from a single simulation event (transfer/create/update/delete).
    * Регионы и политии адресуются ИМЕНАМИ (так их видит LLM в описании карты).
@@ -778,24 +836,44 @@ export class GameSession {
         }
         case 'spawn_battalion': {
           liveRegion.objects = liveRegion.objects || [];
-          const c = this.svgCentroid(liveRegion.svgPath);
+          // Этап 4: формат маркера согласован с фронтом — { id, type, name, lat, lng },
+          // type ровно 'battalion'. Координаты — центр региона (geojson/SVG).
+          const center = this.regionCenter(liveRegion);
           liveRegion.objects.push({
             id: shortId(),
             type: 'battalion',
             name: change.feature?.name || `Батальон ${liveRegion.name} ${(liveRegion.objects.filter((o: any) => o.type === 'battalion').length) + 1}`,
-            x: c?.x ?? 500,
-            y: c?.y ?? 400,
-            level: 1,
+            lat: center?.lat ?? 0,
+            lng: center?.lng ?? 0,
           });
           break;
         }
         case 'move_battalion': {
           const target = this.resolveRegionFlexible(change.targetRegionName, resolvers.regions);
           if (!target) break;
-          const idx = (liveRegion.objects || []).findIndex((o: any) => o.type === 'battalion');
+          const objects = liveRegion.objects || [];
+          const featureId = (change.feature as any)?.id;
+          const featureName = change.feature?.name;
+          // Батальон адресуется по id; если id не передан или не найден — по имени;
+          // последний fallback — первый батальон региона (прежнее поведение).
+          let idx = featureId
+            ? objects.findIndex((o: any) => o.type === 'battalion' && o.id === featureId)
+            : -1;
+          if (idx < 0 && featureName) {
+            idx = objects.findIndex((o: any) => o.type === 'battalion' && o.name === featureName);
+          }
+          if (idx < 0) {
+            idx = objects.findIndex((o: any) => o.type === 'battalion');
+          }
           if (idx >= 0) {
-            const [b] = liveRegion.objects.splice(idx, 1);
+            const [b] = objects.splice(idx, 1);
             target.objects = target.objects || [];
+            // Координаты — центр целевого региона, иначе маркер остался бы на старом месте
+            const center = this.regionCenter(target);
+            if (center) {
+              b.lat = center.lat;
+              b.lng = center.lng;
+            }
             target.objects.push(b);
           }
           break;
@@ -1003,6 +1081,9 @@ export class GameSession {
       militaryPower: region.militaryPower,
       owner: region.owner,
       color: region.color,
+      // Этап 4: маркеры на карте (столицы/батальоны) — передаём всегда,
+      // иначе updateRegionsBatch их не сохранял и объекты терялись при рестарте
+      objects: region.objects || [],
     }));
     worldRepository.updateRegionsBatch(updates);
   }

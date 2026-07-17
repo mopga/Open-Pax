@@ -857,7 +857,7 @@ function App() {
           )}
           {/* Карта слева */}
           <div className="game-map">
-            {import.meta.env.VITE_MAPBOX_TOKEN ? (
+            {regions.some(r => r.geojson) ? (
               <MapboxMapView
                 regions={regions}
                 selectedRegionId={selectedRegion || undefined}
@@ -866,7 +866,7 @@ function App() {
                 showFlags={!!selectedCountry}
                 playerCountryCode={selectedCountry || undefined}
               />
-            ) : regions.some(r => r.svgPath || r.geojson) ? (
+            ) : regions.some(r => r.svgPath) ? (
               <MapView
                 regions={regions}
                 selectedRegionId={selectedRegion || undefined}
@@ -887,16 +887,9 @@ function App() {
                 textAlign: 'center',
               }}>
                 <div style={{ fontSize: '48px', marginBottom: '16px' }}>🗺️</div>
-                <h3>Карта недоступна</h3>
+                <h3>Карта загружается…</h3>
                 <p style={{ color: '#888', maxWidth: '300px' }}>
-                  Для отображения карты нужен Mapbox token.
-                  <br/><br/>
-                  Создайте файл <code>frontend/.env</code> с:
-                  <br/>
-                  <code>VITE_MAPBOX_TOKEN=ваш_токен</code>
-                </p>
-                <p style={{ color: '#666', fontSize: '12px', marginTop: '16px' }}>
-                  Получить токен: <a href="https://account.mapbox.com" target="_blank" style={{ color: '#667eea' }}>account.mapbox.com</a>
+                  У регионов мира пока нет геометрии.
                 </p>
               </div>
             )}

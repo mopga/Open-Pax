@@ -16,6 +16,27 @@ import { computeBorders } from '../utils/borders';
 
 export const worldsRouter = Router();
 
+// Этап 4: столицы стран для маркеров на карте.
+// Контракт файла (отдаёт параллельный пайплайн Natural Earth):
+//   { "USA": { capital: "Washington", lat: 38.9, lng: -77.0 }, ... }
+// Читаем лениво и кэшируем; если файла нет или он битый — регионы просто
+// остаются без столиц, генерация мира не падает.
+interface CapitalEntry { capital: string; lat: number; lng: number }
+let capitalsCache: Record<string, CapitalEntry> | null = null;
+function getCapitals(): Record<string, CapitalEntry> {
+  if (capitalsCache) return capitalsCache;
+  try {
+    const capitalsPath = path.join(process.cwd(), 'data', 'geojson', 'capitals.json');
+    capitalsCache = fs.existsSync(capitalsPath)
+      ? JSON.parse(fs.readFileSync(capitalsPath, 'utf-8'))
+      : {};
+  } catch (e) {
+    console.warn('[Generate World] capitals.json не прочитан — регионы без столиц:', e);
+    capitalsCache = {};
+  }
+  return capitalsCache!;
+}
+
 // Generate world state from template (using Balance Agent)
 worldsRouter.post('/generate', async (req, res) => {
   const { templateId, playerCountryCode } = req.body;
@@ -62,6 +83,12 @@ worldsRouter.post('/generate', async (req, res) => {
 
       const geojson = geojsonFeatures[code];
       if (geojson) {
+        // Этап 4: столица страны как map feature (формат согласован с фронтом:
+        // { id, type, name, lat, lng }). Нет записи в capitals.json — без столицы.
+        const cap = getCapitals()[code];
+        const capitalObjects = (cap && typeof cap.lat === 'number' && typeof cap.lng === 'number')
+          ? [{ id: shortId(), type: 'capital', name: cap.capital, lat: cap.lat, lng: cap.lng }]
+          : [];
         regionsObj[code] = {
           id: code,
           name: state.name,
@@ -73,7 +100,7 @@ worldsRouter.post('/generate', async (req, res) => {
           population: state.population || 0,
           gdp: state.gdp || 0,
           militaryPower: state.military || 0,
-          objects: [],
+          objects: capitalObjects,
           borders: [],
           status: 'active',
           flag: code,
@@ -121,6 +148,8 @@ worldsRouter.post('/generate', async (req, res) => {
       gdp: region.gdp,
       militaryPower: region.militaryPower,
       flag: region.flag,
+      // Этап 4: маркеры на карте (столица), иначе addRegion их не увидит
+      objects: region.objects ?? [],
       // GameSession keys regions by full id — store borders in the same id space
       borders: (bordersMap[code] ?? []).map(c => `${worldId}_${c}`),
     }));
@@ -284,6 +313,8 @@ worldsRouter.post('/from-map', (req, res) => {
       population,
       gdp,
       militaryPower,
+      // Кодов стран на кастомной карте нет — столицы не сидируем, объекты пустые
+      objects: [],
     };
   });
 

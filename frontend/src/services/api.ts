@@ -534,6 +534,62 @@ export const templatesApi = {
 
 
 // ============================================================================
+// Geo API (Этап 4: реальная геометрия Natural Earth)
+// ============================================================================
+
+/** Свойства страны в GeoJSON от /api/geo/countries */
+export interface GeoCountryProperties {
+  code: string;
+  name: string;
+  nameEn?: string;
+}
+
+/** GeoJSON Feature одной страны (Polygon или MultiPolygon) */
+export interface GeoCountryFeature {
+  type: 'Feature';
+  properties: GeoCountryProperties;
+  geometry: {
+    type: 'Polygon' | 'MultiPolygon';
+    coordinates: number[][][] | number[][][][];
+  };
+}
+
+/** GeoJSON FeatureCollection со странами мира */
+export interface GeoCountriesCollection {
+  type: 'FeatureCollection';
+  features: GeoCountryFeature[];
+}
+
+/** Столица страны от /api/geo/capitals */
+export interface GeoCapital {
+  capital: string;
+  lat: number;
+  lng: number;
+}
+
+export const geoApi = {
+  /**
+   * Реальные границы стран (Natural Earth) — GeoJSON FeatureCollection.
+   * Бэкенд может вернуть коллекцию напрямую или обёрнутую в { countries }.
+   */
+  getCountries: async (): Promise<GeoCountriesCollection> => {
+    const data = await fetchApi<GeoCountriesCollection | { countries: GeoCountriesCollection }>('/geo/countries');
+    // Нормализуем: принимаем и голый FeatureCollection, и обёртку
+    if ((data as GeoCountriesCollection).type === 'FeatureCollection') {
+      return data as GeoCountriesCollection;
+    }
+    return (data as { countries: GeoCountriesCollection }).countries;
+  },
+
+  /**
+   * Столицы стран: { code: { capital, lat, lng } }
+   */
+  getCapitals: (): Promise<Record<string, GeoCapital>> => {
+    return fetchApi('/geo/capitals');
+  },
+};
+
+// ============================================================================
 // Map API
 // ============================================================================
 

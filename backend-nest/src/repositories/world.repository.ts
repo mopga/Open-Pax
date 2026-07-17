@@ -80,10 +80,10 @@ export const worldRepository = {
     }));
   },
 
-  addRegion: (region: { id: string; worldId: string; name: string; svgPath?: string; geojson?: string; color?: string; owner?: string; population?: number; gdp?: number; militaryPower?: number; flag?: string; borders?: string[] }) => {
+  addRegion: (region: { id: string; worldId: string; name: string; svgPath?: string; geojson?: string; color?: string; owner?: string; population?: number; gdp?: number; militaryPower?: number; flag?: string; borders?: string[]; objects?: any[] }) => {
     const stmt = db.prepare(`
-      INSERT INTO world_regions (id, world_id, name, svg_path, geojson, color, owner, population, gdp, military_power, flag, borders)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO world_regions (id, world_id, name, svg_path, geojson, color, owner, population, gdp, military_power, flag, borders, objects)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       region.id,
@@ -97,7 +97,9 @@ export const worldRepository = {
       region.gdp || 100,
       region.militaryPower || 100,
       region.flag || null,
-      JSON.stringify(region.borders ?? [])
+      JSON.stringify(region.borders ?? []),
+      // Этап 4: маркеры на карте (столицы/города/батальоны) — иначе терялись при создании
+      JSON.stringify(region.objects ?? [])
     );
     return region;
   },
@@ -164,6 +166,8 @@ export const worldRepository = {
           militaryPower: region.militaryPower,
           flag: region.flag,
           borders: region.borders,
+          // Этап 4: маркеры на карте (столицы/города/батальоны)
+          objects: region.objects,
         });
       }
     });
@@ -175,9 +179,9 @@ export const worldRepository = {
    * Batch update multiple regions in a single transaction.
    * Much faster than calling updateRegion() N times.
    *
-   * `owner` and `color` are optional; if omitted, the existing value is
-   * preserved (the prepared statement writes NULL, which we guard with a
-   * COALESCE in the SET clause). This lets callers persist only the
+   * `owner`, `color` and `objects` are optional; if omitted, the existing
+   * value is preserved (the prepared statement writes NULL, which we guard
+   * with a COALESCE in the SET clause). This lets callers persist only the
    * fields that actually changed.
    */
   updateRegionsBatch: (updates: {
@@ -187,6 +191,7 @@ export const worldRepository = {
     militaryPower?: number;
     owner?: string;
     color?: string;
+    objects?: any[];
   }[]) => {
     if (updates.length === 0) return;
 
@@ -196,7 +201,8 @@ export const worldRepository = {
         gdp          = COALESCE(?, gdp),
         military_power = COALESCE(?, military_power),
         owner        = COALESCE(?, owner),
-        color        = COALESCE(?, color)
+        color        = COALESCE(?, color),
+        objects      = COALESCE(?, objects)
       WHERE id = ?
     `);
 
@@ -208,6 +214,8 @@ export const worldRepository = {
           item.militaryPower ?? null,
           item.owner ?? null,
           item.color ?? null,
+          // Этап 4: без этой строки батальоны/столицы терялись при перезагрузке
+          item.objects !== undefined ? JSON.stringify(item.objects) : null,
           item.id,
         );
       }

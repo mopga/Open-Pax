@@ -14,8 +14,9 @@ import { gamesRouter } from './games.routes';
 import { chatsRouter } from './chats.routes';
 import { savesRouter } from './saves.routes';
 import { llmRouter } from './llm.routes';
+import { geoRouter } from './geo.routes';
 
-export { healthRouter, countriesRouter, templatesRouter, mapsRouter, worldsRouter, gamesRouter, chatsRouter, savesRouter, llmRouter };
+export { healthRouter, countriesRouter, templatesRouter, mapsRouter, worldsRouter, gamesRouter, chatsRouter, savesRouter, llmRouter, geoRouter };
 
 // Combined router for mounting all routes
 export function registerRoutes(app: Router): void {
@@ -32,4 +33,6 @@ export function registerRoutes(app: Router): void {
   app.use('/api/games', chatsRouter);
   app.use('/api/saves', savesRouter);
   app.use('/api/llm', llmRouter);
+  // Этап 4: статичные геоданные Natural Earth
+  app.use('/api/geo', geoRouter);
 }
