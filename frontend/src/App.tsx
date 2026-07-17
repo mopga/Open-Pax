@@ -11,9 +11,11 @@ import { CreateWorld, type WorldConfig } from './components/WorldBuilder/CreateW
 import { TemplateSelector } from './components/Game/TemplateSelector';
 import { CountrySelector } from './components/Game/CountrySelector';
 import { DiplomacyPanel } from './components/Game/DiplomacyPanel';
+import { ChatsPanel } from './components/Game/ChatsPanel';
+import { AdvisorChat } from './components/Game/AdvisorChat';
 import { gameApi, worldApi, mapApi, savesApi } from './services/api';
 import type { Region, World, Game } from './types';
-import { useGameStore, useUIStore, useActionsStore, type LocalMap } from './stores';
+import { useGameStore, useUIStore, useActionsStore, useChatStore, selectTotalUnread, type LocalMap } from './stores';
 import { useSSE } from './services/sse';
 
 // Вспомогательная функция: точки в SVG path
@@ -67,6 +69,21 @@ function App() {
     setSuggestions, setNewActionText, clearSuggestions,
     reset: resetActions
   } = useActionsStore();
+
+  // Этап 3: дипломатические чаты + живой Советник
+  const panelTab = useChatStore(s => s.panelTab);
+  const setPanelTab = useChatStore(s => s.setPanelTab);
+  const totalUnread = useChatStore(selectTotalUnread);
+
+  // Привязка чатов к текущей игре (при смене игры chatStore сбрасывается)
+  const currentGameId = currentGame?.id || null;
+  useEffect(() => {
+    const chatStore = useChatStore.getState();
+    chatStore.setGameId(currentGameId);
+    if (currentGameId) {
+      chatStore.refreshChats();
+    }
+  }, [currentGameId]);
 
   // Refs (not in store - DOM refs)
   const actionsRef = useRef<HTMLDivElement>(null);
@@ -697,6 +714,23 @@ function App() {
     onActionVoided: (data) => {
       setTurnProgress(`⊘ Действие отклонено: ${data.reason || data.action}`);
     },
+    // Этап 3: входящее сообщение от политии — бейдж unread + обновление списка чатов
+    onChatMessage: (data) => {
+      const chatStore = useChatStore.getState();
+      chatStore.handleIncomingChatMessage(data);
+      // Синхронизируем список с сервером (новые чаты, актуальные unread)
+      chatStore.refreshChats();
+    },
+    // Этап 3: проактивный комментарий советника после хода — в ленту с пометкой
+    onAdvisorProactive: (data) => {
+      if (data?.content) {
+        useChatStore.getState().addAdvisorMessage({
+          role: 'assistant',
+          content: data.content,
+          proactive: true,
+        });
+      }
+    },
     onTurnComplete: (data) => {
       console.log('[SSE] Turn complete:', data);
       setIsProcessingTurn(false);
@@ -995,10 +1029,15 @@ function App() {
                       } catch (e) { console.error(e); }
                     })();
                   }
+                  // Этап 3: актуализируем чаты при открытии панели
+                  useChatStore.getState().refreshChats();
                 }}
                 title="Действия"
               >
                 ⚡
+                {totalUnread > 0 && (
+                  <span className="floating-btn-badge">{totalUnread}</span>
+                )}
               </button>
             )}
 
@@ -1023,7 +1062,7 @@ function App() {
                 )}
 
                 <div className="floating-advisor-header">
-                  <div className="panel-title">⚡ Действия</div>
+                  <div className="panel-title">⚡ Панель управления</div>
                   <div className="header-buttons">
                     <button
                       className="btn-maximize"
@@ -1036,7 +1075,31 @@ function App() {
                   </div>
                 </div>
 
+                {/* Этап 3: вкладки панели — Предложения | Советник | Дипломатия */}
+                <div className="advisor-tabs-row">
+                  <button
+                    className={`advisor-tab ${panelTab === 'suggestions' ? 'active' : ''}`}
+                    onClick={() => setPanelTab('suggestions')}
+                  >
+                    Предложения
+                  </button>
+                  <button
+                    className={`advisor-tab ${panelTab === 'advisor' ? 'active' : ''}`}
+                    onClick={() => setPanelTab('advisor')}
+                  >
+                    Советник
+                  </button>
+                  <button
+                    className={`advisor-tab ${panelTab === 'chats' ? 'active' : ''}`}
+                    onClick={() => setPanelTab('chats')}
+                  >
+                    Дипломатия
+                    {totalUnread > 0 && <span className="tab-badge">{totalUnread}</span>}
+                  </button>
+                </div>
+
                 {/* Actions Content */}
+                {panelTab === 'suggestions' && (
                 <div className="suggestions-content">
                   {/* Generate Button */}
                   <button
@@ -1232,8 +1295,24 @@ function App() {
                     </button>
                   </div>
                 </div>
+                )}
+
+                {/* Этап 3: вкладка живого Советника (стриминг + проактивные сводки) */}
+                {panelTab === 'advisor' && currentGame && (
+                  <AdvisorChat gameId={currentGame.id} />
+                )}
+
+                {/* Этап 3: вкладка дипломатических чатов */}
+                {panelTab === 'chats' && currentGame && (
+                  <ChatsPanel
+                    gameId={currentGame.id}
+                    regions={regions}
+                    playerPolityId={playerPolityId}
+                  />
+                )}
 
                 {/* Submit Button */}
+                {panelTab === 'suggestions' && (
                 <div className="suggestions-footer">
                   <button
                     className="btn-submit-actions"
@@ -1276,6 +1355,7 @@ function App() {
                     {loading ? 'Думаю...' : `Отправить ${pendingActions.length} действие(й) →`}
                   </button>
                 </div>
+                )}
               </div>
             )}
 

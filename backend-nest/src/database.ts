@@ -275,6 +275,36 @@ export function initDatabase() {
     }
   }
 
+  // Этап 3: дипломатические чаты (один чат на пару игра×полития)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS chats (
+      id TEXT PRIMARY KEY,
+      game_id TEXT NOT NULL,
+      polity_id TEXT NOT NULL,
+      polity_name TEXT NOT NULL,
+      polity_color TEXT DEFAULT '#888888',
+      created_at TEXT,
+      last_message_at TEXT,
+      UNIQUE(game_id, polity_id)
+    )
+  `);
+
+  // Этап 3: сообщения дипломатических чатов
+  // role: 'player' (игрок) | 'polity' (ответ политии); read — прочитано ли
+  // сообщение политии игроком (для счётчика непрочитанных).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id TEXT PRIMARY KEY,
+      chat_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      turn INTEGER DEFAULT 0,
+      read INTEGER DEFAULT 0,
+      created_at TEXT,
+      FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
+    )
+  `);
+
   console.log('✅ Database initialized');
 }
 

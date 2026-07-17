@@ -312,6 +312,153 @@ export const gameApi = {
 };
 
 // ============================================================================
+// Chats API (Этап 3: дипломатические чаты)
+// ============================================================================
+
+/** Сводка чата с политией (строка списка чатов) */
+export interface ChatSummaryData {
+  id: string;
+  polityId: string;
+  polityName: string;
+  polityColor: string;
+  lastMessage?: string;
+  lastMessageAt?: string;
+  unread: number;
+}
+
+/** Сообщение в дипломатическом чате */
+export interface ChatMessageData {
+  id: string;
+  role: 'player' | 'polity' | 'system';
+  content: string;
+  turn?: number;
+  createdAt?: string;
+}
+
+export const chatsApi = {
+  /**
+   * Список дипломатических чатов игры
+   */
+  list: (gameId: string): Promise<{ chats: ChatSummaryData[] }> => {
+    return fetchApi(`/games/${gameId}/chats`);
+  },
+
+  /**
+   * Создать (или получить существующий) чат с политией — идемпотентно
+   */
+  create: (gameId: string, polityName: string): Promise<{ chat: ChatSummaryData }> => {
+    return fetchApi(`/games/${gameId}/chats`, {
+      method: 'POST',
+      body: JSON.stringify({ polityName }),
+    });
+  },
+
+  /**
+   * Сообщения чата (на бэкенде помечает чат прочитанным)
+   */
+  messages: (gameId: string, chatId: string): Promise<{ messages: ChatMessageData[] }> => {
+    return fetchApi(`/games/${gameId}/chats/${chatId}/messages`);
+  },
+
+  /**
+   * Отправить сообщение политии; reply — ответ политии от LLM
+   */
+  send: (gameId: string, chatId: string, content: string): Promise<{
+    message: ChatMessageData;
+    reply: ChatMessageData;
+  }> => {
+    return fetchApi(`/games/${gameId}/chats/${chatId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    });
+  },
+};
+
+// ============================================================================
+// Advisor API (Этап 3: живой Советник)
+// ============================================================================
+
+/** Сообщение истории диалога с советником */
+export interface AdvisorHistoryItem {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export const advisorApi = {
+  /**
+   * Спросить советника (многоходовый диалог — history шлём с каждым запросом)
+   */
+  ask: (gameId: string, message: string, history: AdvisorHistoryItem[]): Promise<{ reply: string }> => {
+    return fetchApi(`/games/${gameId}/advisor`, {
+      method: 'POST',
+      body: JSON.stringify({ message, history }),
+    });
+  },
+
+  /**
+   * Стриминг ответа советника (text/plain chunked).
+   * onToken вызывается на каждый кусок текста; возвращает полный ответ.
+   * При сетевой ошибке стрима — fallback на обычный POST /advisor.
+   */
+  askStream: async (
+    gameId: string,
+    message: string,
+    history: AdvisorHistoryItem[],
+    onToken: (token: string) => void
+  ): Promise<string> => {
+    const url = `${API_BASE}/games/${gameId}/advisor/stream`;
+    const body = JSON.stringify({ message, history });
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      });
+    } catch (e) {
+      // Сеть не дала открыть поток — откатываемся на обычный запрос
+      console.warn('[Advisor] Стрим недоступен, fallback на POST /advisor:', e);
+      const data = await advisorApi.ask(gameId, message, history);
+      onToken(data.reply);
+      return data.reply;
+    }
+
+    if (!response.ok || !response.body) {
+      console.warn('[Advisor] Стрим вернул', response.status, '— fallback на POST /advisor');
+      const data = await advisorApi.ask(gameId, message, history);
+      onToken(data.reply);
+      return data.reply;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let full = '';
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        if (chunk) {
+          full += chunk;
+          onToken(chunk);
+        }
+      }
+    } catch (e) {
+      // Обрыв посреди потока: если ничего не получили — fallback, иначе отдаём то, что есть
+      if (!full) {
+        console.warn('[Advisor] Поток оборвался, fallback на POST /advisor:', e);
+        const data = await advisorApi.ask(gameId, message, history);
+        onToken(data.reply);
+        return data.reply;
+      }
+      console.warn('[Advisor] Поток оборвался на середине, используем частичный ответ:', e);
+    }
+    return full;
+  },
+};
+
+// ============================================================================
 // Saves API
 // ============================================================================
 

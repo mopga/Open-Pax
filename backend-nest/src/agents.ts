@@ -95,6 +95,24 @@ export class GameController {
   }
 
   /**
+   * Стриминговая версия советника (Этап 3): прогресс генерации приходит
+   * в onToken (счётчик символов, конвенция LLMRouter.stream),
+   * возвращается полный текст ответа.
+   */
+  async getAdvisorStreamWithPrompts(
+    gameData: any,
+    message: string,
+    history: any[] = [],
+    onToken: (charsSoFar: number) => void
+  ): Promise<string> {
+    if (!this.promptEngine) {
+      this.initPromptEngine(gameData);
+    }
+
+    return this.promptEngine!.getAdvisorStream(gameData, message, history, onToken);
+  }
+
+  /**
    * Получить предложения через actions.md
    */
   async getSuggestionsWithPrompts(gameData: any): Promise<any[]> {

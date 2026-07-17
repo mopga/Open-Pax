@@ -2065,3 +2065,416 @@ body {
 .difficulty-selector select:hover {
   border-color: #667eea;
 }
+
+/* ============================================================================
+   Этап 3: дипломатические чаты + живой Советник
+   ========================================================================== */
+
+/* Строка вкладок в плавающей панели */
+.advisor-tabs-row {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #1a1a24;
+  border-bottom: 1px solid #2a2a3a;
+  flex-shrink: 0;
+}
+
+/* Бейдж непрочитанного на вкладке */
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0 5px;
+  background: #ef4444;
+  border-radius: 9px;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+/* Бейдж непрочитанного на плавающей кнопке ⚡ */
+.floating-btn-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ef4444;
+  border: 2px solid #0a0a0f;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+/* --- Панель чатов --- */
+.chats-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #0a0a0f;
+}
+
+.chats-empty {
+  color: #555;
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 20px 12px;
+  line-height: 1.5;
+}
+
+.chats-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chat-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: #1a1a24;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.chat-item:hover {
+  background: #222230;
+  border-color: #667eea;
+}
+
+.chat-color-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.chat-item-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-item-name {
+  color: #eee;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.chat-item-last {
+  color: #888;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+.chat-unread-badge {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ef4444;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* Кнопка «Новый чат» и выбор политии */
+.btn-new-chat {
+  margin: 12px 12px 0;
+  padding: 9px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.btn-new-chat:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.new-chat-picker {
+  margin: 8px 12px 0;
+  max-height: 180px;
+  overflow-y: auto;
+  background: #1a1a24;
+  border: 1px solid #2a2a3a;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.polity-pick-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  color: #ccc;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.polity-pick-item:hover {
+  background: #252530;
+  color: #fff;
+}
+
+/* --- Тред сообщений --- */
+.chat-thread-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #1a1a24;
+  border-bottom: 1px solid #2a2a3a;
+  flex-shrink: 0;
+}
+
+.btn-chat-back {
+  width: 28px;
+  height: 28px;
+  background: #252530;
+  border: 1px solid #333;
+  border-radius: 6px;
+  color: #888;
+  cursor: pointer;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.btn-chat-back:hover {
+  background: #333;
+  color: #667eea;
+  border-color: #667eea;
+}
+
+.chat-thread-title {
+  color: #eee;
+  font-size: 0.95rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Пузыри сообщений: player справа, polity слева, system по центру */
+.chat-bubble {
+  max-width: 85%;
+  padding: 9px 12px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chat-bubble.player {
+  align-self: flex-end;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+
+.chat-bubble.polity {
+  align-self: flex-start;
+  background: #1a1a24;
+  border: 1px solid #2a2a3a;
+  color: #ddd;
+  border-bottom-left-radius: 4px;
+}
+
+.chat-bubble.system {
+  align-self: center;
+  background: transparent;
+  border: 1px dashed #333;
+  color: #888;
+  font-size: 0.78rem;
+  font-style: italic;
+}
+
+.chat-bubble.loading {
+  color: #888;
+  font-style: italic;
+}
+
+/* Поле ввода сообщения */
+.chat-input-row {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  background: #1a1a24;
+  border-top: 1px solid #2a2a3a;
+  flex-shrink: 0;
+}
+
+.chat-input-row textarea {
+  flex: 1;
+  background: #0a0a0f;
+  border: 1px solid #2a2a3a;
+  border-radius: 8px;
+  color: #ddd;
+  font-size: 0.85rem;
+  padding: 8px 10px;
+  resize: none;
+  font-family: inherit;
+}
+
+.chat-input-row textarea:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.btn-chat-send {
+  width: 40px;
+  align-self: stretch;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-chat-send:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.btn-chat-send:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* --- Живой Советник --- */
+.advisor-chat {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #0a0a0f;
+}
+
+.advisor-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.advisor-bubble {
+  max-width: 90%;
+  padding: 9px 12px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.advisor-bubble.user {
+  align-self: flex-end;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+
+.advisor-bubble.assistant {
+  align-self: flex-start;
+  background: #1a1a24;
+  border-left: 3px solid #f093fb;
+  color: #ddd;
+  border-bottom-left-radius: 4px;
+}
+
+/* Бейдж проактивной сводки советника */
+.proactive-badge {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 2px 8px;
+  background: rgba(240, 147, 251, 0.15);
+  border: 1px solid #f093fb;
+  border-radius: 8px;
+  color: #f093fb;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  vertical-align: middle;
+}
+
+/* Курсор стриминга */
+.stream-cursor {
+  display: inline-block;
+  margin-left: 2px;
+  color: #f093fb;
+  animation: stream-blink 0.8s step-start infinite;
+}
+
+@keyframes stream-blink {
+  50% { opacity: 0; }
+}
+
+/* Кнопка «Переговоры» в панели дипломатии */
+.btn-negotiate {
+  margin-left: auto;
+  padding: 3px 8px;
+  background: #252530;
+  border: 1px solid #333;
+  border-radius: 6px;
+  color: #888;
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.btn-negotiate:hover {
+  background: #333;
+  color: #667eea;
+  border-color: #667eea;
+}

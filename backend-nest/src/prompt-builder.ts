@@ -22,6 +22,8 @@ interface GameData {
   consolidatedHistory?: string;
   /** Сколько последних раундов держать сырыми при консолидации */
   consolidationTail?: number;
+  /** Этап 3: предформатированные транскрипты дипломатических чатов */
+  chatTranscripts?: string;
   world: {
     name: string;
     basePrompt: string;
@@ -119,7 +121,7 @@ export class PromptBuilder {
       GRAND_MAP_DESCRIPTION_NO_CITY: this.buildMapDescriptionNoCity(),
 
       ALL_EVENTS_WITH_CONSOLIDATION: this.buildEventHistory(),
-      CHATS_NON_CONSOLIDATED_ROUNDS: '',
+      CHATS_NON_CONSOLIDATED_ROUNDS: this.game.chatTranscripts ?? '',
       NON_CONSOLIDATED_ROUNDS_WITH_DATES: '',
 
       LANGUAGE: this.language,
@@ -397,6 +399,31 @@ export class PromptEngine {
     );
 
     return parseAdvisorResponse(response.content);
+  }
+
+  /**
+   * Этап 3: стриминговый вариант советника (живой Советник на фронте).
+   * Контракт как у getAdvisor, но токены летят в onToken.
+   */
+  async getAdvisorStream(
+    game: GameData,
+    message: string,
+    history: AdvisorMessage[] = [],
+    onToken: (charsSoFar: number) => void
+  ): Promise<string> {
+    const builder = new PromptBuilder(game);
+    const vars = builder.buildVariables();
+
+    const prompt = buildAdvisorPrompt(vars, message, history);
+    const response = await this.llm.stream(
+      'advisor',
+      'Ты — мудрый советник лидера государства в альтернативной истории.',
+      prompt,
+      onToken,
+      { temperature: 0.7 }
+    );
+
+    return response.content;
   }
 
   async getSuggestions(game: GameData): Promise<Suggestion[]> {

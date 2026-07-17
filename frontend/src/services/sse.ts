@@ -18,6 +18,10 @@ interface UseSSEOptions {
   onLLMProgress?: (data: { mechanic: string; chars: number }) => void;
   onJumpEvent?: (data: { index: number; total: number; event: any }) => void;
   onActionVoided?: (data: { action: string; reason: string }) => void;
+  // Этап 3: входящее сообщение дипломатического чата
+  onChatMessage?: (data: { chatId: string; polityId: string; polityName: string; message: any }) => void;
+  // Этап 3: проактивный комментарий советника после хода
+  onAdvisorProactive?: (data: { content: string }) => void;
   onError?: (error: any) => void;
   onConnected?: () => void;
 }
@@ -128,6 +132,25 @@ export function useSSE(gameId: string | null, options: UseSSEOptions) {
 
     eventSource.addEventListener('ping', () => {
       // Keep-alive, no action needed
+    });
+
+    // Этап 3: дипломатические чаты + живой Советник
+    eventSource.addEventListener('chat_message', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        options.onChatMessage?.(data);
+      } catch (err) {
+        console.error('[SSE] Failed to parse chat_message:', err);
+      }
+    });
+
+    eventSource.addEventListener('advisor_proactive', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        options.onAdvisorProactive?.(data);
+      } catch (err) {
+        console.error('[SSE] Failed to parse advisor_proactive:', err);
+      }
     });
 
   }, [gameId]);

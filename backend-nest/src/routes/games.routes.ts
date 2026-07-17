@@ -27,6 +27,17 @@ function respondRouteError(res: any, e: any, fallback: string): void {
   }
 }
 
+/**
+ * Нормализация истории диалога с Советником из тела запроса:
+ * принимаем только сообщения вида { role: 'user'|'assistant', content: string }.
+ */
+function normalizeAdvisorHistory(raw: any): { role: 'user' | 'assistant'; content: string }[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((m: any) => m && typeof m.content === 'string' && (m.role === 'user' || m.role === 'assistant'))
+    .map((m: any) => ({ role: m.role as 'user' | 'assistant', content: m.content as string }));
+}
+
 gamesRouter.post('/', (req, res) => {
   const worldId = req.body.worldId || req.body.world_id;
   const playerName = req.body.playerName || req.body.player_name;
@@ -179,6 +190,72 @@ gamesRouter.get('/:id/advisor', async (req, res) => {
       res.status(502).json({ error: `LLM (${e.provider}): ${e.message}` });
     } else {
       res.status(404).json({ error: 'Game not found' });
+    }
+  }
+});
+
+// Этап 3: живой Советник — многоходовой диалог (message + history в теле)
+gamesRouter.post('/:id/advisor', async (req, res) => {
+  const gameId = req.params.id;
+  const message = typeof req.body?.message === 'string' ? req.body.message : '';
+  const history = normalizeAdvisorHistory(req.body?.history);
+
+  try {
+    const session = getSessionRegistry().getSessionOrThrow(gameId);
+    const reply = await session.getAdvisor(message, history);
+    res.json({ reply });
+  } catch (e: any) {
+    console.error('[Advisor POST] Error:', e);
+    respondRouteError(res, e, 'Failed to get advisor reply');
+  }
+});
+
+// Этап 3: стриминг ответа Советника (text/plain; токены пишем по мере поступления)
+gamesRouter.post('/:id/advisor/stream', async (req, res) => {
+  const gameId = req.params.id;
+  const message = typeof req.body?.message === 'string' ? req.body.message : '';
+  const history = normalizeAdvisorHistory(req.body?.history);
+
+  // Заголовки стрима: setHeader сам по себе ответ НЕ коммитит —
+  // до первого res.write ещё можно ответить обычной JSON-ошибкой (404/502).
+  // Content-Length не ставим — Node сам включит Transfer-Encoding: chunked.
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache');
+  // Не буферизовать ответ на прокси (nginx и подобных)
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  try {
+    const session = getSessionRegistry().getSessionOrThrow(gameId);
+
+    let gotTextChunks = false;
+    const onToken = (chunk: unknown) => {
+      // Строковый токен — пишем сразу. Число (charsSoFar — конвенция
+      // LLMRouter.stream) несёт только прогресс без текста: полный текст
+      // тогда дописываем в конце одним куском.
+      if (typeof chunk === 'string' && chunk.length > 0) {
+        gotTextChunks = true;
+        res.write(chunk);
+      }
+    };
+
+    // GameSession.getAdvisorStream (Этап 3); защитный fallback на
+    // нестриминговый ответ — для старых сессий в памяти после хот-релоада.
+    const streamFn = (session as any).getAdvisorStream;
+    const reply: string = typeof streamFn === 'function'
+      ? await streamFn.call(session, message, history, onToken)
+      : await session.getAdvisor(message, history);
+
+    if (!gotTextChunks && reply) {
+      res.write(reply);
+    }
+    res.end();
+  } catch (e: any) {
+    console.error('[Advisor STREAM] Error:', e);
+    if (res.headersSent) {
+      // Поток уже начат — статус не поменять, просто обрываем ответ
+      res.end();
+    } else {
+      respondRouteError(res, e, 'Failed to stream advisor reply');
     }
   }
 });

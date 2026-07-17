@@ -5,7 +5,8 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { gameApi } from '../../services/api';
+import { gameApi, chatsApi } from '../../services/api';
+import { useChatStore, useUIStore } from '../../stores';
 import type { Region } from '../../types';
 
 interface DiplomacyPanelProps {
@@ -85,6 +86,24 @@ export const DiplomacyPanel: React.FC<DiplomacyPanelProps> = ({
     fetchRelationships();
   }, [fetchRelationships, refreshKey]);
 
+  // Этап 3: открыть переговоры с политией — создать чат и переключить панель на вкладку «Дипломатия»
+  const handleOpenChat = async (polityName: string) => {
+    try {
+      const { chat } = await chatsApi.create(gameId, polityName);
+      const chatStore = useChatStore.getState();
+      chatStore.upsertChat(chat);
+      chatStore.setActiveChat(chat.id);
+      chatStore.setPanelTab('chats');
+      useUIStore.getState().setShowActions(true);
+      // Загружаем сообщения (бэкенд помечает чат прочитанным)
+      const data = await chatsApi.messages(gameId, chat.id);
+      chatStore.setMessages(chat.id, data.messages || []);
+      chatStore.markRead(chat.id);
+    } catch (e) {
+      console.error('[DiplomacyPanel] Не удалось открыть переговоры:', e);
+    }
+  };
+
   // regionOwner — это polityId владельца выбранного региона
   const regionOwner = regions.find(r => r.id === selectedRegionId)?.owner;
   if (!regionOwner || regionOwner === 'neutral') {
@@ -149,6 +168,13 @@ export const DiplomacyPanel: React.FC<DiplomacyPanelProps> = ({
                   <span style={{ color: REL_COLOR.ally }}>●</span>
                   <span>{FLAG_EMOJI[e.id] || '🏳️'}</span>
                   <span>{e.name}</span>
+                  <button
+                    className="btn-negotiate"
+                    onClick={() => handleOpenChat(e.name)}
+                    title={`Переговоры с ${e.name}`}
+                  >
+                    💬 Переговоры
+                  </button>
                 </div>
               ))}
             </div>
@@ -164,6 +190,13 @@ export const DiplomacyPanel: React.FC<DiplomacyPanelProps> = ({
                   <span style={{ color: REL_COLOR.hostile }}>●</span>
                   <span>{FLAG_EMOJI[e.id] || '🏳️'}</span>
                   <span>{e.name}</span>
+                  <button
+                    className="btn-negotiate"
+                    onClick={() => handleOpenChat(e.name)}
+                    title={`Переговоры с ${e.name}`}
+                  >
+                    💬 Переговоры
+                  </button>
                 </div>
               ))}
             </div>
