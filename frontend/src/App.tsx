@@ -13,6 +13,11 @@ import { CountrySelector } from './components/Game/CountrySelector';
 import { DiplomacyPanel } from './components/Game/DiplomacyPanel';
 import { ChatsPanel } from './components/Game/ChatsPanel';
 import { AdvisorChat } from './components/Game/AdvisorChat';
+import { Landing } from './components/Game/Landing';
+import { SaveGameModal } from './components/Game/SaveGameModal';
+import { HudBar } from './components/Game/HudBar';
+import { GameLoader, WORLD_GEN_PHASES } from './components/Game/GameLoader';
+import { Fab } from './components/Game/Fab';
 import { gameApi, worldApi, mapApi, savesApi } from './services/api';
 import type { Region, World, Game } from './types';
 import { useGameStore, useUIStore, useActionsStore, useChatStore, selectTotalUnread, type LocalMap } from './stores';
@@ -503,7 +508,6 @@ function App() {
   const handleTimeSkip = async (days: number) => {
     if (!currentGame) return;
 
-    setShowJumpMenu(false);
     setLoading(true);
 
     try {
@@ -614,6 +618,21 @@ function App() {
     setSelectedRegion(regionId);
   };
 
+  // Этап 6: открытие панели управления (FAB)
+  const openActionsPanel = () => {
+    setShowActions(true);
+    if (suggestions.length === 0 && currentGame) {
+      (async () => {
+        try {
+          const data = await gameApi.getSuggestions(currentGame.id);
+          setSuggestions(data.suggestions || []);
+        } catch (e) { console.error(e); }
+      })();
+    }
+    // Этап 3: актуализируем чаты при открытии панели
+    useChatStore.getState().refreshChats();
+  };
+
   // Выбрать тип действия и заполнить шаблон
   const handleActionTypeSelect = (type: string, template: string, targetRegionId?: string) => {
     setSelectedActionType(type);
@@ -633,46 +652,41 @@ function App() {
     setTargetRegionForAttack('');
   };
 
-  // Рендер главного меню
+  // Этап 6: возобновление сохранённой игры с лендинга
+  const handleResumeSave = async (save: any) => {
+    if (!save?.id || !save?.game_id) return;
+    setLoading(true);
+    try {
+      await gameApi.loadSave(save.id);
+      const game = await gameApi.get(save.game_id);
+      setCurrentGame(game);
+      setCurrentWorld(game.world);
+      const regionId = game.players?.[0]?.regionId;
+      if (regionId) {
+        setSelectedRegion(regionId);
+        // Восстанавливаем код страны игрока (для флагов на карте)
+        const code = String(regionId).split('_').pop();
+        if (code) setSelectedCountry(code);
+      }
+      setHistory([]);
+      setCurrentView('game');
+    } catch (e) {
+      console.error('[Save] Failed to resume save:', e);
+      alert('Ошибка загрузки сохранения');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Рендер главного меню — Этап 6: лендинг в духе pax_home
   const renderMenu = () => (
-    <div className="menu-container">
-      <div className="menu-header">
-        <h1>🗺️ Open-Pax</h1>
-        <p>Alternate History Simulator</p>
-      </div>
-
-      {savedMaps.length > 0 && (
-        <div className="saved-maps-section">
-          <h3>Сохраненные миры</h3>
-          <div className="maps-grid">
-            {savedMaps.map(map => (
-              <div key={map.id} className="map-card" onClick={() => handleSelectMap(map)}>
-                <div className="map-preview">
-                  <svg viewBox="0 0 800 600">
-                    {map.regions.map(r => (
-                      <path key={r.id} d={r.path} fill={r.color} opacity={0.7} />
-                    ))}
-                  </svg>
-                </div>
-                <div className="map-info">
-                  <h4>{map.name}</h4>
-                  <span>{map.regions.length} регионов</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="menu-actions">
-        <button className="btn-primary" onClick={() => setCurrentView('select-template')}>
-          🌍 Новая игра (шаблон)
-        </button>
-        <button className="btn-secondary" onClick={() => setCurrentView('editor')}>
-          ➕ Создать новую карту
-        </button>
-      </div>
-    </div>
+    <Landing
+      onNewGame={() => setCurrentView('select-template')}
+      onOpenEditor={() => setCurrentView('editor')}
+      onSelectMap={handleSelectMap}
+      onResumeSave={handleResumeSave}
+      savedMaps={savedMaps}
+    />
   );
 
   // Format date for display
@@ -690,6 +704,20 @@ function App() {
   const [turnProgress, setTurnProgress] = useState<string>('');
   // Этап 2: сложность новой игры
   const [difficulty, setDifficulty] = useState<string>('normal');
+
+  // Этап 6: модалка сохранения (замена prompt()) и фазы лоадера генерации мира
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [genPhase, setGenPhase] = useState(0);
+
+  // Ротация этапов лоадера, пока идёт генерация мира на экране выбора страны
+  useEffect(() => {
+    if (!loading || currentView !== 'select-country') return;
+    setGenPhase(0);
+    const t = setInterval(() => {
+      setGenPhase(p => Math.min(p + 1, WORLD_GEN_PHASES.length - 1));
+    }, 12000);
+    return () => clearInterval(t);
+  }, [loading, currentView]);
 
   // Action type selector
   const [selectedActionType, setSelectedActionType] = useState<string | null>(null);
@@ -779,67 +807,21 @@ function App() {
 
     return (
       <div className="game-wrapper">
-        {/* Timeline Bar */}
-        <div className="timeline-bar">
-          <div className="timeline-left">
-            <button className="btn-back-menu" onClick={() => setCurrentView('menu')}>
-              ← Меню
-            </button>
-          </div>
-          <div className="timeline-center">
-            <span className="turn-badge">ХОД {currentGame?.currentTurn || 1}</span>
-          </div>
-          <div className="timeline-right">
-            <div className="timeline-date">
-              <span className="date-display">📅 {formatDate(currentGame?.currentDate || '1951-01-01')}</span>
-              <button
-                className="btn-time-skip"
-                onClick={handleRewind}
-                title="Откат на ход назад"
-                disabled={loading}
-              >
-                ⏪
-              </button>
-              <button
-                className="btn-time-skip"
-                onClick={() => setShowJumpMenu(!showJumpMenu)}
-                title="Тайм-скип"
-              >
-                →
-              </button>
-              {showJumpMenu && (
-                <div className="time-skip-dropdown">
-                  <div className="dropdown-header">Тайм-скип</div>
-                  <button onClick={() => handleTimeSkip(0)}>⏭ До следующего события</button>
-                  <div className="dropdown-divider"></div>
-                  <button onClick={() => handleTimeSkip(7)}>1 неделя</button>
-                  <button onClick={() => handleTimeSkip(30)}>1 месяц</button>
-                  <button onClick={() => handleTimeSkip(90)}>3 месяца</button>
-                  <button onClick={() => handleTimeSkip(180)}>6 месяцев</button>
-                  <button onClick={() => handleTimeSkip(365)}>1 год</button>
-                  <div className="dropdown-divider"></div>
-                  <div className="custom-jump">
-                    <input
-                      type="number"
-                      min="1"
-                      max="365"
-                      value={jumpDays > 365 ? jumpDays : ''}
-                      placeholder="?"
-                      onChange={(e) => setJumpDays(parseInt(e.target.value) || 30)}
-                    />
-                    <span>дней</span>
-                    <button
-                      className="btn-confirm-jump"
-                      onClick={() => handleTimeSkip(jumpDays)}
-                    >
-                      ✓
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        {/* Этап 6: HUD-бар в духе оригинала (дата, rewind, панель «Таймлайн») */}
+        <HudBar
+          worldName={currentWorld?.name || ''}
+          turn={currentGame?.currentTurn || 1}
+          dateISO={currentGame?.currentDate || '1951-01-01'}
+          loading={loading}
+          onBack={() => {
+            setCurrentView('menu');
+            setCurrentWorld(null);
+            setCurrentGame(null);
+            setHistory([]);
+          }}
+          onRewind={handleRewind}
+          onTimeSkip={handleTimeSkip}
+        />
 
         <div className="game-container">
           {/* Этап 2: баннер прогресса хода + Intervene */}
@@ -941,19 +923,7 @@ function App() {
             <div className="save-load-section">
               <button
                 className="btn-save"
-                onClick={async () => {
-                  if (!currentGame) return;
-                  try {
-                    const name = prompt('Название сохранения:', `Игра ${new Date().toLocaleString()}`);
-                    if (name) {
-                      await gameApi.saveGame(currentGame.id, name);
-                      alert('Игра сохранена!');
-                    }
-                  } catch (e) {
-                    console.error(e);
-                    alert('Ошибка сохранения');
-                  }
-                }}
+                onClick={() => setShowSaveModal(true)}
               >
                 💾 Сохранить
               </button>
@@ -1008,30 +978,20 @@ function App() {
               </div>
             )}
 
-            {/* Floating Actions Button */}
+            {/* Этап 6: FAB-группа (действия / дипломатия с бейджем) */}
             {!showActions && (
-              <button
-                className="floating-advisor-btn"
-                onClick={() => {
-                  setShowActions(true);
-                  if (suggestions.length === 0 && currentGame) {
-                    (async () => {
-                      try {
-                        const data = await gameApi.getSuggestions(currentGame.id);
-                        setSuggestions(data.suggestions || []);
-                      } catch (e) { console.error(e); }
-                    })();
-                  }
-                  // Этап 3: актуализируем чаты при открытии панели
-                  useChatStore.getState().refreshChats();
-                }}
-                title="Действия"
-              >
-                ⚡
-                {totalUnread > 0 && (
-                  <span className="floating-btn-badge">{totalUnread}</span>
-                )}
-              </button>
+              <Fab items={[
+                { icon: '⚡', title: 'Действия', onClick: openActionsPanel },
+                {
+                  icon: '💬',
+                  title: 'Дипломатия',
+                  badge: totalUnread > 0 ? totalUnread : undefined,
+                  onClick: () => {
+                    setPanelTab('chats');
+                    openActionsPanel();
+                  },
+                },
+              ]} />
             )}
 
             {/* Floating Actions Panel */}
@@ -1393,6 +1353,23 @@ function App() {
               ← В меню
             </button>
 
+            {/* Этап 6: модалка сохранения игры (вместо prompt()) */}
+            <SaveGameModal
+              open={showSaveModal}
+              defaultName={`Игра ${new Date().toLocaleString('ru-RU')}`}
+              onClose={() => setShowSaveModal(false)}
+              onSave={async (name) => {
+                if (!currentGame) return;
+                try {
+                  await gameApi.saveGame(currentGame.id, name);
+                  setShowSaveModal(false);
+                } catch (e) {
+                  console.error(e);
+                  alert('Ошибка сохранения');
+                }
+              }}
+            />
+
             {/* Prompt Editor Modal */}
             {showPromptEditor && (
               <div className="prompt-editor-modal">
@@ -1483,6 +1460,14 @@ function App() {
 
   return (
     <div className="app">
+      {/* Этап 6: полноэкранный лоадер генерации мира с этапами */}
+      {loading && currentView === 'select-country' && (
+        <GameLoader title="Создание мира…" phase={WORLD_GEN_PHASES[genPhase]} />
+      )}
+      {/* Этап 6: лоадер при возобновлении сохранённой игры */}
+      {loading && currentView === 'menu' && (
+        <GameLoader title="Загрузка игровых данных…" />
+      )}
       {currentView === 'menu' && renderMenu()}
       {currentView === 'select-template' && (
         <TemplateSelector

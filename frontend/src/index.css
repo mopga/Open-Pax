@@ -2799,3 +2799,1103 @@ body {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+
+/* ===== Этап 6: Лоадеры и FAB (GameLoader + Fab) ===== */
+
+/* ---------- GameLoader: полноэкранный лоадер с глобусом ---------- */
+
+.gl-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0a0a0f;
+  overflow: hidden;
+}
+
+/* Звёздный фон: два слоя точек с разным циклом мерцания */
+.gl-stars {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-repeat: repeat;
+}
+
+.gl-stars--a {
+  background-image:
+    radial-gradient(1.5px 1.5px at 12% 22%, rgba(255, 255, 255, 0.9) 100%, transparent),
+    radial-gradient(1px 1px at 34% 68%, rgba(255, 255, 255, 0.7) 100%, transparent),
+    radial-gradient(1.5px 1.5px at 56% 15%, rgba(255, 255, 255, 0.8) 100%, transparent),
+    radial-gradient(1px 1px at 71% 47%, rgba(255, 255, 255, 0.6) 100%, transparent),
+    radial-gradient(1.5px 1.5px at 88% 78%, rgba(255, 255, 255, 0.85) 100%, transparent),
+    radial-gradient(1px 1px at 5% 85%, rgba(255, 255, 255, 0.6) 100%, transparent),
+    radial-gradient(1px 1px at 45% 40%, rgba(255, 255, 255, 0.5) 100%, transparent),
+    radial-gradient(1.5px 1.5px at 80% 8%, rgba(255, 255, 255, 0.7) 100%, transparent);
+  background-size: 640px 640px;
+  animation: gl-twinkle 3.6s ease-in-out infinite alternate;
+}
+
+.gl-stars--b {
+  background-image:
+    radial-gradient(1px 1px at 20% 55%, rgba(160, 170, 255, 0.8) 100%, transparent),
+    radial-gradient(1.5px 1.5px at 42% 10%, rgba(255, 255, 255, 0.6) 100%, transparent),
+    radial-gradient(1px 1px at 63% 82%, rgba(255, 210, 250, 0.7) 100%, transparent),
+    radial-gradient(1px 1px at 92% 35%, rgba(255, 255, 255, 0.55) 100%, transparent),
+    radial-gradient(1.5px 1.5px at 28% 90%, rgba(160, 170, 255, 0.65) 100%, transparent),
+    radial-gradient(1px 1px at 76% 60%, rgba(255, 255, 255, 0.6) 100%, transparent);
+  background-size: 520px 520px;
+  animation: gl-twinkle 5.2s ease-in-out infinite alternate-reverse;
+}
+
+@keyframes gl-twinkle {
+  0% { opacity: 0.35; }
+  100% { opacity: 1; }
+}
+
+.gl-content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 24px;
+}
+
+/* Глобус: пульсирующее кольцо + сфера с меридианами */
+.gl-globe-wrap {
+  position: relative;
+  width: 128px;
+  height: 128px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gl-globe-halo {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(102, 126, 234, 0.55);
+  box-shadow: 0 0 24px rgba(102, 126, 234, 0.25), inset 0 0 18px rgba(240, 147, 251, 0.08);
+  animation: gl-halo-pulse 2.2s ease-in-out infinite;
+}
+
+@keyframes gl-halo-pulse {
+  0%, 100% { transform: scale(0.94); opacity: 0.45; }
+  50% { transform: scale(1.06); opacity: 1; }
+}
+
+.gl-globe {
+  position: relative;
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  border: 2.5px solid #aab4f5;
+  overflow: hidden;
+  box-shadow: inset -10px -8px 22px rgba(102, 126, 234, 0.35), inset 6px 6px 16px rgba(240, 147, 251, 0.12);
+  animation: gl-globe-spin 9s linear infinite;
+}
+
+@keyframes gl-globe-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.gl-globe-meridian {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border: 1.5px solid rgba(170, 180, 245, 0.75);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* Параллели */
+.gl-globe-meridian--eq { width: 100%; height: 34%; }
+.gl-globe-meridian--n1 { width: 88%; height: 22%; top: 30%; }
+.gl-globe-meridian--n2 { width: 88%; height: 22%; top: 70%; }
+
+/* Меридианы */
+.gl-globe-meridian--v1 { width: 34%; height: 100%; }
+.gl-globe-meridian--v2 { width: 62%; height: 100%; }
+
+.gl-title {
+  font-size: 1.05rem;
+  color: #d5d5e2;
+  letter-spacing: 0.3px;
+}
+
+/* Тонкий прогресс-бар */
+.gl-progress {
+  width: 240px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  position: relative;
+}
+
+.gl-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #667eea 0%, #f093fb 100%);
+  transition: width 0.4s ease;
+}
+
+.gl-progress-runner {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 38%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, #667eea 30%, #f093fb 70%, transparent);
+  animation: gl-runner 1.4s ease-in-out infinite;
+}
+
+@keyframes gl-runner {
+  0% { left: -38%; }
+  100% { left: 100%; }
+}
+
+.gl-phase {
+  font-size: 0.82rem;
+  color: #77778a;
+  margin-top: -6px;
+}
+
+/* ---------- Fab: плавающие кнопки снизу-слева ---------- */
+
+.fab-group {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 1500;
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+}
+
+.fab-btn {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid #2c2c3a;
+  background: #1a1a24;
+  color: #e0e0e0;
+  font-size: 1.15rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+
+.fab-btn:hover {
+  border-color: transparent;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.28) 0%, rgba(240, 147, 251, 0.28) 100%), #1a1a24;
+  box-shadow: 0 4px 18px rgba(102, 126, 234, 0.35), 0 0 0 1px rgba(102, 126, 234, 0.45);
+  transform: translateY(-2px);
+}
+
+.fab-btn:active {
+  transform: translateY(0);
+}
+
+.fab-icon {
+  line-height: 1;
+  display: block;
+}
+
+.fab-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #e5484d;
+  border: 2px solid #0a0a0f;
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+
+/* ============================================================
+   Этап 6: HUD-бар и панель таймлайна (HudBar.tsx)
+   Компоновка по референсам Pax Historia (pax_game_hud /
+   pax_action_sent / pax_jump2), тёмная тема Open-Pax.
+   ============================================================ */
+
+/* --- Сам бар: полупрозрачный тёмный, blur, тонкая нижняя граница --- */
+.hud-bar {
+  position: relative;
+  z-index: 1500;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  height: 56px;
+  padding: 0 16px;
+  background: rgba(10, 10, 15, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.hud-left,
+.hud-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.hud-right {
+  justify-content: flex-end;
+}
+
+.hud-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* --- Кнопка «← Меню» --- */
+.hud-back-btn {
+  padding: 7px 14px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 9px;
+  color: #bbb;
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+
+.hud-back-btn:hover {
+  border-color: #667eea;
+  color: #fff;
+  background: rgba(102, 126, 234, 0.12);
+}
+
+/* --- Лого --- */
+.hud-logo {
+  font-size: 0.95rem;
+  font-weight: 700;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.hud-logo-text {
+  background: linear-gradient(135deg, #667eea 0%, #f093fb 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* --- Название мира + бейдж хода --- */
+.hud-world-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #e0e0e0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 38vw;
+}
+
+/* Бейдж «ХОД N» — пилюля с градиентной рамкой */
+.hud-turn-badge {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #cfd6ff;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(#16161f, #16161f) padding-box,
+    linear-gradient(135deg, #667eea 0%, #f093fb 100%) border-box;
+}
+
+/* --- Пилюля даты (◀ дата ▶), как в оригинале --- */
+.hud-date-pill {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 999px;
+}
+
+.hud-date-display {
+  padding: 0 12px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #e0e0e0;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.hud-date-nav {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  color: #999;
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.hud-date-nav:hover:not(:disabled) {
+  background: rgba(102, 126, 234, 0.18);
+  color: #fff;
+}
+
+.hud-date-nav:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Активный тоггл панели — градиентная заливка */
+.hud-timeline-toggle.active {
+  background: linear-gradient(135deg, #667eea 0%, #f093fb 100%);
+  color: #fff;
+}
+
+/* Пока идёт ход — пилюля даты слегка приглушена */
+.hud-loading .hud-date-pill {
+  opacity: 0.75;
+}
+
+/* --- Оверлей-ловец: закрытие панели по клику вне её --- */
+.hud-timeline-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  background: transparent;
+  cursor: default;
+}
+
+/* --- Выезжающая панель «Таймлайн» под кнопкой ▶ --- */
+.hud-timeline-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 12px;
+  z-index: 2;
+  width: 280px;
+  padding: 16px;
+  background: rgba(20, 20, 30, 0.97);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(102, 126, 234, 0.28);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  animation: hud-timeline-in 0.18s ease-out;
+}
+
+@keyframes hud-timeline-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Шапка панели */
+.hud-timeline-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.hud-timeline-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #e0e0e0;
+}
+
+.hud-timeline-subtitle {
+  margin-top: 2px;
+  font-size: 0.75rem;
+  color: #888;
+}
+
+.hud-timeline-close {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  color: #777;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.hud-timeline-close:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff;
+}
+
+/* Большая градиентная кнопка «До следующего крупного события» */
+.hud-timeline-next-event {
+  width: 100%;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, #667eea 0%, #f093fb 100%);
+  border: none;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.35);
+}
+
+.hud-timeline-next-event:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 22px rgba(102, 126, 234, 0.5);
+  filter: brightness(1.08);
+}
+
+.hud-timeline-next-event:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Разделитель (с подписью «или» или без) */
+.hud-timeline-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0;
+  color: #666;
+  font-size: 0.72rem;
+}
+
+.hud-timeline-divider::before,
+.hud-timeline-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.hud-timeline-divider:empty {
+  margin: 12px 0;
+}
+
+.hud-timeline-divider:empty::before {
+  display: none;
+}
+
+/* --- Вертикальный список пресетов --- */
+.hud-timeline-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hud-timeline-preset {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.hud-timeline-preset:hover:not(:disabled) {
+  border-color: #667eea;
+  background: rgba(102, 126, 234, 0.12);
+}
+
+.hud-timeline-preset:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.hud-timeline-preset-date {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+
+.hud-timeline-preset-label {
+  font-size: 0.7rem;
+  color: #888;
+}
+
+/* --- Кастомный прыжок --- */
+.hud-timeline-custom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hud-timeline-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #e0e0e0;
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.hud-timeline-input:focus {
+  border-color: #667eea;
+}
+
+.hud-timeline-custom-label {
+  font-size: 0.82rem;
+  color: #888;
+  white-space: nowrap;
+}
+
+.hud-timeline-custom-go {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #667eea 0%, #f093fb 100%);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.hud-timeline-custom-go:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.hud-timeline-custom-go:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* --- Узкие экраны: прячем лого-текст и поджимаем название --- */
+@media (max-width: 720px) {
+  .hud-bar {
+    gap: 8px;
+    padding: 0 10px;
+  }
+
+  .hud-logo {
+    display: none;
+  }
+
+  .hud-world-name {
+    max-width: 26vw;
+    font-size: 0.85rem;
+  }
+
+  .hud-date-display {
+    padding: 0 6px;
+    font-size: 0.82rem;
+  }
+}
+
+
+/* ===== Этап 6: Landing ===== */
+/* Стартовый лендинг (Landing.tsx) + модалка сохранения (SaveGameModal.tsx).
+   Референс: docs/ref/pax_home.png — звёздное небо, горизонт планеты,
+   крупный заголовок с градиентом и центральная CTA-кнопка. */
+
+.landing {
+  position: relative;
+  min-height: 100vh;
+  background: #0a0a0f;
+  color: #e0e0e0;
+  overflow-x: hidden;
+}
+
+/* --- Hero: полноэкранный блок со звёздами и планетой --- */
+.landing-hero {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at 50% 30%, #10101a 0%, #0a0a0f 60%);
+}
+
+/* Звёздное небо: три слоя точек radial-gradient с мерцанием */
+.landing-stars,
+.landing-stars::before,
+.landing-stars::after {
+  content: '';
+  position: absolute;
+  inset: -10%;
+  pointer-events: none;
+  background-repeat: repeat;
+}
+
+.landing-stars {
+  background-image:
+    radial-gradient(1.5px 1.5px at 25px 35px, rgba(255, 255, 255, 0.95), transparent 60%),
+    radial-gradient(1px 1px at 85px 120px, rgba(255, 255, 255, 0.7), transparent 60%),
+    radial-gradient(1.2px 1.2px at 160px 60px, rgba(255, 255, 255, 0.85), transparent 60%),
+    radial-gradient(1px 1px at 220px 190px, rgba(255, 255, 255, 0.6), transparent 60%),
+    radial-gradient(1.5px 1.5px at 280px 100px, rgba(255, 255, 255, 0.9), transparent 60%),
+    radial-gradient(1px 1px at 130px 240px, rgba(255, 255, 255, 0.7), transparent 60%),
+    radial-gradient(1px 1px at 40px 200px, rgba(240, 147, 251, 0.8), transparent 60%),
+    radial-gradient(1.2px 1.2px at 250px 270px, rgba(255, 255, 255, 0.75), transparent 60%);
+  background-size: 320px 320px;
+  animation: landing-twinkle 5s ease-in-out infinite;
+}
+
+.landing-stars::before {
+  background-image:
+    radial-gradient(1px 1px at 60px 90px, rgba(255, 255, 255, 0.8), transparent 60%),
+    radial-gradient(1.6px 1.6px at 190px 40px, rgba(255, 255, 255, 0.95), transparent 60%),
+    radial-gradient(1px 1px at 320px 160px, rgba(255, 255, 255, 0.65), transparent 60%),
+    radial-gradient(1.2px 1.2px at 120px 300px, rgba(255, 255, 255, 0.8), transparent 60%),
+    radial-gradient(1px 1px at 400px 260px, rgba(255, 255, 255, 0.7), transparent 60%),
+    radial-gradient(1.4px 1.4px at 240px 380px, rgba(102, 126, 234, 0.9), transparent 60%),
+    radial-gradient(1px 1px at 30px 420px, rgba(255, 255, 255, 0.6), transparent 60%),
+    radial-gradient(1.2px 1.2px at 370px 60px, rgba(255, 255, 255, 0.85), transparent 60%);
+  background-size: 460px 460px;
+  animation: landing-twinkle 7.5s ease-in-out infinite 1.2s;
+}
+
+.landing-stars::after {
+  background-image:
+    radial-gradient(1.8px 1.8px at 110px 150px, rgba(255, 255, 255, 0.9), transparent 60%),
+    radial-gradient(1px 1px at 300px 80px, rgba(255, 255, 255, 0.6), transparent 60%),
+    radial-gradient(1.3px 1.3px at 500px 220px, rgba(255, 255, 255, 0.85), transparent 60%),
+    radial-gradient(1px 1px at 200px 480px, rgba(255, 255, 255, 0.65), transparent 60%),
+    radial-gradient(1.5px 1.5px at 420px 400px, rgba(240, 147, 251, 0.75), transparent 60%),
+    radial-gradient(1px 1px at 60px 560px, rgba(255, 255, 255, 0.7), transparent 60%),
+    radial-gradient(1.2px 1.2px at 560px 520px, rgba(255, 255, 255, 0.8), transparent 60%);
+  background-size: 640px 640px;
+  animation: landing-twinkle 9.5s ease-in-out infinite 2.6s;
+}
+
+@keyframes landing-twinkle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* Горизонт планеты внизу hero (как на референсе) */
+.landing-planet {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 260vmax;
+  height: 260vmax;
+  transform: translate(-50%, 84%);
+  border-radius: 50%;
+  background: radial-gradient(closest-side at 50% 0%, #17171f 0%, #0c0c12 55%, #0a0a0f 100%);
+  box-shadow:
+    0 -3px 24px rgba(240, 147, 251, 0.35),
+    0 -14px 90px rgba(102, 126, 234, 0.35),
+    0 -70px 220px rgba(102, 126, 234, 0.22);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.landing-hero-content {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  padding: 40px 24px 20vh;
+}
+
+.landing-title {
+  margin: 0 0 16px;
+  font-size: clamp(3rem, 8vw, 5.5rem);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1.05;
+  background: linear-gradient(135deg, #667eea 0%, #f093fb 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  text-shadow: none;
+}
+
+.landing-subtitle {
+  margin: 0 0 44px;
+  color: #a0a0b8;
+  font-size: clamp(1rem, 2vw, 1.25rem);
+  letter-spacing: 0.04em;
+}
+
+.landing-cta-row {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.landing-cta {
+  padding: 16px 44px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #667eea 0%, #f093fb 100%);
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 8px 32px rgba(102, 126, 234, 0.35);
+}
+
+.landing-cta:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 44px rgba(240, 147, 251, 0.45);
+}
+
+.landing-cta-arrow {
+  display: inline-block;
+  margin-left: 6px;
+  transition: transform 0.3s ease;
+}
+
+.landing-cta:hover .landing-cta-arrow {
+  transform: translateX(4px);
+}
+
+.landing-cta-secondary {
+  padding: 16px 36px;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #cfd0e0;
+  background: rgba(26, 26, 36, 0.6);
+  border: 1px solid rgba(102, 126, 234, 0.4);
+  border-radius: 999px;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: all 0.3s ease;
+}
+
+.landing-cta-secondary:hover {
+  border-color: #f093fb;
+  color: #fff;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+/* --- Секции под hero --- */
+.landing-sections {
+  position: relative;
+  z-index: 2;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 8px 24px 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 44px;
+}
+
+.landing-section-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 18px;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #e0e0e0;
+}
+
+/* Карточки сохранений */
+.landing-saves-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.landing-save-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  background: rgba(26, 26, 36, 0.75);
+  border: 1px solid #2a2a3a;
+  border-radius: 14px;
+  backdrop-filter: blur(6px);
+  transition: all 0.25s ease;
+}
+
+.landing-save-card:hover {
+  border-color: rgba(102, 126, 234, 0.6);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+.landing-save-name {
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: #fff;
+  word-break: break-word;
+}
+
+.landing-save-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+  color: #9a9ab0;
+}
+
+.landing-save-turn {
+  color: #667eea;
+  font-weight: 600;
+}
+
+.landing-save-date {
+  font-size: 0.78rem;
+  color: #666;
+}
+
+.landing-save-play {
+  margin-top: auto;
+  padding: 10px 14px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.landing-save-play:hover {
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+  filter: brightness(1.1);
+}
+
+/* Карточки карт с SVG-превью */
+.landing-maps-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.landing-map-card {
+  cursor: pointer;
+  background: rgba(26, 26, 36, 0.75);
+  border: 1px solid #2a2a3a;
+  border-radius: 14px;
+  overflow: hidden;
+  backdrop-filter: blur(6px);
+  transition: all 0.25s ease;
+}
+
+.landing-map-card:hover {
+  border-color: rgba(240, 147, 251, 0.55);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+.landing-map-preview {
+  aspect-ratio: 4 / 3;
+  background: #0d0d14;
+}
+
+.landing-map-preview svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.landing-map-info {
+  padding: 12px 14px;
+}
+
+.landing-map-info h4 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+  color: #fff;
+}
+
+.landing-map-info span {
+  font-size: 0.85rem;
+  color: #888;
+}
+
+/* --- Этап 6: SaveGameModal (замена prompt()) --- */
+.save-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  animation: save-modal-fade 0.18s ease;
+}
+
+.save-modal {
+  width: 90%;
+  max-width: 420px;
+  background: #1a1a24;
+  border: 1px solid #2a2a3a;
+  border-radius: 16px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+  animation: save-modal-pop 0.22s ease;
+}
+
+.save-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 0;
+}
+
+.save-modal-header h3 {
+  margin: 0;
+  font-size: 1.15rem;
+  color: #fff;
+}
+
+.save-modal-close {
+  background: none;
+  border: none;
+  color: #777;
+  font-size: 1.05rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.save-modal-close:hover {
+  color: #fff;
+  background: #2a2a3a;
+}
+
+.save-modal-body {
+  padding: 16px 20px;
+}
+
+.save-modal-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+  color: #9a9ab0;
+}
+
+.save-modal-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  font-size: 1rem;
+  color: #e0e0e0;
+  background: #0d0d14;
+  border: 1px solid #333;
+  border-radius: 10px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.save-modal-input:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+}
+
+.save-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 0 20px 18px;
+}
+
+.save-modal-cancel {
+  padding: 10px 18px;
+  font-size: 0.95rem;
+  color: #aaa;
+  background: transparent;
+  border: 1px solid #333;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.save-modal-cancel:hover {
+  border-color: #555;
+  color: #fff;
+}
+
+.save-modal-submit {
+  padding: 10px 22px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #667eea 0%, #f093fb 100%);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.save-modal-submit:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
+.save-modal-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@keyframes save-modal-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes save-modal-pop {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
