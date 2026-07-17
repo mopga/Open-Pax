@@ -66,7 +66,9 @@ worldsRouter.post('/generate', async (req, res) => {
           name: state.name,
           color: state.color || '#888888',
           geojson: JSON.stringify(geojson),
-          owner: code === playerCountryCode ? 'player' : `ai-${code}`,
+          // Unified polity-id convention: owner IS the polity id (country code).
+          // Player's polity is identified via players.polity_id, not by a 'player' marker.
+          owner: code,
           population: state.population || 0,
           gdp: state.gdp || 0,
           militaryPower: state.military || 0,

@@ -53,7 +53,11 @@ export interface SimulationEvent {
 
 export interface MapChange {
   type: 'transfer' | 'create' | 'update' | 'delete';
-  regionId: string;
+  /** Имя региона, как показано LLM в описании карты (основной способ адресации) */
+  regionName?: string;
+  /** Legacy: прямой id региона (принимается для совместимости) */
+  regionId?: string;
+  /** Имя политии-получателя (существующей или новой) */
   newOwner?: string;
   newColor?: string;
   newName?: string;

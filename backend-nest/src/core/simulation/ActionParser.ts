@@ -14,18 +14,22 @@ export class ActionParser {
   /**
    * Parse action text into ValidatedAction
    * @param validate Optional validation function to call on the parsed action
+   * @param playerPolityId Полития игрока (polityId) — источник действий игрока.
+   *        Раньше источник/цель искались по owner.includes('player'), что ломалось
+   *        при конвенции "owner = polityId".
    */
   parse(
     text: string,
     regions: Map<string, { id: string; name: string; owner: string }>,
-    validate?: (action: ValidatedAction) => { valid: boolean; reason?: string }
+    validate?: (action: ValidatedAction) => { valid: boolean; reason?: string },
+    playerPolityId?: string
   ): ValidatedAction | null {
     const lower = text.toLowerCase();
 
     // Attack patterns
     if (this.matchesAttack(lower)) {
-      const target = this.findTarget(lower, regions);
-      const source = this.findSource(lower, regions);
+      const target = this.findTarget(lower, regions, playerPolityId);
+      const source = this.findSource(lower, regions, playerPolityId);
 
       if (!target || !source) return null;
 
@@ -54,7 +58,7 @@ export class ActionParser {
 
     // Development patterns
     if (this.matchesDevelop(lower)) {
-      const source = this.findSource(lower, regions);
+      const source = this.findSource(lower, regions, playerPolityId);
       if (!source) return null;
 
       const cost: ActionCost = {
@@ -81,7 +85,7 @@ export class ActionParser {
 
     // Trade patterns
     if (this.matchesTrade(lower)) {
-      const source = this.findSource(lower, regions);
+      const source = this.findSource(lower, regions, playerPolityId);
       if (!source) return null;
 
       const cost: ActionCost = {
@@ -108,7 +112,7 @@ export class ActionParser {
 
     // Build patterns
     if (this.matchesBuild(lower)) {
-      const source = this.findSource(lower, regions);
+      const source = this.findSource(lower, regions, playerPolityId);
       if (!source) return null;
 
       const cost: ActionCost = {
@@ -170,7 +174,8 @@ export class ActionParser {
 
   private findTarget(
     text: string,
-    regions: Map<string, { id: string; name: string; owner: string }>
+    regions: Map<string, { id: string; name: string; owner: string }>,
+    playerPolityId?: string
   ): { id: string; name: string; owner: string } | null {
     // Try to find a region name in the text
     for (const [id, region] of regions) {
@@ -182,7 +187,8 @@ export class ActionParser {
 
     // Default to first non-player region
     for (const [id, region] of regions) {
-      if (!region.owner.includes('player')) {
+      const isPlayer = playerPolityId ? region.owner === playerPolityId : region.owner === 'player';
+      if (!isPlayer && region.owner !== 'neutral') {
         return region;
       }
     }
@@ -192,11 +198,13 @@ export class ActionParser {
 
   private findSource(
     text: string,
-    regions: Map<string, { id: string; name: string; owner: string }>
+    regions: Map<string, { id: string; name: string; owner: string }>,
+    playerPolityId?: string
   ): { id: string; name: string; owner: string } | null {
     // Default to player's first region
     for (const [id, region] of regions) {
-      if (region.owner.includes('player')) {
+      const isPlayer = playerPolityId ? region.owner === playerPolityId : region.owner === 'player';
+      if (isPlayer) {
         return region;
       }
     }

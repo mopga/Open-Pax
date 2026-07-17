@@ -13,6 +13,8 @@ import { worldRepository, gameRepository, relationshipRepository } from './repos
 import db from './database';
 import { SimulationEngine, ActionParser, type ValidatedAction, type SimulationDelta, type DeterministicEvent, type RelationshipChange } from './core/simulation';
 import { RelationshipMatrix } from './core/RelationshipMatrix';
+import { RegionResolver, PolityResolver } from './utils/name-resolver';
+import type { MapChange } from './prompts/types';
 
 export interface RegionState {
   id: string;
@@ -33,6 +35,8 @@ export interface PlayerInfo {
   name: string;
   regionId: string;
   color: string;
+  /** Полития игрока (код страны для шаблонов, 'player' для кастомных карт) */
+  polityId?: string;
 }
 
 export interface ActionRecord {
@@ -103,6 +107,17 @@ export class GameSession {
   private currentTurn: number = 1;
   private currentDate: string = '1951-01-01';
   private maxTurns: number = 100;
+
+  // World metadata cached at init/reconstruct (bug fix: buildGameData used to
+  // send basePrompt: '' to every prompt, so the world's custom lore never
+  // reached the LLM; STARTING_ROUND_DATE also "floated" each turn because
+  // startDate was set to the current date).
+  private worldName: string = '';
+  private worldBasePrompt: string = '';
+  private worldStartDate: string = '';
+
+  /** Полития игрока по конвенции polityId (см. utils/name-resolver.ts) */
+  private playerPolityId: string = 'player';
   private actions: ActionRecord[] = [];
   private results: TurnResultRecord[] = [];
   private status: 'waiting' | 'playing' | 'finished' = 'playing';
@@ -206,16 +221,18 @@ export class GameSession {
       currentDate: this.currentDate,
       currentTurn: this.currentTurn,
       world: {
-        name: '',
-        basePrompt: '',
-        startDate: this.currentDate,
+        name: this.worldName,
+        basePrompt: this.worldBasePrompt,
+        startDate: this.worldStartDate || this.currentDate,
         regions: regionsObj,
       },
       players: this.players.map(p => ({
         id: p.id,
         name: p.name,
         regionId: p.regionId,
+        polityId: p.polityId,
       })),
+      playerPolityId: this.playerPolityId,
       actions: this.actions,
       results: this.results,
     };
@@ -228,6 +245,11 @@ export class GameSession {
     // Load world from DB
     const world = worldRepository.findById(this.worldId);
     if (!world) throw new Error('World not found');
+
+    // Cache world metadata for prompts (bug fix: lore never reached the LLM)
+    this.worldName = world.name || '';
+    this.worldBasePrompt = world.base_prompt || '';
+    this.worldStartDate = world.start_date || '1951-01-01';
 
     // Load all regions into session state
     for (const region of world.regions) {
@@ -246,25 +268,27 @@ export class GameSession {
       });
     }
 
-    // Create player
+    // Create player. Player's polity = owner of the chosen region
+    // (unified polity-id convention: country code for templates).
+    const playerPolityId = this.regions.get(playerRegionId)?.owner || 'player';
+    this.playerPolityId = playerPolityId;
     const playerId = shortId();
     this.players = [{
       id: playerId,
       name: playerName,
       regionId: playerRegionId,
       color: playerColor,
+      polityId: playerPolityId,
     }];
 
     // Initialize session-specific game controller
     this.gameController.initPromptEngine(this.buildGameData());
     this.gameController.setupWorld(world.base_prompt);
 
-    const playerRegion = this.regions.get(playerRegionId);
-    this.gameController.addCountry(playerRegionId, playerRegion?.name || 'Unknown');
-
-    // Setup NPC agents
+    // Setup NPC agents: NPC = любая полития, кроме игрока и 'neutral'
+    // (раньше фильтр был owner.startsWith('ai-') и не видел шаблонные коды).
     const regionConfigs = Array.from(this.regions.values())
-      .filter(r => r.owner.startsWith('ai-'))
+      .filter(r => r.owner !== 'neutral' && r.owner !== this.playerPolityId)
       .map(r => ({ id: r.id, name: r.name, owner: r.owner }));
     this.gameController.setupNPCCountries(regionConfigs);
 
@@ -297,6 +321,21 @@ export class GameSession {
     this.currentDate = data.currentDate;
     this.players = data.players || [];
 
+    // Cache world metadata for prompts BEFORE buildGameData runs below
+    // (bug fix: lore never reached the LLM because buildGameData sent basePrompt: '').
+    const world = worldRepository.findById(this.worldId);
+    this.worldName = world?.name || '';
+    this.worldBasePrompt = data.basePrompt || world?.base_prompt || '';
+    this.worldStartDate = world?.start_date || '';
+
+    // Restore player's polity (persisted in players.polity_id; fallback —
+    // owner of the home region for legacy rows).
+    const primaryPlayer = this.players[0];
+    this.playerPolityId =
+      primaryPlayer?.polityId ||
+      (primaryPlayer ? this.regions.get(primaryPlayer.regionId)?.owner : undefined) ||
+      'player';
+
     // If region states provided (from save), use them
     if (data.regionStates) {
       this.regions = new Map(data.regionStates);
@@ -323,17 +362,7 @@ export class GameSession {
     // Re-initialize game controller with current state
     this.gameController.initPromptEngine(this.buildGameData());
 
-    // Load world for base prompt
-    const world = worldRepository.findById(this.worldId);
-    const basePrompt = data.basePrompt || world?.base_prompt || '';
-    this.gameController.setupWorld(basePrompt);
-
-    // Re-add player country
-    const player = this.players[0];
-    if (player) {
-      const playerRegion = this.regions.get(player.regionId);
-      this.gameController.addCountry(player.regionId, playerRegion?.name || 'Unknown');
-    }
+    this.gameController.setupWorld(this.worldBasePrompt);
 
     // Load relationships from DB
     const rels = relationshipRepository.getForWorld(this.worldId);
@@ -341,9 +370,9 @@ export class GameSession {
       this.relationships.set(rel.from, rel.to, rel.type);
     }
 
-    // Re-setup NPC countries
+    // Re-setup NPC countries: любая полития, кроме игрока и 'neutral'
     const regionConfigs = Array.from(this.regions.values())
-      .filter(r => r.owner.startsWith('ai-'))
+      .filter(r => r.owner !== 'neutral' && r.owner !== this.playerPolityId)
       .map(r => ({ id: r.id, name: r.name, owner: r.owner }));
     this.gameController.setupNPCCountries(regionConfigs);
 
@@ -427,7 +456,8 @@ export class GameSession {
 
     // Parse player action into ValidatedAction (with validation)
     const parseWithValidation = (text: string) => this.actionParser.parse(text, this.regions, (action) =>
-      this.simulationEngine!.validateAction(action, player.id)
+      this.simulationEngine!.validateAction(action, player.id),
+      this.playerPolityId
     );
     const actions = playerAction.split(' | ').map(parseWithValidation).filter((a): a is ValidatedAction => a !== null);
 
@@ -461,9 +491,10 @@ export class GameSession {
     }
 
     // Process NPC turns through simulation engine
+    // NPC = любая полития, кроме игрока и 'neutral'
     const npcIds = new Set<string>();
     for (const region of this.regions.values()) {
-      if (region.owner.startsWith('ai-')) {
+      if (region.owner !== 'neutral' && region.owner !== this.playerPolityId) {
         npcIds.add(region.owner);
       }
     }
@@ -579,40 +610,123 @@ export class GameSession {
   }
 
   /**
-   * Apply world changes from simulation
+   * Build name resolvers from the current region state.
+   * "ИИ по именам, движок по id": LLM видит только имена, движок резолвит их
+   * обратно в regionId/polityId (bug fix: раньше LLM просили вернуть regionId,
+   * который он никогда не видел, поэтому mapChanges почти никогда не применялись).
+   */
+  private buildResolvers(): { regions: RegionResolver; polities: PolityResolver } {
+    const all = Array.from(this.regions.values());
+    return {
+      regions: new RegionResolver(all),
+      polities: new PolityResolver(all, this.playerPolityId),
+    };
+  }
+
+  /**
+   * Apply world changes from simulation.
+   * Keys могут быть как regionId (legacy), так и ИМЕНА регионов/политий —
+   * резолвим оба варианта.
    */
   private applyWorldChanges(changes: WorldChanges): void {
+    const resolvers = this.buildResolvers();
+
     if (changes.regionOwners) {
-      for (const [regionId, newOwner] of Object.entries(changes.regionOwners)) {
-        const region = this.regions.get(regionId);
-        if (region) {
-          region.owner = newOwner;
-          // Sync color with owner
-          if (changes.regionColors?.[regionId]) {
-            region.color = changes.regionColors[regionId];
-          }
+      for (const [regionKey, newOwner] of Object.entries(changes.regionOwners)) {
+        const region = this.regions.get(regionKey) || resolvers.regions.resolve(regionKey);
+        if (!region) {
+          console.warn('[GameSession] worldChanges: region not found for key:', regionKey);
+          continue;
+        }
+        const liveRegion = this.regions.get(region.id);
+        if (!liveRegion) continue;
+
+        const ownerResolution = resolvers.polities.resolve(newOwner);
+        liveRegion.owner = ownerResolution?.polityId || newOwner;
+
+        // Sync color: из regionColors, либо цвет существующей политии
+        const explicitColor = changes.regionColors?.[regionKey] || changes.regionColors?.[region.id];
+        const inheritedColor = resolvers.polities.colorOf(liveRegion.owner);
+        if (explicitColor) {
+          liveRegion.color = explicitColor;
+        } else if (inheritedColor && inheritedColor !== liveRegion.color) {
+          liveRegion.color = inheritedColor;
         }
       }
     }
 
     if (changes.regionGDP) {
-      for (const [regionId, gdp] of Object.entries(changes.regionGDP)) {
-        const region = this.regions.get(regionId);
-        if (region) region.gdp = gdp;
+      for (const [regionKey, gdp] of Object.entries(changes.regionGDP)) {
+        const region = this.regions.get(regionKey) || resolvers.regions.resolve(regionKey);
+        const liveRegion = region && this.regions.get(region.id);
+        if (liveRegion) liveRegion.gdp = gdp;
       }
     }
 
     if (changes.regionMilitary) {
-      for (const [regionId, military] of Object.entries(changes.regionMilitary)) {
-        const region = this.regions.get(regionId);
-        if (region) region.militaryPower = military;
+      for (const [regionKey, military] of Object.entries(changes.regionMilitary)) {
+        const region = this.regions.get(regionKey) || resolvers.regions.resolve(regionKey);
+        const liveRegion = region && this.regions.get(region.id);
+        if (liveRegion) liveRegion.militaryPower = military;
       }
     }
 
     if (changes.regionPopulation) {
-      for (const [regionId, pop] of Object.entries(changes.regionPopulation)) {
-        const region = this.regions.get(regionId);
-        if (region) region.population = pop;
+      for (const [regionKey, pop] of Object.entries(changes.regionPopulation)) {
+        const region = this.regions.get(regionKey) || resolvers.regions.resolve(regionKey);
+        const liveRegion = region && this.regions.get(region.id);
+        if (liveRegion) liveRegion.population = pop;
+      }
+    }
+  }
+
+  /**
+   * Apply mapChanges from a single simulation event (transfer/create/update/delete).
+   * Регионы и политии адресуются ИМЕНАМИ (так их видит LLM в описании карты).
+   */
+  private applyMapChanges(mapChanges: MapChange[] | undefined): void {
+    if (!mapChanges || mapChanges.length === 0) return;
+    const resolvers = this.buildResolvers();
+
+    for (const change of mapChanges) {
+      const regionKey = change.regionName || change.regionId;
+      const region = (regionKey && this.regions.get(regionKey)) || resolvers.regions.resolve(regionKey);
+      if (!region) {
+        console.warn('[GameSession] mapChange: region not resolved:', regionKey);
+        continue;
+      }
+      const liveRegion = this.regions.get(region.id);
+      if (!liveRegion) continue;
+
+      switch (change.type) {
+        case 'transfer': {
+          const ownerResolution = resolvers.polities.resolve(change.newOwner);
+          if (!ownerResolution) break;
+          liveRegion.owner = ownerResolution.polityId;
+          // Цвет: явный newColor или цвет новой политии
+          const inherited = resolvers.polities.colorOf(ownerResolution.polityId);
+          liveRegion.color = change.newColor || inherited || liveRegion.color;
+          break;
+        }
+        case 'update': {
+          if (change.newColor) liveRegion.color = change.newColor;
+          if (change.newName) liveRegion.name = change.newName;
+          break;
+        }
+        case 'delete': {
+          liveRegion.owner = 'neutral';
+          liveRegion.color = '#888888';
+          break;
+        }
+        case 'create': {
+          // Создание новой политии: регион получает нового владельца (+ цвет)
+          const ownerResolution = resolvers.polities.resolve(change.newOwner || change.newName);
+          if (ownerResolution) {
+            liveRegion.owner = ownerResolution.polityId;
+            if (change.newColor) liveRegion.color = change.newColor;
+          }
+          break;
+        }
       }
     }
   }
@@ -769,21 +883,28 @@ export class GameSession {
     const npcEvents: string[] = [];
     const npcRegionIds = this.gameController.getNPCCountries();
 
+    const regionResolver = new RegionResolver(Array.from(this.regions.values()));
+
     for (const npcRegionId of npcRegionIds) {
       const npcRegion = this.regions.get(npcRegionId);
       if (!npcRegion) continue;
 
-      // Build neighbors
-      const neighbors = Array.from(this.regions.values())
-        .filter(r => r.id !== npcRegionId)
-        .slice(0, 5)
-        .map(r => ({
-          id: r.id,
-          name: r.name,
-          owner: r.owner,
-          militaryPower: r.militaryPower,
-          gdp: r.gdp,
-        }));
+      // Build neighbors: реальные границы, если посчитаны (пока borders пусты
+      // у большинства миров — fallback на первые 8 регионов; настоящее
+      // соседство появится на этапе с turf.js).
+      const bordered = (npcRegion.borders || [])
+        .map(id => this.regions.get(id))
+        .filter((r): r is RegionState => !!r && r.id !== npcRegionId);
+      const neighborSource = bordered.length > 0
+        ? bordered
+        : Array.from(this.regions.values()).filter(r => r.id !== npcRegionId).slice(0, 8);
+      const neighbors = neighborSource.map(r => ({
+        id: r.id,
+        name: r.name,
+        owner: r.owner,
+        militaryPower: r.militaryPower,
+        gdp: r.gdp,
+      }));
 
       const npcContext = {
         turn: this.currentTurn,
@@ -804,9 +925,14 @@ export class GameSession {
             npcRegion.gdp = Math.floor(npcRegion.gdp * 1.05);
             npcRegion.militaryPower = Math.floor(npcRegion.militaryPower * 1.03);
           } else if (npcAction.type === 'war' && npcAction.targetRegionId) {
-            const targetRegion = this.regions.get(npcAction.targetRegionId);
+            // LLM может вернуть как id, так и ИМЯ региона — резолвим оба варианта
+            const resolved = this.regions.get(npcAction.targetRegionId)
+              || regionResolver.resolve(npcAction.targetRegionId);
+            const targetRegion = resolved ? this.regions.get(resolved.id) : undefined;
             if (targetRegion && targetRegion.militaryPower < npcRegion.militaryPower * 0.7) {
-              targetRegion.owner = npcRegionId;
+              // Bug fix: раньше сюда писался npcRegionId (id региона) вместо
+              // id политии-владельца — это ломало владение и матрицу дипломатии.
+              targetRegion.owner = npcRegion.owner;
               targetRegion.color = npcRegion.color;
               npcEvents.push(`⚔️ ${npcRegion.name} захватила ${targetRegion.name}!`);
             }
@@ -1049,9 +1175,18 @@ export class GameSession {
         timeJump
       );
 
-      // Apply world changes from simulation
+      // Apply world changes from simulation (верхнеуровневый словарь)
       if (promptResult.worldChanges) {
         this.applyWorldChanges(promptResult.worldChanges);
+      }
+
+      // Apply mapChanges from each simulation event (bug fix: раньше события
+      // с mapChanges вообще игнорировались — применялся только worldChanges,
+      // да и тот требовал regionId, которых LLM никогда не видел)
+      for (const event of promptResult.events || []) {
+        if (event.mapChanges && event.mapChanges.length > 0) {
+          this.applyMapChanges(event.mapChanges);
+        }
       }
 
       // Detect and create objects
@@ -1085,13 +1220,14 @@ export class GameSession {
         text: action.text,
       });
 
-      // Create turn result
+      // Create turn result (включаем заголовки событий из LLM-симуляции)
+      const llmEventHeadlines = (promptResult.events || []).map((e: any) => e.headline).filter(Boolean);
       const turnResult: TurnResultRecord = {
         id: shortId(),
         turn: this.currentTurn,
         narration: promptResult.narration,
         countryResponse: promptResult.convertedActions.map((a: any) => a.text).join('\n'),
-        events: [...npcEvents, ...randomEvents, ...createdObjects.map(o => o.text)],
+        events: [...llmEventHeadlines, ...npcEvents, ...randomEvents, ...createdObjects.map(o => o.text)],
       };
       this.results.push(turnResult);
 

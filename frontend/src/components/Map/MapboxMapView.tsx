@@ -292,7 +292,9 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
         'fill-color': [
           'case',
           ['get', 'isSelected'], '#ffffff',
-          ['==', ['get', 'owner'], 'player'], '#00ff88',
+          // Полития игрока: owner = polityId (код страны из playerCountryCode;
+          // для кастомных карт — 'player')
+          ['==', ['get', 'owner'], playerCountryCode || 'player'], '#00ff88',
           ['get', 'color']
         ],
         'fill-opacity': [

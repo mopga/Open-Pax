@@ -10,7 +10,10 @@ import { getSessionRegistry } from '../session-registry';
 export const savesRouter = Router();
 
 savesRouter.get('/', (_req, res) => {
-  const stmt = db.prepare('SELECT id, game_id, name, current_turn, current_date, saved_at FROM saves ORDER BY saved_at DESC');
+  // NB: [current_date] в квадратных скобках — голое имя колонки current_date
+  // в select-списке SQLite вычисляется как ключевое слово CURRENT_DATE
+  // (сегодняшняя дата), а не как колонка!
+  const stmt = db.prepare('SELECT id, game_id, name, current_turn, [current_date], saved_at FROM saves ORDER BY saved_at DESC');
   const saves = stmt.all();
   res.json({ saves });
 });

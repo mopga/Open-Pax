@@ -23,6 +23,8 @@ interface GameData {
     regions: any; // может быть Map или объект
   };
   players: PlayerData[];
+  /** Полития игрока (polityId) — для пометки в описании карты */
+  playerPolityId?: string;
   actions: ActionData[];
   results: TurnResultData[];
 }
@@ -41,6 +43,7 @@ interface PlayerData {
   id: string;
   name: string;
   regionId: string;
+  polityId?: string;
 }
 
 // Хелпер для работы с regions (может быть Map или объектом)
@@ -126,6 +129,23 @@ export class PromptBuilder {
     };
   }
 
+  /**
+   * Отображаемое имя политии для LLM: имя «главного» региона (для шаблонов
+   * это название страны). Раньше LLM видел внутренние id ('ai-USA'), а не
+   * имена — и не мог осмысленно адресовать политии в mapChanges.
+   */
+  private polityDisplayName(owner: string, regionList: RegionData[]): string {
+    return regionList[0]?.name || owner;
+  }
+
+  private polityHeader(owner: string, regionList: RegionData[]): string {
+    const displayName = this.polityDisplayName(owner, regionList);
+    const playerMark = owner === this.game.playerPolityId ? ' (ИГРОК)' : '';
+    // Показываем и имя, и id-алиас: LLM адресует политию по имени,
+    // движок резолвит и то, и другое (см. utils/name-resolver).
+    return `Полития "${displayName}" [${owner}]${playerMark} (цвет ${regionList[0].color}):`;
+  }
+
   // Описание карты (полное)
   private buildMapDescription(): string {
     const regions = getAllRegions(this.game.world.regions);
@@ -141,9 +161,9 @@ export class PromptBuilder {
         ? capitals.map(r => `${r.name} (столица)`).join(', ')
         : '';
 
-      description += `Полития "${owner}" (${regionList[0].color}):\n`;
+      description += `${this.polityHeader(owner, regionList)}\n`;
       if (capitalsStr) description += `- ${capitalsStr}\n`;
-      description += `- ${regionList.map(r => r.name).join(', ')}\n`;
+      description += `- Регионы: ${regionList.map(r => r.name).join(', ')}\n`;
       description += `\n`;
     }
 
@@ -168,10 +188,11 @@ export class PromptBuilder {
       if (owner === 'neutral') {
         description += `Нейтральные регионы:\n`;
         description += regionList.map(r => r.name).join(', ');
+        description += '\n\n';
         continue;
       }
 
-      description += `Полития "${owner}" (${regionList[0].color}):\n`;
+      description += `${this.polityHeader(owner, regionList)}\n`;
       description += regionList.map(r => r.name).join(', ');
       description += '\n\n';
     }

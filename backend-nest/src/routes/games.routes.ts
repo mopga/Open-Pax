@@ -29,6 +29,7 @@ gamesRouter.post('/', (req, res) => {
     res.json({
       game_id: gameId,
       player_id: playerId,
+      player_polity_id: player?.polityId,
       region: { id: region?.id, name: region?.name },
     });
   } catch (e: any) {
@@ -74,6 +75,7 @@ gamesRouter.get('/:id', (req, res) => {
     players: game.players.map((p: any) => ({
       id: p.id,
       regionId: p.regionId,
+      polityId: p.polityId,
     })),
   });
 });

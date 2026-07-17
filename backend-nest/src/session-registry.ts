@@ -46,7 +46,8 @@ class SessionRegistry {
       status: 'playing',
     });
 
-    // Add player to database
+    // Add player to database. polityId = owner of the chosen region
+    // (unified polity-id convention: 'USA' for templates, 'player' for custom maps).
     const playerId = shortId();
     gameRepository.addPlayer({
       id: playerId,
@@ -54,6 +55,7 @@ class SessionRegistry {
       name: playerName || 'Player',
       regionId: playerRegionId,
       color: playerColor,
+      polityId: region.owner,
     });
 
     // Create session
@@ -115,6 +117,7 @@ class SessionRegistry {
         name: p.name,
         regionId: p.regionId,
         color: p.color,
+        polityId: p.polityId,
       })),
       regionStates,
     });
@@ -206,12 +209,16 @@ class SessionRegistry {
 
         session.reconstructFromDB({
           currentTurn: game.current_turn,
-          currentDate: game.world?.start_date || '1951-01-01',
+          // Bug fix: restore the persisted in-game date; game is a raw row
+          // here (no world join), so game.world was always undefined and the
+          // date snapped back to 1951-01-01 on every server restart.
+          currentDate: game.current_date || '1951-01-01',
           players: players.map((p: any) => ({
             id: p.id,
             name: p.name,
             regionId: p.regionId,
             color: p.color,
+            polityId: p.polityId,
           })),
           regionStates,
         });

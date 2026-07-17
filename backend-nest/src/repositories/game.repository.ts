@@ -11,6 +11,7 @@ export interface PlayerRecord {
   name: string;
   regionId: string;
   color: string;
+  polityId?: string;
 }
 
 export const gameRepository = {
@@ -52,15 +53,16 @@ export const gameRepository = {
       name: row.name,
       regionId: row.region_id,
       color: row.color,
+      polityId: row.polity_id || undefined,
     }));
   },
 
-  addPlayer: (player: { id: string; gameId: string; name: string; regionId: string; color?: string }) => {
+  addPlayer: (player: { id: string; gameId: string; name: string; regionId: string; color?: string; polityId?: string }) => {
     const stmt = db.prepare(`
-      INSERT INTO players (id, game_id, name, region_id, color)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO players (id, game_id, name, region_id, color, polity_id)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
-    stmt.run(player.id, player.gameId, player.name, player.regionId, player.color || '#FF0000');
+    stmt.run(player.id, player.gameId, player.name, player.regionId, player.color || '#FF0000', player.polityId || null);
     return player;
   },
 

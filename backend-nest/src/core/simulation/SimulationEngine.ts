@@ -295,7 +295,7 @@ export class SimulationEngine {
     // Trading with another country improves relationships
     if (relationships && action.targetRegionId) {
       const target = this.regions.get(action.targetRegionId);
-      if (target && target.owner !== source.owner && !target.owner.startsWith('player')) {
+      if (target && target.owner !== source.owner && target.owner !== 'neutral') {
         const prevRel = relationships.get(source.owner, target.owner);
         relationships.improve(source.owner, target.owner);
         const nextRel = relationships.get(source.owner, target.owner);
@@ -373,8 +373,9 @@ export class SimulationEngine {
       return { valid: false, reason: 'Source region not found' };
     }
 
-    // Check ownership - player owns regions with owner='player', NPCs own 'ai-*'
-    if (source.owner !== 'player' && !source.owner.startsWith('ai-')) {
+    // Check ownership - регион должен принадлежать какой-либо политии
+    // (owner = polityId по единой конвенции; 'neutral' — ничейный регион).
+    if (source.owner === 'neutral') {
       return { valid: false, reason: 'You do not own this region' };
     }
 

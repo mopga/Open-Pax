@@ -12,10 +12,13 @@ interface DiplomacyPanelProps {
   gameId: string;
   selectedRegionId: string;
   regions: Region[];
+  /** Меняется после каждого хода (currentTurn) — триггерит перезагрузку матрицы */
+  refreshKey?: number | string;
 }
 
 interface RelationshipData {
-  [regionId: string]: { [regionId: string]: string };
+  // Ключи — polityId (коды стран для шаблонов, 'player'/'ai-N' для кастомных карт)
+  [polityId: string]: { [polityId: string]: string };
 }
 
 interface RelationshipEntry {
@@ -60,6 +63,7 @@ export const DiplomacyPanel: React.FC<DiplomacyPanelProps> = ({
   gameId,
   selectedRegionId,
   regions,
+  refreshKey,
 }) => {
   const [relationships, setRelationships] = useState<RelationshipData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -74,19 +78,16 @@ export const DiplomacyPanel: React.FC<DiplomacyPanelProps> = ({
     }
   }, [gameId]);
 
+  // Перезагрузка при смене игры и после каждого хода (refreshKey = currentTurn).
+  // Bug fix: раньше панель слушала window-событие 'turn_complete', которое
+  // никто никогда не диспатчил, поэтому матрица не обновлялась после ходов.
   useEffect(() => {
     fetchRelationships();
-  }, [fetchRelationships]);
+  }, [fetchRelationships, refreshKey]);
 
-  // Re-fetch after turn events
-  useEffect(() => {
-    const handler = () => fetchRelationships();
-    window.addEventListener('turn_complete', handler);
-    return () => window.removeEventListener('turn_complete', handler);
-  }, [fetchRelationships]);
-
+  // regionOwner — это polityId владельца выбранного региона
   const regionOwner = regions.find(r => r.id === selectedRegionId)?.owner;
-  if (!regionOwner || regionOwner === 'neutral' || regionOwner === 'player') {
+  if (!regionOwner || regionOwner === 'neutral') {
     return null;
   }
 
@@ -102,7 +103,8 @@ export const DiplomacyPanel: React.FC<DiplomacyPanelProps> = ({
   const entries: RelationshipEntry[] = Object.entries(relMap)
     .filter(([id, rel]) => rel !== 'neutral')
     .map(([id, rel]) => {
-      const region = regions.find(r => r.id === id);
+      // id — polityId; имя берём из региона этой политии (owner = polityId)
+      const region = regions.find(r => r.owner === id);
       return {
         id,
         name: region?.name || id,

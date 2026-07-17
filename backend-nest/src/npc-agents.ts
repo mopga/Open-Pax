@@ -220,6 +220,32 @@ export interface NPCCountryContext {
 /**
  * Create NPC countries from world configuration
  */
+const PERSONALITIES: NPCPersonality[] = ['aggressive', 'diplomatic', 'neutral', 'isolationist'];
+const AGGRESSION_BY_PERSONALITY: Record<NPCPersonality, number> = {
+  aggressive: 0.9,
+  diplomatic: 0.2,
+  neutral: 0.5,
+  isolationist: 0.1,
+};
+
+/**
+ * Детерминированная личность по polityId (FNV-1a hash). Раньше личности были
+ * захардкожены под 'ai-1'..'ai-4', поэтому шаблонные страны ('USA', 'RUS', ...)
+ * всегда получали 'neutral'/0.5.
+ */
+export function personalityForPolity(polityId: string): { personality: NPCPersonality; aggression: number } {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < polityId.length; i++) {
+    hash ^= polityId.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  const personality = PERSONALITIES[(hash >>> 0) % PERSONALITIES.length];
+  // Небольшой детерминированный разброс агрессии вокруг базовой
+  const jitter = (((hash >>> 8) % 21) - 10) / 100; // ±0.10
+  const aggression = Math.min(1, Math.max(0, AGGRESSION_BY_PERSONALITY[personality] + jitter));
+  return { personality, aggression };
+}
+
 export function createNPCCountries(
   provider: MiniMaxProvider,
   regionConfigs: {
@@ -230,36 +256,21 @@ export function createNPCCountries(
 ): Map<string, NPCCountryAgent> {
   const npcAgents = new Map<string, NPCCountryAgent>();
 
-  // Personality presets for different owner types
-  const personalityMap: Record<string, NPCPersonality> = {
-    'ai-1': 'aggressive',
-    'ai-2': 'diplomatic',
-    'ai-3': 'neutral',
-    'ai-4': 'isolationist',
-  };
-
-  const aggressionMap: Record<string, number> = {
-    'ai-1': 0.9,
-    'ai-2': 0.2,
-    'ai-3': 0.5,
-    'ai-4': 0.1,
-  };
-
   for (const config of regionConfigs) {
-    if (config.owner.startsWith('ai-')) {
-      const personality = personalityMap[config.owner] || 'neutral';
-      const aggression = aggressionMap[config.owner] || 0.5;
+    // Caller передаёт уже отфильтрованные NPC-политии (не игрок, не neutral).
+    if (config.owner === 'neutral') continue;
 
-      const country: NPCCountry = {
-        regionId: config.id,
-        regionName: config.name,
-        personality,
-        aggression,
-        resources: 0.5, // Could be calculated from region stats
-      };
+    const { personality, aggression } = personalityForPolity(config.owner);
 
-      npcAgents.set(config.id, new NPCCountryAgent(provider, country));
-    }
+    const country: NPCCountry = {
+      regionId: config.id,
+      regionName: config.name,
+      personality,
+      aggression,
+      resources: 0.5, // Could be calculated from region stats
+    };
+
+    npcAgents.set(config.id, new NPCCountryAgent(provider, country));
   }
 
   return npcAgents;

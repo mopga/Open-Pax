@@ -671,6 +671,11 @@ function App() {
     const regions: Region[] = Object.values(currentWorld.regions);
     const currentRegion = regions.find(r => r.id === selectedRegion);
 
+    // Полития игрока (owner = polityId; из players.polityId, либо выводим из домашнего региона)
+    const playerPolityId = currentGame?.players?.[0]?.polityId
+      ?? regions.find(r => r.id === currentGame?.players?.[0]?.regionId)?.owner
+      ?? 'player';
+
     return (
       <div className="game-wrapper">
         {/* Timeline Bar */}
@@ -811,6 +816,7 @@ function App() {
                 gameId={currentGame.id}
                 selectedRegionId={selectedRegion}
                 regions={regions}
+                refreshKey={currentGame.currentTurn}
               />
             )}
 
@@ -1023,7 +1029,7 @@ function App() {
                             clearActionType();
                           } else {
                             const enemyRegions = Object.values(currentWorld?.regions || {})
-                              .filter(r => r.owner !== 'player' && r.owner !== 'neutral');
+                              .filter(r => r.owner !== playerPolityId && r.owner !== 'neutral');
                             const firstEnemy = enemyRegions[0] as Region | undefined;
                             if (firstEnemy) {
                               setTargetRegionForAttack(firstEnemy.id);
@@ -1097,7 +1103,7 @@ function App() {
                           }}
                         >
                           {(Object.values(currentWorld?.regions || {}) as Region[])
-                            .filter(r => r.owner !== 'player' && r.owner !== 'neutral')
+                            .filter(r => r.owner !== playerPolityId && r.owner !== 'neutral')
                             .map(r => (
                               <option key={r.id} value={r.id}>{r.name} ({r.owner})</option>
                             ))

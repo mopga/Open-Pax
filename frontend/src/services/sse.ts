@@ -31,7 +31,9 @@ export function useSSE(gameId: string | null, options: UseSSEOptions) {
       eventSourceRef.current.close();
     }
 
-    const url = `http://localhost:8000/api/games/${gameId}/events`;
+    // Базовый URL API из env (без хардкода), тот же что и в services/api.ts
+    const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+    const url = `${apiBase}/games/${gameId}/events`;
     console.log('[SSE] Connecting to:', url);
 
     const eventSource = new EventSource(url);
