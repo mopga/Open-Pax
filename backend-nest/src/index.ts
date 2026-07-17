@@ -3,6 +3,9 @@
  * =====================
  */
 
+// Загружаем .env (MINIMAX_API_KEY, LLM_* и т.д.) ДО любых импортов конфигов
+import 'dotenv/config';
+
 import express from 'express';
 import cors from 'cors';
 import { initLLMRouter } from './llm';

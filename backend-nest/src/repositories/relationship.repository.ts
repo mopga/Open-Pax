@@ -29,6 +29,12 @@ export const relationshipRepository = {
       db.prepare('DELETE FROM country_relationships WHERE world_id = ?').run(worldId);
     }
 
+    // Дедупликация пар (from,to): LLM-генератор отношений иногда возвращает
+    // одну и ту же пару дважды — без дедупа падает UNIQUE constraint.
+    const deduped = [...new Map(
+      relationships.map(r => [`${r.from}|${r.to}`, r] as const)
+    ).values()];
+
     const insert = db.prepare(`
       INSERT INTO country_relationships (id, world_id, from_region_id, to_region_id, relationship)
       VALUES (?, ?, ?, ?, ?)
@@ -40,7 +46,7 @@ export const relationshipRepository = {
       }
     });
 
-    insertAll(relationships);
+    insertAll(deduped);
   },
 
   /**

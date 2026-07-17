@@ -89,6 +89,18 @@ export class OpenAICompatibleProvider implements LLMProvider {
 
     const content = data?.choices?.[0]?.message?.content;
     if (typeof content !== 'string' || content.length === 0) {
+      // Диагностика пустых ответов (reasoning-модели, фильтры, обрезка по токенам)
+      try {
+        const choice = data?.choices?.[0];
+        console.error('[LLM] Пустой content. Диагностика:', JSON.stringify({
+          finish_reason: choice?.finish_reason,
+          message_keys: choice?.message ? Object.keys(choice.message) : null,
+          reasoning_len: typeof choice?.message?.reasoning_content === 'string' ? choice.message.reasoning_content.length : null,
+          usage: data?.usage ?? null,
+          error: data?.error ?? null,
+          raw_head: JSON.stringify(data)?.slice(0, 400),
+        }));
+      } catch { /* ignore */ }
       throw new LLMError(
         `${this.name}: пустой ответ модели${data?.error?.message ? ` — ${String(data.error.message).substring(0, 150)}` : ''}`,
         { provider: this.name, retriable: true }

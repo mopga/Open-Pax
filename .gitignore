@@ -37,3 +37,6 @@ backend-nest/data/open-pax.db
 !backend-nest/data/.gitkeep
 !backend-nest/data/templates/
 !backend-nest/data/geojson/
+
+# Logs
+logs/

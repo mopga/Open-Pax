@@ -195,6 +195,21 @@ const getLabelPoint = (geometry: GeoJSON.Geometry): [number, number] | null => {
   return ringCentroid(mainRing);
 };
 
+// Предел Web Mercator по широте (за ±85° проекция не определена)
+const MAX_MERCATOR_LAT = 85;
+
+// Кламп координат в допустимый диапазон карты.
+// Без этого fitBounds/setLngLat бросают «Invalid LngLat latitude value»,
+// если геометрия касается полюсов (Антарктида −90°) + padding уводит за предел.
+const clampLngLat = (p: [number, number]): [number, number] => {
+  let [lng, lat] = p;
+  if (!isFinite(lng)) lng = 0;
+  if (!isFinite(lat)) lat = 0;
+  lng = Math.max(-180, Math.min(180, lng));
+  lat = Math.max(-MAX_MERCATOR_LAT, Math.min(MAX_MERCATOR_LAT, lat));
+  return [lng, lat];
+};
+
 export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
   regions,
   selectedRegionId,
@@ -251,9 +266,10 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
     const lngPad = (maxLng - minLng) * padding;
     const latPad = (maxLat - minLat) * padding;
 
+    // Кламп: padding не должен уводить границы за пределы проекции (Антарктида −90°)
     return [
-      [minLng - lngPad, minLat - latPad],
-      [maxLng + lngPad, maxLat + latPad]
+      clampLngLat([minLng - lngPad, minLat - latPad]),
+      clampLngLat([maxLng + lngPad, maxLat + latPad])
     ];
   }, []);
 
@@ -525,7 +541,7 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
         el.textContent = showFlags && flagEmoji ? `${flagEmoji} ${region.name}` : region.name;
 
         const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
-          .setLngLat(point)
+          .setLngLat(clampLngLat(point))
           .addTo(m);
         labelMarkers.current.push(marker);
       } catch (e) { /* пропускаем битый geojson */ }
@@ -592,7 +608,7 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
       el.textContent = icon.label;
 
       const marker = new maplibregl.Marker({ element: el })
-        .setLngLat([lng, lat])
+        .setLngLat(clampLngLat([lng, lat]))
         .setPopup(
           new maplibregl.Popup({ offset: 15 })
             .setHTML(`<div style="color:#333;padding:4px;"><b>${obj.name}</b><br/>${obj.type}</div>`)

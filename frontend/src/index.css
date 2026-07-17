@@ -134,6 +134,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  overflow: hidden;
 }
 
 .game-container {
@@ -159,6 +160,11 @@ body {
   display: flex;
   flex-direction: column;
   padding: 16px;
+  /* Панель скроллится сама — иначе растущая история растягивает body,
+     появляется скролл страницы и карта с HUD уезжают за верхний край (E2E-баг) */
+  overflow-y: auto;
+  min-height: 0;
+  flex-shrink: 0;
 }
 
 /* Timeline Bar */
