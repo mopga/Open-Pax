@@ -12,8 +12,9 @@
  *    тайлы собирает `npm run map:relief`, без них слой просто не добавляется);
  *  - тонкие контуры регионов и толстые границы государств (общие рёбра
  *    соседей с разными владельцами + берега);
- *  - подписи государств serif-шрифтом из локальных глифов (`npm run map:glyphs`):
- *    капс, разрядка, размер от площади, приоритет крупным при коллизиях.
+ *  - подписи государств serif-шрифтом из локальных глифов (`npm run map:glyphs`)
+ *    вдоль изогнутых линий меток по главной оси страны: капс, разрядка под
+ *    длину линии, размер от габаритов, приоритет крупным при коллизиях.
  */
 
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
@@ -22,7 +23,7 @@ import type { StyleSpecification, ExpressionSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { Region, MapObject } from '../../types';
 import {
-  buildBorderEdges, buildPolityLabels, largestPartBounds, muteColor, parseRegionFeatures, type RegionFeature, type BorderEdge,
+  MIN_LABEL_PX, buildBorderEdges, buildPolityLabels, largestPartBounds, muteColor, parseRegionFeatures, type RegionFeature, type BorderEdge,
 } from './mapData';
 
 interface MapboxMapViewProps {
@@ -82,13 +83,26 @@ const buildStyle = (): StyleSpecification => ({
   layers: [{ id: 'background', type: 'background', paint: { 'background-color': OCEAN_COLOR } }],
 });
 
-/** Размер подписи: удваивается с каждым уровнем зума, но не больше MAX_LABEL_PX */
-const labelSizeExpr = (): ExpressionSpecification => {
-  const stops: (number | ExpressionSpecification)[] = [];
-  for (let z = 0; z <= 10; z++) {
-    stops.push(z, ['min', MAX_LABEL_PX, ['*', ['get', 'size0'], 2 ** z]]);
+/**
+ * Подписи — набор слоёв по полуинтервалам зума. Кегль в каждом зависит
+ * только от данных: MapLibre проверяет, влезает ли подпись в линию, по
+ * кеглю на зуме 18, и при кегле «зум × данные» отбрасывает почти все
+ * подписи. В начале интервала текст заполняет линию (size0 посчитан для
+ * мира 256 px на зуме 0, а у MapLibre мир 512 px — отсюда 2^(z+1)).
+ */
+const LABEL_BAND_STEP = 0.5;
+const LABEL_BAND_MAX_ZOOM = 12;
+const labelBands = (): { id: string; minzoom: number; maxzoom: number; scale: number }[] => {
+  const bands = [];
+  for (let z = 0; z < LABEL_BAND_MAX_ZOOM; z += LABEL_BAND_STEP) {
+    bands.push({
+      id: `${LABEL_LAYER}-${z.toFixed(1)}`,
+      minzoom: z,
+      maxzoom: z + LABEL_BAND_STEP >= LABEL_BAND_MAX_ZOOM ? 24 : z + LABEL_BAND_STEP,
+      scale: 2 ** (z + 1),
+    });
   }
-  return ['interpolate', ['exponential', 2], ['zoom'], ...stops] as unknown as ExpressionSpecification;
+  return bands;
 };
 
 const stateFlag = (key: string): ExpressionSpecification => ['boolean', ['feature-state', key], false];
@@ -137,9 +151,7 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
   const map = useRef<maplibregl.Map | null>(null);
   const objectMarkers = useRef<maplibregl.Marker[]>([]);
   const [mapLoaded, setMapLoaded] = useState(false);
-  const [tooltipInfo, setTooltipInfo] = useState<{
-    x: number; y: number; name: string; owner: string | null; population: number; gdp: number; militaryPower: number;
-  } | null>(null);
+  const [tooltipInfo, setTooltipInfo] = useState<{ x: number; y: number; name: string; owner: string | null } | null>(null);
 
   // Актуальные значения для обработчиков карты (регистрируются один раз)
   const regionsRef = useRef(regions);
@@ -301,20 +313,27 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
         },
       });
 
-      // Подписи государств
-      m.addLayer({
-        id: LABEL_LAYER,
+      // Подписи государств (слой на каждый полуинтервал зума, см. labelBands)
+      for (const band of labelBands()) m.addLayer({
+        id: band.id,
         type: 'symbol',
         source: LABELS_SOURCE,
-        filter: ['>=', ['zoom'], ['get', 'minZoom']] as ExpressionSpecification,
+        minzoom: band.minzoom,
+        maxzoom: band.maxzoom,
+        // Слишком мелкие на этом зуме подписи не показываем
+        filter: ['>=', ['*', ['get', 'size0'], band.scale], MIN_LABEL_PX] as ExpressionSpecification,
         layout: {
           'text-field': ['get', 'name'] as ExpressionSpecification,
           'text-font': LABEL_FONT,
           'text-transform': 'uppercase',
-          'text-letter-spacing': 0.22,
-          'text-size': labelSizeExpr(),
-          'text-max-width': 14,
-          'text-padding': 3,
+          // Подпись вдоль линии метки (дуга по главной оси страны)
+          'symbol-placement': 'line-center',
+          'text-rotation-alignment': 'map',
+          'text-keep-upright': true,
+          'text-max-angle': 32,
+          'text-letter-spacing': ['get', 'letterSpacing'] as ExpressionSpecification,
+          'text-size': ['min', MAX_LABEL_PX, ['*', ['get', 'size0'], band.scale]] as ExpressionSpecification,
+          'text-padding': 2,
           'symbol-sort-key': ['-', 0, ['get', 'area0']] as ExpressionSpecification,
           'text-allow-overlap': false,
         },
@@ -372,9 +391,6 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
           y: e.point.y,
           name: region.name,
           owner: ownerName && ownerName !== region.name ? ownerName : null,
-          population: region.population,
-          gdp: region.gdp,
-          militaryPower: region.militaryPower,
         });
       });
 
@@ -451,8 +467,8 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
       type: 'FeatureCollection',
       features: labels.map(l => ({
         type: 'Feature',
-        properties: { name: l.name, size0: l.size0, area0: l.area0, minZoom: l.minZoom },
-        geometry: { type: 'Point', coordinates: l.point },
+        properties: { name: l.name, size0: l.size0, area0: l.area0, minZoom: l.minZoom, letterSpacing: l.letterSpacing },
+        geometry: { type: 'LineString', coordinates: l.line },
       })),
     });
   }, [regions, mapLoaded, playerCountryCode, polityName]);
@@ -553,7 +569,7 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
         </div>
       )}
 
-      {/* Тултип региона: «Регион · Контроль», статы — если они есть */}
+      {/* Тултип региона: «Регион · Контроль» */}
       {tooltipInfo && (
         <div
           style={{
@@ -565,11 +581,6 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
         >
           <div style={{ fontWeight: 700, fontSize: '14px', color: '#c9b8ff' }}>{tooltipInfo.name}</div>
           {tooltipInfo.owner && <div style={{ color: '#ccc', marginTop: '4px' }}>Контроль: {tooltipInfo.owner}</div>}
-          {tooltipInfo.population > 0 && (
-            <div style={{ color: '#aaa', marginTop: '6px' }}>👥 {tooltipInfo.population.toLocaleString()}</div>
-          )}
-          {tooltipInfo.gdp > 0 && <div style={{ color: '#aaa' }}>💰 {tooltipInfo.gdp}</div>}
-          {tooltipInfo.militaryPower > 0 && <div style={{ color: '#aaa' }}>⚔️ {tooltipInfo.militaryPower}</div>}
         </div>
       )}
 

@@ -11,7 +11,6 @@ import { MapView } from './components/Map/MapView';
 // import { CreateWorld, type WorldConfig } from './components/WorldBuilder/CreateWorld';
 import { TemplateSelector } from './components/Game/TemplateSelector';
 import { CountrySelector } from './components/Game/CountrySelector';
-import { DiplomacyPanel } from './components/Game/DiplomacyPanel';
 // ОТКЛЮЧЕНО: переговоры/дипломатические чаты (временно)
 // import { ChatsPanel } from './components/Game/ChatsPanel';
 import { AdvisorChat } from './components/Game/AdvisorChat';
@@ -952,22 +951,7 @@ function App() {
                 <div className="country-name" style={{ color: currentRegion.color }}>
                   {currentRegion.name}
                 </div>
-                <div className="country-stats">
-                  <span>👥 {currentRegion.population?.toLocaleString() || '1,000,000'}</span>
-                  <span>💰 {currentRegion.gdp || 100}</span>
-                  <span>⚔️ {currentRegion.militaryPower || 100}</span>
-                </div>
               </div>
-            )}
-
-            {/* Diplomacy panel */}
-            {currentGame && selectedRegion && (
-              <DiplomacyPanel
-                gameId={currentGame.id}
-                selectedRegionId={selectedRegion}
-                regions={regions}
-                refreshKey={currentGame.currentTurn}
-              />
             )}
 
             {/* Save/Load buttons */}

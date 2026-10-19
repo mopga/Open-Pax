@@ -325,12 +325,6 @@ export const gameApi = {
     return fetchApi(`/games/${gameId}/intervene`, { method: 'POST' });
   },
 
-  /**
-   * Get diplomatic relationships for a game
-   */
-  getRelationships: (gameId: string): Promise<Record<string, Record<string, string>>> => {
-    return fetchApi(`/games/${gameId}/relationships`);
-  },
 };
 
 // ============================================================================
