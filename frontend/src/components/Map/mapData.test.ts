@@ -88,3 +88,48 @@ describe('muteColor', () => {
     expect(muteColor('nonsense')).toBe('nonsense');
   });
 });
+
+describe('labelLineForPart / линии меток', () => {
+  const labelOf = (code: string) => {
+    const regions = regionsFor([code]);
+    return buildPolityLabels(regions, parseRegionFeatures(regions), o => o)
+      .sort((a, b) => b.area0 - a.area0)[0];
+  };
+  /** Угол линии от горизонтали, градусы (в пикселях Меркатора) */
+  const angleOf = (line: Position[]) => {
+    const [x0, y0] = project(line[0]);
+    const [x1, y1] = project(line[line.length - 1]);
+    return Math.abs((Math.atan2(y1 - y0, x1 - x0) * 180) / Math.PI);
+  };
+
+  it('Чили — почти вертикальная линия вдоль страны', () => {
+    const chile = labelOf('CHL');
+    const a = angleOf(chile.line);
+    expect(Math.min(a, 180 - a)).toBeGreaterThan(70);
+  });
+
+  it('Россия — длинная, близкая к горизонтали; середина линии внутри страны', () => {
+    const rus = labelOf('RUS');
+    const a = angleOf(rus.line);
+    expect(Math.min(a, 180 - a)).toBeLessThan(25);
+    expect(rus.point[0]).toBeGreaterThan(40);
+    expect(rus.point[0]).toBeLessThan(140);
+    expect(rus.point[1]).toBeGreaterThan(50);
+    expect(rus.point[1]).toBeLessThan(72);
+  });
+
+  it('почти круглая страна получает горизонтальную линию', () => {
+    const fra = labelOf('FRA');
+    const a = angleOf(fra.line);
+    expect(Math.min(a, 180 - a)).toBeLessThan(15);
+  });
+
+  it('линия плавная (17 точек) и разрядка в разумных пределах', () => {
+    for (const code of ['RUS', 'BRA', 'EGY']) {
+      const l = labelOf(code);
+      expect(l.line).toHaveLength(17);
+      expect(l.letterSpacing).toBeGreaterThanOrEqual(0.25);
+      expect(l.letterSpacing).toBeLessThanOrEqual(1.4);
+    }
+  });
+});
