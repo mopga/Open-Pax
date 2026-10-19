@@ -9,7 +9,6 @@ import { buildSimulationPrompt, parseSimulationResponse, buildAutoJumpInstructio
 import { buildAdvisorPrompt, parseAdvisorResponse, buildAdvisorDialogSuffix } from './prompts/advisor';
 import { buildSuggestionsPrompt, parseSuggestionsResponse } from './prompts/suggestions';
 import { buildConverterPrompt, parseConverterResponse, buildBatchConverterPrompt, parseBatchConverterResponse } from './prompts/converter';
-import { buildNarrationPrompt, parseNarrationResponse } from './prompts/narration';
 import { getPromptOverride, renderPromptTemplate, PromptOverrides } from './prompts/override';
 import { LLMRouter } from './llm';
 
@@ -524,34 +523,6 @@ export class PromptEngine {
     );
 
     return parseSuggestionsResponse(response.content);
-  }
-
-  async generateNarration(
-    facts: string[],
-    jumpDays: number,
-    currentDate: string,
-    playerPolity: string,
-    language: string = 'russian'
-  ): Promise<string> {
-    const targetDate = this.calculateTargetDate(currentDate, jumpDays);
-
-    const prompt = buildNarrationPrompt({
-      facts,
-      jumpDays,
-      currentDate,
-      targetDate,
-      playerPolity,
-      language,
-    });
-
-    const response = await this.llm.generate(
-      'narration',
-      'Ты — летописец альтернативной истории. Пиши живым, но сдержанным стилем.',
-      prompt,
-      { temperature: 0.7 }
-    );
-
-    return parseNarrationResponse(response.content);
   }
 
   private calculateTargetDate(startDate: string, days: number): string {

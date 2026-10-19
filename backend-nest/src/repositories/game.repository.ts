@@ -15,10 +15,12 @@ export interface PlayerRecord {
 }
 
 export const gameRepository = {
-  create: (game: { id: string; worldId: string; currentTurn?: number; maxTurns?: number; status?: string; difficulty?: string }) => {
+  create: (game: { id: string; worldId: string; currentTurn?: number; maxTurns?: number; status?: string; difficulty?: string; currentDate?: string }) => {
+    // current_date = дата старта мира: иначе до первого хода (и после рестарта
+    // сервера) действовал DEFAULT '1951-01-01' из схемы
     const stmt = db.prepare(`
-      INSERT INTO games (id, world_id, current_turn, max_turns, status, difficulty)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO games (id, world_id, current_turn, max_turns, status, difficulty, current_date)
+      VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, (SELECT start_date FROM worlds WHERE id = ?), '1951-01-01'))
     `);
     stmt.run(
       game.id,
@@ -26,7 +28,9 @@ export const gameRepository = {
       game.currentTurn || 1,
       game.maxTurns || 100,
       game.status || 'playing',
-      game.difficulty || 'normal'
+      game.difficulty || 'normal',
+      game.currentDate ?? null,
+      game.worldId
     );
     return game;
   },

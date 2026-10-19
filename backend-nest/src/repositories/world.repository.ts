@@ -203,6 +203,7 @@ export const worldRepository = {
     militaryPower?: number;
     owner?: string;
     color?: string;
+    name?: string;
     objects?: any[];
   }[]) => {
     if (updates.length === 0) return;
@@ -214,6 +215,7 @@ export const worldRepository = {
         military_power = COALESCE(?, military_power),
         owner        = COALESCE(?, owner),
         color        = COALESCE(?, color),
+        name         = COALESCE(?, name),
         objects      = COALESCE(?, objects)
       WHERE id = ?
     `);
@@ -226,6 +228,7 @@ export const worldRepository = {
           item.militaryPower ?? null,
           item.owner ?? null,
           item.color ?? null,
+          item.name ?? null,
           // Этап 4: без этой строки батальоны/столицы терялись при перезагрузке
           item.objects !== undefined ? JSON.stringify(item.objects) : null,
           item.id,

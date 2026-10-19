@@ -159,8 +159,14 @@ export const gameApi = {
   /**
    * Получить состояние игры
    */
-  get: (gameId: string): Promise<Game> => {
-    return fetchApi(`/games/${gameId}`);
+  get: async (gameId: string): Promise<Game> => {
+    const game = await fetchApi<any>(`/games/${gameId}`);
+    // Сервер отдаёт регионы массивом; во фронте World.regions — словарь по id
+    // (иначе поиск currentWorld.regions[id] молча промахивается)
+    if (Array.isArray(game?.world?.regions)) {
+      game.world.regions = Object.fromEntries(game.world.regions.map((r: any) => [r.id, r]));
+    }
+    return game as Game;
   },
   
   /**

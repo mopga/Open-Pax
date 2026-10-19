@@ -427,3 +427,45 @@ describe('Этап 2: консолидация истории', () => {
     expect(consolidationCalls).toBe(0);
   });
 });
+
+describe('Карта: изменения регионов по событиям и дата старта', () => {
+  it('jump_event несёт итоговое состояние только изменившихся регионов', async () => {
+    jumpMode = 'normal';
+    // Отдельный мир: регионы общего WORLD_ID уже изменены предыдущими тестами
+    const repos = await import('../src/repositories');
+    const worldId = 'stage2_map_world';
+    repos.worldRepository.createWithRegions(
+      { id: worldId, name: 'Map', description: '', startDate: '1951-01-01', basePrompt: '', historicalAccuracy: 0.8 },
+      [
+        { id: `${worldId}_DEU`, name: 'ФРГ', color: '#FF0000', owner: 'DEU', population: 1, gdp: 1, militaryPower: 1, flag: 'DEU' },
+        { id: `${worldId}_POL`, name: 'Польша', color: '#00FF00', owner: 'POL', population: 1, gdp: 1, militaryPower: 1, flag: 'POL' },
+        { id: `${worldId}_FRA`, name: 'Франция', color: '#FFFF00', owner: 'FRA', population: 1, gdp: 1, militaryPower: 1, flag: 'FRA' },
+      ],
+    );
+    const { session } = getSessionRegistry().createSession(worldId, 'Player', `${worldId}_DEU`, '#FF0000');
+    const jumpEvents: any[] = [];
+    session.setSSEBroadcaster((type: string, data: any) => {
+      if (type === 'jump_event') jumpEvents.push(data);
+    });
+
+    session.queueAction('Наступление на восток');
+    await session.processNextAction(30);
+
+    expect(jumpEvents).toHaveLength(1);
+    const changed = jumpEvents[0].changedRegions;
+    expect(changed).toEqual([
+      expect.objectContaining({ id: 'stage2_map_world_POL', owner: 'DEU' }),
+    ]);
+  });
+
+  it('новая игра сразу получает дату старта мира, а не дефолт схемы', async () => {
+    const repos = await import('../src/repositories');
+    const worldId = 'stage2_world_2033';
+    repos.worldRepository.createWithRegions(
+      { id: worldId, name: 'Modern', description: '', startDate: '2033-08-20', basePrompt: '', historicalAccuracy: 0.8 },
+      [{ id: `${worldId}_UKR`, name: 'Украина', color: '#FFD700', owner: 'UKR', population: 1, gdp: 1, militaryPower: 1, flag: 'UKR' }],
+    );
+    const { gameId } = getSessionRegistry().createSession(worldId, 'Player', `${worldId}_UKR`, '#FF0000');
+    expect(repos.gameRepository.findById(gameId).current_date).toBe('2033-08-20');
+  });
+});

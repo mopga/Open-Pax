@@ -133,6 +133,41 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentGameId, currentView, currentGame?.currentTurn]);
 
+  /**
+   * Накладывает изменения регионов на карту и подсвечивает изменившиеся.
+   * Читает мир из стора напрямую: вызывается из SSE-колбэков, где
+   * замыкание на currentWorld было бы устаревшим.
+   */
+  const applyRegionChanges = (changes: (Partial<Region> & { id: string })[], highlight = true) => {
+    const world = useGameStore.getState().currentWorld;
+    if (!world || changes.length === 0) return;
+    const regions = { ...world.regions };
+    const changed: string[] = [];
+    for (const c of changes) {
+      const old = regions[c.id];
+      if (!old || old.owner !== c.owner || old.color !== c.color || old.name !== c.name) changed.push(c.id);
+      regions[c.id] = { ...old, ...c } as Region;
+    }
+    if (changed.length === 0) return;
+    setCurrentWorld({ ...world, regions });
+    if (highlight) {
+      setChangedRegions(changed);
+      setTimeout(() => clearChangedRegions(), 3000);
+    }
+  };
+
+  /** Полная сверка игры и карты с сервером — после хода и отката */
+  const syncGameFromServer = async (gameId: string, highlight = true) => {
+    const updatedGame = await gameApi.get(gameId);
+    setCurrentGame(prev => (prev ? {
+      ...prev,
+      currentTurn: updatedGame.currentTurn,
+      currentDate: updatedGame.currentDate,
+      players: updatedGame.players,
+    } : updatedGame));
+    applyRegionChanges(Object.values(updatedGame.world?.regions || {}), highlight);
+  };
+
   // Refs (not in store - DOM refs)
   const actionsRef = useRef<HTMLDivElement>(null);
   const historyEndRef = useRef<HTMLDivElement>(null);
@@ -506,38 +541,7 @@ function App() {
         }
       }
 
-      const updatedGame = await gameApi.get(currentGame.id);
-      setCurrentGame(updatedGame);
-
-      const changed: string[] = [];
-      if (updatedGame.world && currentWorld) {
-        const newRegions = { ...currentWorld.regions };
-        const gameRegions = Array.isArray(updatedGame.world.regions)
-          ? updatedGame.world.regions
-          : Object.values(updatedGame.world.regions);
-        gameRegions.forEach((r: any) => {
-          if (newRegions[r.id]) {
-            const oldRegion = newRegions[r.id];
-            if (oldRegion.owner !== r.owner || oldRegion.color !== r.color) {
-              changed.push(r.id);
-            }
-            newRegions[r.id] = {
-              ...newRegions[r.id],
-              owner: r.owner,
-              color: r.color,
-              population: r.population,
-              militaryPower: r.militaryPower,
-              gdp: r.gdp,
-            };
-          }
-        });
-        setCurrentWorld({ ...currentWorld, regions: newRegions });
-
-        if (changed.length > 0) {
-          setChangedRegions(changed);
-          setTimeout(() => clearChangedRegions(), 3000);
-        }
-      }
+      await syncGameFromServer(currentGame.id);
     } catch (e) {
       console.error('Failed to submit action:', e);
       addHistory({
@@ -604,6 +608,9 @@ function App() {
       }
       clearPendingActions();
       setLiveTimelineEvents([]);
+      // Итоговая сверка карты: события уже перекрасили регионы по SSE,
+      // здесь доезжают worldChanges конца хода и всё, что SSE мог пропустить
+      await syncGameFromServer(currentGame.id);
     } catch (e) {
       console.error('Time-skip failed:', e);
       setLiveTimelineEvents([]);
@@ -620,28 +627,8 @@ function App() {
     setLoading(true);
     try {
       await gameApi.rewind(currentGame.id);
-      const updatedGame = await gameApi.get(currentGame.id);
-      setCurrentGame(updatedGame);
-
-      if (updatedGame.world && currentWorld) {
-        const newRegions = { ...currentWorld.regions };
-        const gameRegions = Array.isArray(updatedGame.world.regions)
-          ? updatedGame.world.regions
-          : Object.values(updatedGame.world.regions);
-        gameRegions.forEach((r: any) => {
-          if (newRegions[r.id]) {
-            newRegions[r.id] = {
-              ...newRegions[r.id],
-              owner: r.owner,
-              color: r.color,
-              population: r.population,
-              militaryPower: r.militaryPower,
-              gdp: r.gdp,
-            };
-          }
-        });
-        setCurrentWorld({ ...currentWorld, regions: newRegions });
-      }
+      await syncGameFromServer(currentGame.id, false);
+      const updatedGame = useGameStore.getState().currentGame!;
 
       addHistory({
         turn: updatedGame.currentTurn,
@@ -685,25 +672,6 @@ function App() {
     }
     // ОТКЛЮЧЕНО: переговоры — актуализация чатов при открытии панели больше не нужна
     // useChatStore.getState().refreshChats();
-  };
-
-  // Выбрать тип действия и заполнить шаблон
-  const handleActionTypeSelect = (type: string, template: string, targetRegionId?: string) => {
-    setSelectedActionType(type);
-    let text = template;
-    if (targetRegionId && currentWorld) {
-      const targetRegion = currentWorld.regions[targetRegionId];
-      if (targetRegion) {
-        text = template.replace('{target}', targetRegion.name);
-      }
-    }
-    setNewActionText(text);
-  };
-
-  // Очистить выбор действия
-  const clearActionType = () => {
-    setSelectedActionType(null);
-    setTargetRegionForAttack('');
   };
 
   // Этап 6: возобновление сохранённой игры с лендинга
@@ -781,10 +749,6 @@ function App() {
     return () => clearInterval(t);
   }, [loading, currentView]);
 
-  // Action type selector
-  const [selectedActionType, setSelectedActionType] = useState<string | null>(null);
-  const [targetRegionForAttack, setTargetRegionForAttack] = useState<string>('');
-
   useSSE(currentGame?.id || null, {
     onTurnStart: (data) => {
       console.log('[SSE] Turn started:', data);
@@ -801,6 +765,10 @@ function App() {
     },
     onJumpEvent: (data) => {
       setTurnProgress(`Событие ${data.index + 1}/${data.total}: ${data.event?.headline || ''}`);
+      // Карта меняется прямо по ходу событий, а не только после хода
+      if (data.changedRegions?.length) {
+        applyRegionChanges(data.changedRegions as (Partial<Region> & { id: string })[]);
+      }
       if (data.event?.headline) {
         setLiveTimelineEvents(events => [...events, data.event]);
       }
@@ -1207,102 +1175,10 @@ function App() {
 
                   {/* Manual Action Input */}
                   <div className="manual-action-input">
-                    {/* Action Type Buttons */}
-                    <div className="action-type-selector">
-                      <button
-                        className={`action-type-btn attack ${selectedActionType === 'attack' ? 'active' : ''}`}
-                        onClick={() => {
-                          if (selectedActionType === 'attack') {
-                            clearActionType();
-                          } else {
-                            const enemyRegions = Object.values(currentWorld?.regions || {})
-                              .filter(r => r.owner !== playerPolityId && r.owner !== 'neutral');
-                            const firstEnemy = enemyRegions[0] as Region | undefined;
-                            if (firstEnemy) {
-                              setTargetRegionForAttack(firstEnemy.id);
-                              handleActionTypeSelect('attack', 'атака на {target}', firstEnemy.id);
-                            } else {
-                              handleActionTypeSelect('attack', 'атака на {target}');
-                            }
-                          }
-                        }}
-                        title="Атаковать регион (💰20 ⚔️50)"
-                      >
-                        ⚔️ Attack
-                        <span className="action-cost">💰20 ⚔️50</span>
-                      </button>
-                      <button
-                        className={`action-type-btn develop ${selectedActionType === 'develop' ? 'active' : ''}`}
-                        onClick={() => {
-                          if (selectedActionType === 'develop') {
-                            clearActionType();
-                          } else {
-                            handleActionTypeSelect('develop', 'развить регион');
-                          }
-                        }}
-                        title="Развить регион (💰30)"
-                      >
-                        🏗️ Develop
-                        <span className="action-cost">💰30</span>
-                      </button>
-                      <button
-                        className={`action-type-btn trade ${selectedActionType === 'trade' ? 'active' : ''}`}
-                        onClick={() => {
-                          if (selectedActionType === 'trade') {
-                            clearActionType();
-                          } else {
-                            handleActionTypeSelect('trade', 'торговля');
-                          }
-                        }}
-                        title="Торговля (💰10)"
-                      >
-                        💰 Trade
-                        <span className="action-cost">💰10</span>
-                      </button>
-                      <button
-                        className={`action-type-btn build ${selectedActionType === 'build' ? 'active' : ''}`}
-                        onClick={() => {
-                          if (selectedActionType === 'build') {
-                            clearActionType();
-                          } else {
-                            handleActionTypeSelect('build', 'строительство');
-                          }
-                        }}
-                        title="Строительство (💰40)"
-                      >
-                        🏭 Build
-                        <span className="action-cost">💰40</span>
-                      </button>
-                    </div>
-
-                    {/* Target Region Selector (for attack) */}
-                    {selectedActionType === 'attack' && (
-                      <div className="target-region-selector">
-                        <label>Цель:</label>
-                        <select
-                          value={targetRegionForAttack}
-                          onChange={(e) => {
-                            setTargetRegionForAttack(e.target.value);
-                            const region = currentWorld?.regions[e.target.value];
-                            if (region) {
-                              setNewActionText(`атака на ${region.name}`);
-                            }
-                          }}
-                        >
-                          {(Object.values(currentWorld?.regions || {}) as Region[])
-                            .filter(r => r.owner !== playerPolityId && r.owner !== 'neutral')
-                            .map(r => (
-                              <option key={r.id} value={r.id}>{r.name} ({r.owner})</option>
-                            ))
-                          }
-                        </select>
-                      </div>
-                    )}
-
                     <textarea
                       value={newActionText}
                       onChange={(e) => setNewActionText(e.target.value)}
-                      placeholder={selectedActionType ? 'Отредактируйте текст или добавьте...' : 'Опишите действие или выберите тип выше...'}
+                      placeholder="Опишите действие своими словами…"
                       rows={2}
                     />
                     <button
@@ -1315,7 +1191,6 @@ function App() {
                             text
                           });
                           setNewActionText('');
-                          clearActionType();
                         }
                       }}
                       disabled={!newActionText.trim()}

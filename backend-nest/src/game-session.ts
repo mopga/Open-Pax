@@ -36,6 +36,15 @@ export interface RegionState {
   status: 'active' | 'occupied' | 'destroyed' | 'independent';
 }
 
+/** Изменение региона, рассылаемое в SSE jump_event */
+export interface RegionDelta {
+  id: string;
+  owner: string;
+  color: string;
+  name: string;
+  status: RegionState['status'];
+}
+
 export interface PlayerInfo {
   id: string;
   name: string;
@@ -568,6 +577,26 @@ export class GameSession {
     return Array.from(this.regions.values());
   }
 
+  /** Отпечаток видимого на карте состояния регионов (для диффа по событию) */
+  private regionSnapshot(): Map<string, string> {
+    const snap = new Map<string, string>();
+    for (const [id, r] of this.regions) {
+      snap.set(id, `${r.owner}|${r.color}|${r.name}|${r.status}`);
+    }
+    return snap;
+  }
+
+  /** Регионы, изменившиеся (или появившиеся) после снимка */
+  private regionDelta(before: Map<string, string>): RegionDelta[] {
+    const out: RegionDelta[] = [];
+    for (const [id, r] of this.regions) {
+      if (before.get(id) !== `${r.owner}|${r.color}|${r.name}|${r.status}`) {
+        out.push({ id, owner: r.owner, color: r.color, name: r.name, status: r.status });
+      }
+    }
+    return out;
+  }
+
   /**
    * Get player info
    */
@@ -982,6 +1011,8 @@ export class GameSession {
       militaryPower: region.militaryPower,
       owner: region.owner,
       color: region.color,
+      // mapChanges type=update может переименовать регион
+      name: region.name,
       // Этап 4: маркеры на карте (столицы/батальоны) — передаём всегда,
       // иначе updateRegionsBatch их не сохранял и объекты терялись при рестарте
       objects: region.objects || [],
@@ -1345,11 +1376,16 @@ ${toSummarize.map(r => `Раунд ${r.turn}: ${r.narration}`).join('\n\n')}
           break;
         }
         const event = events[i];
+        let changedRegions: RegionDelta[] = [];
         if (event.mapChanges && event.mapChanges.length > 0) {
+          const before = this.regionSnapshot();
           this.applyMapChanges(event.mapChanges);
+          changedRegions = this.regionDelta(before);
         }
         appliedEvents.push(event);
-        this.broadcast('jump_event', { turn: this.currentTurn, index: i, total: events.length, event });
+        // changedRegions — итоговое состояние затронутых регионов: фронт
+        // перекрашивает карту прямо по ходу событий, не дожидаясь конца хода
+        this.broadcast('jump_event', { turn: this.currentTurn, index: i, total: events.length, event, changedRegions });
         // Пауза, чтобы фронт успел показать событие (только при живом SSE)
         if (this.sseBroadcaster && i < events.length - 1) {
           await new Promise(r => setTimeout(r, 350));
