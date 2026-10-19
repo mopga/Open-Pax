@@ -84,6 +84,29 @@ export function ensureVisibleOnDark(hex: string, threshold: number = DARK_LUMINA
  *  1. если у пресета есть кураторский цвет для кода страны (country_colors) — он;
  *  2. иначе — прежний цвет (реестр/пресет countries[]) + анти-тёмный post-process.
  */
+/**
+ * Детерминированный цвет страны по коду — для стран вне реестра и палитры
+ * пресета. Приглушённые насыщенные тона в духе политических карт; один и тот
+ * же код всегда получает один цвет.
+ */
+export function colorFromCode(code: string): string {
+  let h = 2166136261;
+  for (const ch of code) {
+    h ^= ch.charCodeAt(0);
+    h = Math.imul(h, 16777619);
+  }
+  const hue = (h >>> 0) % 360;
+  const sat = 0.42 + ((h >>> 9) % 20) / 100;   // 0.42–0.61
+  const light = 0.46 + ((h >>> 17) % 14) / 100; // 0.46–0.59
+  // HSL → RGB
+  const c = (1 - Math.abs(2 * light - 1)) * sat;
+  const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
+  const m = light - c / 2;
+  const [r, g, b] = hue < 60 ? [c, x, 0] : hue < 120 ? [x, c, 0] : hue < 180 ? [0, c, x]
+    : hue < 240 ? [0, x, c] : hue < 300 ? [x, 0, c] : [c, 0, x];
+  return toHex({ r: Math.round((r + m) * 255), g: Math.round((g + m) * 255), b: Math.round((b + m) * 255) });
+}
+
 export function resolveRegionColor(
   code: string,
   fallback: string | undefined,

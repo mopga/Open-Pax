@@ -43,3 +43,7 @@ logs/
 
 # Local reference recordings
 *.mp4
+
+# Generated map caches and tiles
+backend-nest/data/geojson/country-borders.json
+frontend/public/tiles/

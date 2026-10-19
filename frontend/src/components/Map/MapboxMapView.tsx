@@ -2,66 +2,28 @@
  * Open-Pax — игровая карта на MapLibre GL
  * =======================================
  * Компонент сохранил историческое имя MapboxMapView (используется в App.tsx),
- * но внутри работает на MapLibre GL — без токена и без внешних тайлов.
- * Базовый стиль — офлайн (inline StyleSpecification): тёмный фон + координатная
- * сетка из собственного geojson. Регионы, границы, лейблы и объекты рисуются
- * только из данных игры (region.geojson).
+ * но внутри работает на MapLibre GL — без токена и без внешних серверов.
  *
- * Поддерживает: заливки регионов, границы, подписи имён, выбор, hover,
- * тултип со статами, подсветку изменённых регионов, маркеры объектов,
- * клавиатурную навигацию (+/-/0/стрелки).
+ * Слои (снизу вверх), в духе карты PaxHistoria:
+ *  - тёмно-синий океан;
+ *  - заливки регионов цветом владельца (feature-state: геометрия грузится
+ *    один раз, смена владельца — это только смена состояния);
+ *  - офлайн-рельеф Natural Earth поверх заливок (тени/света тонируют цвет;
+ *    тайлы собирает `npm run map:relief`, без них слой просто не добавляется);
+ *  - тонкие контуры регионов и толстые границы государств (общие рёбра
+ *    соседей с разными владельцами + берега);
+ *  - подписи государств serif-шрифтом из локальных глифов (`npm run map:glyphs`):
+ *    капс, разрядка, размер от площади, приоритет крупным при коллизиях.
  */
 
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import maplibregl from 'maplibre-gl';
-import type { StyleSpecification } from 'maplibre-gl';
+import type { StyleSpecification, ExpressionSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import type { Region } from '../../types';
-import type { MapObject } from '../../types';
-
-// Соответствие ISO 3166-1 alpha-3 → alpha-2 для flagcdn.com
-const ISO3_TO_ISO2: Record<string, string> = {
-  USA: 'us', RUS: 'ru', CHN: 'cn', GBR: 'gb', FRA: 'fr',
-  DEU: 'de', JPN: 'jp', IND: 'in', BRA: 'br', CAN: 'ca',
-  ITA: 'it', ESP: 'es', MEX: 'mx', AUS: 'au', KOR: 'kr',
-  SAU: 'sa', TUR: 'tr', POL: 'pl', NLD: 'nl', BEL: 'be',
-  SWE: 'se', NOR: 'no', DNK: 'dk', FIN: 'fi', AUT: 'at',
-  CHE: 'ch', PRT: 'pt', GRC: 'gr', CZE: 'cz', HUN: 'hu',
-  ROU: 'ro', BGR: 'bg', UKR: 'ua', KAZ: 'kz', ARG: 'ar',
-  CHL: 'cl', COL: 'co', PER: 'pe', VEN: 've', ECU: 'ec',
-  BOL: 'bo', PRY: 'py', URY: 'uy', GTM: 'gt', CUB: 'cu',
-  HTI: 'ht', DOM: 'do', HND: 'hn', NIC: 'ni', CRI: 'cr',
-  PAN: 'pa', SLV: 'sv', JAM: 'jm', TTO: 'tt', PRK: 'kp',
-  VNM: 'vn', THA: 'th', IDN: 'id', MYS: 'my', PHL: 'ph',
-  PAK: 'pk', BGD: 'bd', IRN: 'ir', IRQ: 'iq', SYR: 'sy',
-  ISR: 'il', EGY: 'eg', LBY: 'ly', DZA: 'dz', MAR: 'ma',
-  TUN: 'tn', NGA: 'ng', ZAF: 'za', ETH: 'et', KEN: 'ke',
-  GHA: 'gh', AGO: 'ao', MOZ: 'mz', TZA: 'tz', CMR: 'cm',
-  COD: 'cd', SDN: 'sd', SOM: 'so', YEM: 'ye', AFG: 'af',
-  MMR: 'mm', KHM: 'kh', LAO: 'la', MNG: 'mn', NPL: 'np',
-  LKA: 'lk', AZE: 'az', GEO: 'ge', ARM: 'am', BLR: 'by',
-  MDA: 'md', LTU: 'lt', LVA: 'lv', EST: 'ee', SRB: 'rs',
-  HRV: 'hr', BIH: 'ba', SVN: 'si', SVK: 'sk', MKD: 'mk',
-  MNE: 'me', ALB: 'al', RWA: 'rw', UZB: 'uz', TKM: 'tm',
-  KGZ: 'kg', TJK: 'tj',
-};
-
-// Конвертация ISO 3166-1 alpha-3 в флаг-эмодзи
-const codeToEmoji = (code: string): string => {
-  if (!code || code.length !== 3) return '';
-  const toAlpha2 = ISO3_TO_ISO2[code];
-  if (!toAlpha2) return code;
-  return toAlpha2.toUpperCase().split('').map(c =>
-    String.fromCodePoint(127397 + c.charCodeAt(0))
-  ).join('');
-};
-
-// URL PNG-флага на flagcdn.com по 3-буквенному коду страны
-const getFlagUrl = (code3: string, size: number = 40): string | null => {
-  const code2 = ISO3_TO_ISO2[code3];
-  if (!code2) return null;
-  return `https://flagcdn.com/w${size}/${code2}.png`;
-};
+import type { Region, MapObject } from '../../types';
+import {
+  buildBorderEdges, buildPolityLabels, largestPartBounds, muteColor, parseRegionFeatures, type RegionFeature, type BorderEdge,
+} from './mapData';
 
 interface MapboxMapViewProps {
   regions: Region[];
@@ -69,18 +31,18 @@ interface MapboxMapViewProps {
   onRegionClick?: (regionId: string) => void;
   onRegionHover?: (regionId: string | null) => void;
   changedRegionIds?: string[];
+  /** Оставлен для совместимости API: флаги на карте больше не рисуются */
   showFlags?: boolean;
   playerCountryCode?: string;
+  /** Оставлен для совместимости API */
   showMinimap?: boolean;
 }
 
 // Иконки игровых объектов на карте
 const OBJECT_ICONS: Record<string, { color: string; label: string }> = {
   city: { color: '#ffffff', label: '●' },
-  // Столица: золотая звезда — визуально отличается от обычного города
   capital: { color: '#ffd700', label: '★' },
   army: { color: '#ff4444', label: '▲' },
-  // Батальон: красный треугольник (как армия — оба типа рендерятся)
   battalion: { color: '#ff4444', label: '▲' },
   fleet: { color: '#4488ff', label: '◆' },
   missile: { color: '#ff8800', label: '✈' },
@@ -90,117 +52,50 @@ const OBJECT_ICONS: Record<string, { color: string; label: string }> = {
   university: { color: '#aa44ff', label: '★' },
 };
 
-// Офлайн-стиль: без внешних тайлов, источников и глифов.
-// Фон океана — тёмный; суша рисуется только из geojson регионов игры.
-const OFFLINE_STYLE: StyleSpecification = {
-  version: 8,
-  name: 'open-pax-offline',
-  sources: {},
-  layers: [
-    {
-      id: 'background',
-      type: 'background',
-      paint: { 'background-color': '#0d1117' },
-    },
-  ],
-};
+const OCEAN_COLOR = '#0c0d30';
+const LABEL_FONT = ['PT Serif Regular'];
+const MAX_LABEL_PX = 72;
 
-const REGIONS_SOURCE_ID = 'regions';
-const FILL_LAYER_ID = 'regions-fill';
-const LINE_LAYER_ID = 'regions-line';
-const GRATICULE_SOURCE_ID = 'graticule';
-const GRATICULE_LAYER_ID = 'graticule-line';
+const REGIONS_SOURCE = 'regions';
+const BORDERS_SOURCE = 'polity-borders';
+const LABELS_SOURCE = 'polity-labels';
+const RELIEF_SOURCE = 'relief';
+
+const FILL_LAYER = 'regions-fill';
+const RELIEF_LAYER = 'relief';
+const OVERLAY_LAYER = 'regions-overlay';
+const REGION_LINE_LAYER = 'regions-line';
+const BORDER_LAYER = 'polity-borders';
+const CHANGED_LAYER = 'regions-changed';
+const PLAYER_LAYER = 'regions-player';
+const SELECTED_LAYER = 'regions-selected';
+const LABEL_LAYER = 'polity-labels';
 
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 
-// Координатная сетка (градусная) как собственный geojson — без внешних источников
-const buildGraticule = (): GeoJSON.FeatureCollection => {
-  const features: GeoJSON.Feature[] = [];
-  const STEP = 30;
-  for (let lng = -180; lng <= 180; lng += STEP) {
-    features.push({
-      type: 'Feature',
-      properties: {},
-      geometry: { type: 'LineString', coordinates: [[lng, -85], [lng, 85]] },
-    });
+const buildStyle = (): StyleSpecification => ({
+  version: 8,
+  name: 'open-pax',
+  // Глифы лежат в frontend/public/glyphs — офлайн, без внешнего glyph-сервера
+  glyphs: `${window.location.origin}/glyphs/{fontstack}/{range}.pbf`,
+  sources: {},
+  layers: [{ id: 'background', type: 'background', paint: { 'background-color': OCEAN_COLOR } }],
+});
+
+/** Размер подписи: удваивается с каждым уровнем зума, но не больше MAX_LABEL_PX */
+const labelSizeExpr = (): ExpressionSpecification => {
+  const stops: (number | ExpressionSpecification)[] = [];
+  for (let z = 0; z <= 10; z++) {
+    stops.push(z, ['min', MAX_LABEL_PX, ['*', ['get', 'size0'], 2 ** z]]);
   }
-  for (let lat = -60; lat <= 60; lat += STEP) {
-    features.push({
-      type: 'Feature',
-      properties: {},
-      geometry: { type: 'LineString', coordinates: [[-180, lat], [180, lat]] },
-    });
-  }
-  return { type: 'FeatureCollection', features };
+  return ['interpolate', ['exponential', 2], ['zoom'], ...stops] as unknown as ExpressionSpecification;
 };
 
-// Рекурсивный обход всех координат геометрии (Polygon и MultiPolygon)
-const eachPosition = (geometry: GeoJSON.Geometry, cb: (pos: GeoJSON.Position) => void): void => {
-  const walk = (coords: unknown): void => {
-    if (!Array.isArray(coords)) return;
-    if (typeof coords[0] === 'number' && typeof coords[1] === 'number') {
-      cb(coords as GeoJSON.Position);
-      return;
-    }
-    coords.forEach(walk);
-  };
-  walk('coordinates' in geometry ? geometry.coordinates : undefined);
-};
+const stateFlag = (key: string): ExpressionSpecification => ['boolean', ['feature-state', key], false];
 
-// Внешние кольца полигонов (для подписи берём самое большое)
-const getOuterRings = (geometry: GeoJSON.Geometry): GeoJSON.Position[][] => {
-  if (geometry.type === 'Polygon') {
-    return geometry.coordinates[0] ? [geometry.coordinates[0]] : [];
-  }
-  if (geometry.type === 'MultiPolygon') {
-    return geometry.coordinates.map(poly => poly[0]).filter(Boolean);
-  }
-  return [];
-};
-
-// Площадь кольца по формуле шнурка (для выбора главного полигона)
-const ringArea = (ring: GeoJSON.Position[]): number => {
-  let area = 0;
-  for (let i = 0; i < ring.length - 1; i++) {
-    area += ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1];
-  }
-  return Math.abs(area / 2);
-};
-
-// Центроид кольца (взвешенный; при вырождении — среднее вершин)
-const ringCentroid = (ring: GeoJSON.Position[]): [number, number] => {
-  let twiceArea = 0;
-  let cx = 0;
-  let cy = 0;
-  for (let i = 0; i < ring.length - 1; i++) {
-    const [x0, y0] = ring[i];
-    const [x1, y1] = ring[i + 1];
-    const f = x0 * y1 - x1 * y0;
-    twiceArea += f;
-    cx += (x0 + x1) * f;
-    cy += (y0 + y1) * f;
-  }
-  if (Math.abs(twiceArea) < 1e-12) {
-    const sum = ring.reduce((acc, p) => [acc[0] + p[0], acc[1] + p[1]], [0, 0]);
-    return [sum[0] / ring.length, sum[1] / ring.length];
-  }
-  return [cx / (3 * twiceArea), cy / (3 * twiceArea)];
-};
-
-// Точка подписи региона: центроид наибольшего внешнего кольца
-const getLabelPoint = (geometry: GeoJSON.Geometry): [number, number] | null => {
-  const rings = getOuterRings(geometry);
-  if (rings.length === 0) return null;
-  const mainRing = rings.reduce((best, ring) => (ringArea(ring) > ringArea(best) ? ring : best));
-  return ringCentroid(mainRing);
-};
-
-// Предел Web Mercator по широте (за ±85° проекция не определена)
+// Предел Web Mercator по широте
 const MAX_MERCATOR_LAT = 85;
 
-// Кламп координат в допустимый диапазон карты.
-// Без этого fitBounds/setLngLat бросают «Invalid LngLat latitude value»,
-// если геометрия касается полюсов (Антарктида −90°) + padding уводит за предел.
 const clampLngLat = (p: [number, number]): [number, number] => {
   let [lng, lat] = p;
   if (!isFinite(lng)) lng = 0;
@@ -210,25 +105,41 @@ const clampLngLat = (p: [number, number]): [number, number] => {
   return [lng, lat];
 };
 
+/** Bbox набора фич (обход всех координат) */
+const featuresBounds = (features: RegionFeature[]): [[number, number], [number, number]] | null => {
+  let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
+  const walk = (c: unknown): void => {
+    if (!Array.isArray(c)) return;
+    if (typeof c[0] === 'number') {
+      const [lng, lat] = c as number[];
+      if (lng < minLng) minLng = lng;
+      if (lng > maxLng) maxLng = lng;
+      if (lat < minLat) minLat = lat;
+      if (lat > maxLat) maxLat = lat;
+      return;
+    }
+    c.forEach(walk);
+  };
+  features.forEach(f => walk(f.geometry.coordinates));
+  if (!isFinite(minLng)) return null;
+  return [clampLngLat([minLng, minLat]), clampLngLat([maxLng, maxLat])];
+};
+
 export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
   regions,
   selectedRegionId,
   onRegionClick,
   onRegionHover,
   changedRegionIds = [],
-  showFlags = false,
   playerCountryCode,
-  // Пропс сохранён для совместимости API; миникарта в офлайн-режиме не используется
-  showMinimap = true,
 }) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const objectMarkers = useRef<maplibregl.Marker[]>([]);
-  const labelMarkers = useRef<maplibregl.Marker[]>([]);
-  const fittedRegionIds = useRef<string>('');
   const [mapLoaded, setMapLoaded] = useState(false);
-  const [hoveredRegionId, setHoveredRegionId] = useState<string | null>(null);
-  const [tooltipInfo, setTooltipInfo] = useState<{ x: number; y: number; name: string; owner: string | null; population: number; gdp: number; militaryPower: number } | null>(null);
+  const [tooltipInfo, setTooltipInfo] = useState<{
+    x: number; y: number; name: string; owner: string | null; population: number; gdp: number; militaryPower: number;
+  } | null>(null);
 
   // Актуальные значения для обработчиков карты (регистрируются один раз)
   const regionsRef = useRef(regions);
@@ -238,398 +149,385 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
   const onRegionHoverRef = useRef(onRegionHover);
   onRegionHoverRef.current = onRegionHover;
 
-  // Границы карты по регионам (обход всех координат, включая MultiPolygon)
-  const getBounds = useCallback((): [[number, number], [number, number]] => {
-    let minLng = Infinity, maxLng = -Infinity;
-    let minLat = Infinity, maxLat = -Infinity;
+  // Статичная геометрия текущего мира и производные
+  const featuresRef = useRef<RegionFeature[]>([]);
+  const edgesRef = useRef<BorderEdge[]>([]);
+  const geometryKey = useRef('');
+  const hoveredId = useRef<string | null>(null);
+  const appliedFlags = useRef<{ selected: Set<string>; changed: Set<string> }>({ selected: new Set(), changed: new Set() });
 
-    regionsRef.current.forEach(region => {
-      if (!region.geojson) return;
-      try {
-        const geojson = JSON.parse(region.geojson);
-        if (!geojson.geometry) return;
-        eachPosition(geojson.geometry, (pos) => {
-          minLng = Math.min(minLng, pos[0]);
-          maxLng = Math.max(maxLng, pos[0]);
-          minLat = Math.min(minLat, pos[1]);
-          maxLat = Math.max(maxLat, pos[1]);
-        });
-      } catch (e) { /* пропускаем битый geojson */ }
-    });
+  /** Имя государства: имя его «домашнего» региона (id `${worldId}_${owner}`) */
+  const polityName = useCallback((owner: string): string => {
+    const list = regionsRef.current;
+    return list.find(r => r.owner === owner && r.id.endsWith(`_${owner}`))?.name
+      ?? list.find(r => r.id.endsWith(`_${owner}`))?.name
+      ?? list.find(r => r.owner === owner)?.name
+      ?? owner;
+  }, []);
 
-    if (!isFinite(minLng)) {
-      return [[-180, -85], [180, 85]];
+  const fitToPlayerOrWorld = useCallback(() => {
+    const m = map.current;
+    if (!m) return;
+    const playerFeatures = playerCountryCode
+      ? featuresRef.current.filter(f => regionsRef.current.find(r => r.id === f.properties.id)?.owner === playerCountryCode)
+      : [];
+    // Своя страна — по её крупнейшему куску (без заморских владений), иначе весь мир
+    const bounds = playerFeatures.length > 0 ? largestPartBounds(playerFeatures) : featuresBounds(featuresRef.current);
+    if (bounds) {
+      m.fitBounds(bounds, { padding: 160, duration: 500, maxZoom: playerFeatures.length > 0 ? 3.5 : 2 });
     }
+  }, [playerCountryCode]);
 
-    // Отступ от краёв
-    const padding = 0.1;
-    const lngPad = (maxLng - minLng) * padding;
-    const latPad = (maxLat - minLat) * padding;
-
-    // Кламп: padding не должен уводить границы за пределы проекции (Антарктида −90°)
-    return [
-      clampLngLat([minLng - lngPad, minLat - latPad]),
-      clampLngLat([maxLng + lngPad, maxLat + latPad])
-    ];
-  }, []);
-
-  // Функции зума для клавиатуры и кнопок
-  const zoomIn = useCallback(() => {
-    map.current?.zoomIn({ duration: 300 });
-  }, []);
-
-  const zoomOut = useCallback(() => {
-    map.current?.zoomOut({ duration: 300 });
-  }, []);
-
-  const resetView = useCallback(() => {
-    map.current?.fitBounds(getBounds(), { padding: 50, duration: 500 });
-  }, [getBounds]);
+  const zoomIn = useCallback(() => { map.current?.zoomIn({ duration: 300 }); }, []);
+  const zoomOut = useCallback(() => { map.current?.zoomOut({ duration: 300 }); }, []);
+  const resetView = useCallback(() => { fitToPlayerOrWorld(); }, [fitToPlayerOrWorld]);
 
   // Клавиатурная навигация: + / - / 0 / стрелки
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!map.current) return;
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-
-      switch (e.key) {
-        case '+':
-        case '=':
-          e.preventDefault();
-          zoomIn();
-          break;
-        case '-':
-          e.preventDefault();
-          zoomOut();
-          break;
-        case '0':
-          e.preventDefault();
-          resetView();
-          break;
-        case 'ArrowUp':
-          e.preventDefault();
-          map.current.panBy([0, -100], { duration: 200 });
-          break;
-        case 'ArrowDown':
-          e.preventDefault();
-          map.current.panBy([0, 100], { duration: 200 });
-          break;
-        case 'ArrowLeft':
-          e.preventDefault();
-          map.current.panBy([-100, 0], { duration: 200 });
-          break;
-        case 'ArrowRight':
-          e.preventDefault();
-          map.current.panBy([100, 0], { duration: 200 });
-          break;
-      }
+      const pan: Record<string, [number, number]> = {
+        ArrowUp: [0, -100], ArrowDown: [0, 100], ArrowLeft: [-100, 0], ArrowRight: [100, 0],
+      };
+      if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomIn(); }
+      else if (e.key === '-') { e.preventDefault(); zoomOut(); }
+      else if (e.key === '0') { e.preventDefault(); resetView(); }
+      else if (pan[e.key]) { e.preventDefault(); map.current.panBy(pan[e.key], { duration: 200 }); }
     };
-
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [zoomIn, zoomOut, resetView]);
 
-  // Инициализация карты (один раз)
+  // Инициализация карты и слоёв (один раз)
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
 
-    map.current = new maplibregl.Map({
+    const m = new maplibregl.Map({
       container: mapContainer.current,
-      style: OFFLINE_STYLE,
-      center: [0, 20],
-      zoom: 1,
+      style: buildStyle(),
+      center: [20, 35],
+      zoom: 1.5,
       attributionControl: false,
+      renderWorldCopies: true,
     });
+    map.current = m;
+    // Отладка в dev: карта доступна из консоли как window.__openPaxMap
+    if (import.meta.env.DEV) (window as any).__openPaxMap = m;
+    m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
 
-    // Кнопки зума/компаса MapLibre
-    map.current.addControl(new maplibregl.NavigationControl(), 'top-right');
+    m.on('load', () => {
+      m.addSource(REGIONS_SOURCE, { type: 'geojson', data: EMPTY_FC, promoteId: 'id' });
+      m.addSource(BORDERS_SOURCE, { type: 'geojson', data: EMPTY_FC, promoteId: 'eid' });
+      m.addSource(LABELS_SOURCE, { type: 'geojson', data: EMPTY_FC });
 
-    map.current.on('load', () => {
-      if (!map.current) return;
-      const m = map.current;
-
-      // Координатная сетка под регионами
-      m.addSource(GRATICULE_SOURCE_ID, { type: 'geojson', data: buildGraticule() });
       m.addLayer({
-        id: GRATICULE_LAYER_ID,
-        type: 'line',
-        source: GRATICULE_SOURCE_ID,
-        paint: {
-          'line-color': '#1c2333',
-          'line-width': 1,
-        },
-      });
-
-      // Источник и слои регионов (данные придут позже через setData)
-      m.addSource(REGIONS_SOURCE_ID, { type: 'geojson', data: EMPTY_FC });
-
-      // Заливка регионов
-      m.addLayer({
-        id: FILL_LAYER_ID,
+        id: FILL_LAYER,
         type: 'fill',
-        source: REGIONS_SOURCE_ID,
+        source: REGIONS_SOURCE,
         paint: {
-          'fill-color': [
-            'case',
-            ['get', 'isSelected'], '#ffffff',
-            // Полития игрока: owner = polityId (код страны из playerCountryCode;
-            // для кастомных карт — 'player')
-            ['get', 'isPlayer'], '#00ff88',
-            ['get', 'color']
-          ],
-          'fill-opacity': [
-            'case',
-            ['get', 'isSelected'], 0.9,
-            ['get', 'isHovered'], 0.95,
-            0.85
-          ],
+          'fill-color': ['coalesce', ['feature-state', 'color'], '#5a5a66'] as ExpressionSpecification,
+          'fill-opacity': 0.92,
         },
       });
 
-      // Границы регионов
+      // Подсветка выбора/hover поверх рельефа
       m.addLayer({
-        id: LINE_LAYER_ID,
-        type: 'line',
-        source: REGIONS_SOURCE_ID,
+        id: OVERLAY_LAYER,
+        type: 'fill',
+        source: REGIONS_SOURCE,
         paint: {
-          'line-color': [
-            'case',
-            ['get', 'isSelected'], '#ffffff',
-            // Подсветка изменённых за ход регионов
-            ['get', 'isChanged'], '#ffd700',
-            ['get', 'isHovered'], '#666666',
-            '#1a1a1a'
-          ],
-          'line-width': [
-            'case',
-            ['get', 'isSelected'], 3,
-            ['get', 'isChanged'], 3,
-            2
-          ],
+          'fill-color': '#ffffff',
+          'fill-opacity': ['case', stateFlag('selected'), 0.18, stateFlag('hovered'), 0.08, 0] as ExpressionSpecification,
         },
       });
 
-      // Клик по региону
-      m.on('click', FILL_LAYER_ID, (e) => {
+      // Тонкие контуры регионов (внутри одного государства — едва заметны)
+      m.addLayer({
+        id: REGION_LINE_LAYER,
+        type: 'line',
+        source: REGIONS_SOURCE,
+        paint: {
+          'line-color': 'rgba(12, 10, 24, 0.45)',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 1, 0.3, 6, 0.9] as ExpressionSpecification,
+        },
+      });
+
+      // Границы государств и берега
+      m.addLayer({
+        id: BORDER_LAYER,
+        type: 'line',
+        source: BORDERS_SOURCE,
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': '#100c1c',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 1, 0.7, 4, 1.4, 7, 2.4] as ExpressionSpecification,
+          'line-opacity': ['case', stateFlag('diff'), 0.9, 0] as ExpressionSpecification,
+        },
+      });
+
+      // Обводка своего государства — по рёбрам, где игрок только с одной стороны
+      m.addLayer({
+        id: PLAYER_LAYER,
+        type: 'line',
+        source: BORDERS_SOURCE,
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': '#f5ecd2',
+          'line-width': 1.4,
+          'line-opacity': ['case', stateFlag('player'), 0.7, 0] as ExpressionSpecification,
+        },
+      });
+
+      m.addLayer({
+        id: CHANGED_LAYER,
+        type: 'line',
+        source: REGIONS_SOURCE,
+        paint: {
+          'line-color': '#ffd24a',
+          'line-width': 2.6,
+          'line-opacity': ['case', stateFlag('changed'), 1, 0] as ExpressionSpecification,
+        },
+      });
+
+      m.addLayer({
+        id: SELECTED_LAYER,
+        type: 'line',
+        source: REGIONS_SOURCE,
+        paint: {
+          'line-color': '#ffffff',
+          'line-width': 2.4,
+          'line-opacity': ['case', stateFlag('selected'), 1, 0] as ExpressionSpecification,
+        },
+      });
+
+      // Подписи государств
+      m.addLayer({
+        id: LABEL_LAYER,
+        type: 'symbol',
+        source: LABELS_SOURCE,
+        filter: ['>=', ['zoom'], ['get', 'minZoom']] as ExpressionSpecification,
+        layout: {
+          'text-field': ['get', 'name'] as ExpressionSpecification,
+          'text-font': LABEL_FONT,
+          'text-transform': 'uppercase',
+          'text-letter-spacing': 0.22,
+          'text-size': labelSizeExpr(),
+          'text-max-width': 14,
+          'text-padding': 3,
+          'symbol-sort-key': ['-', 0, ['get', 'area0']] as ExpressionSpecification,
+          'text-allow-overlap': false,
+        },
+        paint: {
+          'text-color': '#f3ead7',
+          'text-halo-color': 'rgba(22, 16, 12, 0.85)',
+          'text-halo-width': 1.3,
+          'text-halo-blur': 0.4,
+          'text-opacity': 0.96,
+        },
+      });
+
+      // Офлайн-рельеф — только если тайлы собраны (npm run map:relief)
+      fetch('/tiles/relief/0/0/0.webp', { method: 'HEAD' })
+        .then(res => {
+          if (!res.ok || !map.current || map.current.getSource(RELIEF_SOURCE)) return;
+          map.current.addSource(RELIEF_SOURCE, {
+            type: 'raster',
+            tiles: [`${window.location.origin}/tiles/relief/{z}/{x}/{y}.webp`],
+            tileSize: 256,
+            maxzoom: 6,
+          });
+          map.current.addLayer({
+            id: RELIEF_LAYER,
+            type: 'raster',
+            source: RELIEF_SOURCE,
+            paint: { 'raster-opacity': 0.85, 'raster-contrast': 0.25, 'raster-fade-duration': 0 },
+          }, OVERLAY_LAYER);
+        })
+        .catch(() => { /* без рельефа */ });
+
+      // Клик и hover
+      m.on('click', FILL_LAYER, e => {
         const id = e.features?.[0]?.properties?.id;
-        if (id && onRegionClickRef.current) {
-          onRegionClickRef.current(id);
-        }
+        if (id) onRegionClickRef.current?.(id);
       });
 
-      // Hover: курсор + локальное состояние + тултип
-      m.on('mouseenter', FILL_LAYER_ID, () => {
-        if (map.current) {
-          map.current.getCanvas().style.cursor = 'pointer';
+      m.on('mousemove', FILL_LAYER, e => {
+        const id: string | null = e.features?.[0]?.properties?.id ?? null;
+        m.getCanvas().style.cursor = id ? 'pointer' : '';
+        if (hoveredId.current !== id) {
+          if (hoveredId.current) m.setFeatureState({ source: REGIONS_SOURCE, id: hoveredId.current }, { hovered: false });
+          if (id) m.setFeatureState({ source: REGIONS_SOURCE, id }, { hovered: true });
+          hoveredId.current = id;
+          onRegionHoverRef.current?.(id);
         }
+        const region = id ? regionsRef.current.find(r => r.id === id) : undefined;
+        if (!region) {
+          setTooltipInfo(null);
+          return;
+        }
+        const ownerName = region.owner && region.owner !== 'neutral' ? polityName(region.owner) : null;
+        setTooltipInfo({
+          x: e.point.x,
+          y: e.point.y,
+          name: region.name,
+          owner: ownerName && ownerName !== region.name ? ownerName : null,
+          population: region.population,
+          gdp: region.gdp,
+          militaryPower: region.militaryPower,
+        });
       });
 
-      m.on('mouseleave', FILL_LAYER_ID, () => {
-        if (map.current) {
-          map.current.getCanvas().style.cursor = '';
-        }
-        setHoveredRegionId(null);
+      m.on('mouseleave', FILL_LAYER, () => {
+        m.getCanvas().style.cursor = '';
+        if (hoveredId.current) m.setFeatureState({ source: REGIONS_SOURCE, id: hoveredId.current }, { hovered: false });
+        hoveredId.current = null;
+        onRegionHoverRef.current?.(null);
         setTooltipInfo(null);
-      });
-
-      m.on('mousemove', FILL_LAYER_ID, (e) => {
-        const props = e.features?.[0]?.properties;
-        const id = props?.id || null;
-        setHoveredRegionId(prev => (prev === id ? prev : id));
-        if (onRegionHoverRef.current) {
-          onRegionHoverRef.current(id);
-        }
-        // Обновление тултипа
-        if (id) {
-          const region = regionsRef.current.find(r => r.id === id);
-          if (region) {
-            // Строка «Контроль: X» — только если регионом владеет другая полития
-            // (как в оригинале: тултип «West Germany / Northern Bavaria»).
-            // Имя политии берём из её «домашнего» региона (id вида `${worldId}_${polityId}`).
-            let ownerName: string | null = null;
-            const owner = region.owner;
-            if (owner && owner !== 'neutral' && owner !== region.name) {
-              const homeRegion = regionsRef.current.find(
-                r => r.owner === owner && r.id.endsWith(`_${owner}`)
-              );
-              const resolved = homeRegion?.name || owner;
-              if (resolved !== region.name) {
-                ownerName = resolved;
-              }
-            }
-            setTooltipInfo({
-              x: e.point.x,
-              y: e.point.y,
-              name: region.name,
-              owner: ownerName,
-              population: region.population,
-              gdp: region.gdp,
-              militaryPower: region.militaryPower,
-            });
-          }
-        }
       });
 
       setMapLoaded(true);
     });
 
     return () => {
-      if (map.current) {
-        map.current.remove();
-        map.current = null;
-      }
+      // Новая карта при повторном монтировании ещё не загружена — эффекты
+      // с setFeatureState должны дождаться её события load
+      setMapLoaded(false);
+      geometryKey.current = '';
+      m.remove();
+      map.current = null;
     };
-  }, []);
+  }, [polityName]);
 
-  // Данные регионов: пересборка FeatureCollection и setData в источник.
-  // Подсветка (выбор/hover/изменённые) живёт в properties фич, слои не пересоздаются.
+  // Геометрия: пересобирается только при смене набора регионов (новый мир)
   useEffect(() => {
-    if (!map.current || !mapLoaded) return;
     const m = map.current;
+    // Источники появляются в обработчике load: до него (в т.ч. при повторном
+    // монтировании, когда mapLoaded ещё «старый») трогать карту нельзя
+    if (!m || !mapLoaded || !m.getSource(REGIONS_SOURCE)) return;
+    const key = regions.map(r => `${r.id}:${r.geojson ? 1 : 0}`).join('|');
+    if (key === geometryKey.current) return;
+    geometryKey.current = key;
 
-    const geojsonFeatures: GeoJSON.Feature[] = [];
+    const features = parseRegionFeatures(regions);
+    featuresRef.current = features;
+    (m.getSource(REGIONS_SOURCE) as maplibregl.GeoJSONSource | undefined)
+      ?.setData({ type: 'FeatureCollection', features } as GeoJSON.FeatureCollection);
 
-    regions.forEach(region => {
-      if (!region.geojson) return;
-      try {
-        const parsed = JSON.parse(region.geojson);
-        parsed.properties = {
-          ...parsed.properties,
-          id: region.id,
-          name: region.name,
-          color: region.color,
-          flag: region.flag || null,
-          flag_emoji: region.flag ? codeToEmoji(region.flag) : '',
-          owner: region.owner || null,
-          isSelected: region.id === selectedRegionId,
-          isHovered: hoveredRegionId === region.id,
-          isChanged: changedRegionIds.includes(region.id),
-          isPlayer: !!region.owner && region.owner === (playerCountryCode || 'player'),
-        };
-        geojsonFeatures.push(parsed);
-      } catch (e) { /* пропускаем битый geojson */ }
+    const edges = buildBorderEdges(features);
+    edgesRef.current = edges;
+    (m.getSource(BORDERS_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData({
+      type: 'FeatureCollection',
+      features: edges.map((e, i) => ({
+        type: 'Feature',
+        properties: { eid: i },
+        geometry: { type: 'MultiLineString', coordinates: e.lines },
+      })),
     });
+    appliedFlags.current = { selected: new Set(), changed: new Set() };
+    fitToPlayerOrWorld();
+  }, [regions, mapLoaded, fitToPlayerOrWorld]);
 
-    const source = m.getSource(REGIONS_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
-    source?.setData({ type: 'FeatureCollection', features: geojsonFeatures });
-
-    // При смене набора регионов подгоняем видимую область
-    const idsKey = regions.map(r => r.id).sort().join('|');
-    if (idsKey && idsKey !== fittedRegionIds.current) {
-      fittedRegionIds.current = idsKey;
-      m.fitBounds(getBounds(), { padding: 50, duration: 500 });
+  // Владельцы и цвета: feature-state заливок, границы государств, подписи
+  useEffect(() => {
+    const m = map.current;
+    // Источники появляются в обработчике load: до него (в т.ч. при повторном
+    // монтировании, когда mapLoaded ещё «старый») трогать карту нельзя
+    if (!m || !mapLoaded || !m.getSource(REGIONS_SOURCE)) return;
+    const ownerById = new Map<string, string | null | undefined>();
+    for (const r of regions) {
+      ownerById.set(r.id, r.owner);
+      m.setFeatureState({ source: REGIONS_SOURCE, id: r.id }, { color: muteColor(r.color || '#5a5a66') });
     }
-  }, [regions, mapLoaded, selectedRegionId, hoveredRegionId, changedRegionIds, playerCountryCode, getBounds]);
-
-  // Подписи регионов — HTML-маркерами: офлайн-стиль без glyphs не поддерживает
-  // symbol-слой с text-field, поэтому лейблы рисуем DOM-элементами
-  // (pointer-events: none — не мешают клику и hover по регионам).
-  useEffect(() => {
-    if (!map.current || !mapLoaded) return;
-    const m = map.current;
-
-    // Удаляем старые подписи
-    labelMarkers.current.forEach(marker => marker.remove());
-    labelMarkers.current = [];
-
-    regions.forEach(region => {
-      if (!region.geojson) return;
-      try {
-        const geojson = JSON.parse(region.geojson);
-        if (!geojson.geometry) return;
-        const point = getLabelPoint(geojson.geometry);
-        if (!point) return;
-
-        const flagEmoji = region.flag ? codeToEmoji(region.flag) : '';
-        const el = document.createElement('div');
-        el.className = 'openpax-map-label';
-        el.style.cssText = `
-          pointer-events: none;
-          color: #ffffff;
-          font-size: 13px;
-          font-weight: 700;
-          font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-          text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 2px 6px rgba(0,0,0,0.8);
-          white-space: nowrap;
-          user-select: none;
-        `;
-        el.textContent = showFlags && flagEmoji ? `${flagEmoji} ${region.name}` : region.name;
-
-        const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
-          .setLngLat(clampLngLat(point))
-          .addTo(m);
-        labelMarkers.current.push(marker);
-      } catch (e) { /* пропускаем битый geojson */ }
+    const isPlayer = (id: string | null) => !!id && !!playerCountryCode && ownerById.get(id) === playerCountryCode;
+    edgesRef.current.forEach((e, i) => {
+      const diff = e.b === null || ownerById.get(e.a) !== ownerById.get(e.b) || !ownerById.get(e.a);
+      const player = isPlayer(e.a) !== isPlayer(e.b);
+      m.setFeatureState({ source: BORDERS_SOURCE, id: i }, { diff, player });
     });
 
-    return () => {
-      labelMarkers.current.forEach(marker => marker.remove());
-      labelMarkers.current = [];
+    const labels = buildPolityLabels(regions, featuresRef.current, polityName);
+    (m.getSource(LABELS_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData({
+      type: 'FeatureCollection',
+      features: labels.map(l => ({
+        type: 'Feature',
+        properties: { name: l.name, size0: l.size0, area0: l.area0, minZoom: l.minZoom },
+        geometry: { type: 'Point', coordinates: l.point },
+      })),
+    });
+  }, [regions, mapLoaded, playerCountryCode, polityName]);
+
+  // Выбор и подсветка изменённых — диффом, без перерисовки данных
+  useEffect(() => {
+    const m = map.current;
+    // Источники появляются в обработчике load: до него (в т.ч. при повторном
+    // монтировании, когда mapLoaded ещё «старый») трогать карту нельзя
+    if (!m || !mapLoaded || !m.getSource(REGIONS_SOURCE)) return;
+    const apply = (key: 'selected' | 'changed', next: Set<string>) => {
+      const prev = appliedFlags.current[key];
+      prev.forEach(id => { if (!next.has(id)) m.setFeatureState({ source: REGIONS_SOURCE, id }, { [key]: false }); });
+      next.forEach(id => { if (!prev.has(id)) m.setFeatureState({ source: REGIONS_SOURCE, id }, { [key]: true }); });
+      appliedFlags.current[key] = next;
     };
-  }, [regions, mapLoaded, showFlags]);
+    apply('selected', new Set(selectedRegionId ? [selectedRegionId] : []));
+    apply('changed', new Set(changedRegionIds));
+  }, [selectedRegionId, changedRegionIds, mapLoaded, regions]);
 
   // Все игровые объекты всех регионов (для маркеров)
   const allObjects = useMemo(() => {
-    const result: (MapObject & { regionName: string; regionColor: string })[] = [];
+    const result: (MapObject & { regionName: string })[] = [];
     regions.forEach(region => {
-      if (region.objects) {
-        region.objects.forEach((obj: MapObject) => {
-          result.push({
-            ...obj,
-            regionName: region.name,
-            regionColor: region.color,
-          });
-        });
-      }
+      region.objects?.forEach((obj: MapObject) => result.push({ ...obj, regionName: region.name }));
     });
     return result;
   }, [regions]);
 
-  // Маркеры объектов
+  // Маркеры объектов: столицы — маленькая звезда, остальное — значок в круге
   useEffect(() => {
-    if (!map.current || !mapLoaded) return;
     const m = map.current;
-
-    // Удаляем старые маркеры
+    // Источники появляются в обработчике load: до него (в т.ч. при повторном
+    // монтировании, когда mapLoaded ещё «старый») трогать карту нельзя
+    if (!m || !mapLoaded || !m.getSource(REGIONS_SOURCE)) return;
     objectMarkers.current.forEach(marker => marker.remove());
     objectMarkers.current = [];
 
     allObjects.forEach(obj => {
-      if (obj.x === undefined || obj.y === undefined) return;
-
-      // Конвертация SVG-координат в lng/lat:
-      // канва 2000x1500 → -180..180 lng, 90..-90 lat
-      const lng = (obj.x / 2000) * 360 - 180;
-      const lat = 90 - (obj.y / 1500) * 180;
+      let lngLat: [number, number] | null = null;
+      if (typeof obj.lng === 'number' && typeof obj.lat === 'number') {
+        lngLat = [obj.lng, obj.lat];
+      } else if (obj.x !== undefined && obj.y !== undefined) {
+        // Легаси: SVG-координаты канвы 2000×1500
+        lngLat = [(obj.x / 2000) * 360 - 180, 90 - (obj.y / 1500) * 180];
+      }
+      if (!lngLat) return;
 
       const icon = OBJECT_ICONS[obj.type] || OBJECT_ICONS.city;
-
-      // Кастомный DOM-элемент маркера
       const el = document.createElement('div');
       el.className = 'openpax-map-object';
-      el.style.cssText = `
-        width: 24px;
-        height: 24px;
-        background: ${icon.color};
-        border: 2px solid #1a1a1a;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 10px;
-        cursor: pointer;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.5);
-      `;
+      if (obj.type === 'capital') {
+        el.style.cssText = `
+          font-size: 11px; line-height: 1; color: ${icon.color}; cursor: pointer;
+          text-shadow: 0 0 2px #000, 0 0 3px #000;
+        `;
+      } else {
+        el.style.cssText = `
+          width: 20px; height: 20px; background: ${icon.color}; border: 2px solid #1a1a1a;
+          border-radius: 50%; display: flex; align-items: center; justify-content: center;
+          font-size: 9px; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+        `;
+      }
       el.textContent = icon.label;
+      const popup = new maplibregl.Popup({ offset: 12 });
+      const box = document.createElement('div');
+      box.style.cssText = 'color:#222;padding:2px 4px;';
+      const title = document.createElement('b');
+      title.textContent = obj.name || '';
+      box.append(title, document.createElement('br'), document.createTextNode(obj.type === 'capital' ? 'Столица' : obj.type));
+      popup.setDOMContent(box);
 
-      const marker = new maplibregl.Marker({ element: el })
-        .setLngLat(clampLngLat([lng, lat]))
-        .setPopup(
-          new maplibregl.Popup({ offset: 15 })
-            .setHTML(`<div style="color:#333;padding:4px;"><b>${obj.name}</b><br/>${obj.type}</div>`)
-        )
-        .addTo(m);
-      objectMarkers.current.push(marker);
+      objectMarkers.current.push(
+        new maplibregl.Marker({ element: el }).setLngLat(clampLngLat(lngLat)).setPopup(popup).addTo(m),
+      );
     });
 
     return () => {
@@ -638,111 +536,48 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
     };
   }, [allObjects, mapLoaded]);
 
+  const buttonStyle: React.CSSProperties = {
+    width: '32px', height: '32px', background: 'rgba(20, 20, 30, 0.9)', border: '1px solid #444',
+    borderRadius: '4px', color: '#fff', fontSize: '18px', cursor: 'pointer',
+  };
+
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <div style={{ position: 'relative', width: '100%', height: '100%', background: OCEAN_COLOR }}>
       <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
       {!mapLoaded && (
         <div style={{
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          color: '#667eea',
-          fontSize: '1.2rem',
+          position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+          color: '#667eea', fontSize: '1.2rem',
         }}>
           Загрузка карты…
         </div>
       )}
 
-      {/* Тултип региона */}
+      {/* Тултип региона: «Регион · Контроль», статы — если они есть */}
       {tooltipInfo && (
         <div
           style={{
-            position: 'absolute',
-            left: tooltipInfo.x + 10,
-            top: tooltipInfo.y - 10,
-            background: 'rgba(20, 20, 30, 0.95)',
-            border: '1px solid #444',
-            borderRadius: '6px',
-            padding: '10px 14px',
-            color: '#fff',
-            fontSize: '12px',
-            pointerEvents: 'none',
-            zIndex: 100,
-            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-            minWidth: '140px',
+            position: 'absolute', left: tooltipInfo.x + 12, top: tooltipInfo.y - 10,
+            background: 'rgba(20, 20, 30, 0.95)', border: '1px solid #444', borderRadius: '6px',
+            padding: '8px 12px', color: '#fff', fontSize: '12px', pointerEvents: 'none', zIndex: 100,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.5)', minWidth: '120px',
           }}
         >
-          <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '6px', color: '#667eea' }}>
-            {tooltipInfo.name}
-          </div>
-          {tooltipInfo.owner && (
-            <div style={{ color: '#ccc', marginBottom: '6px' }}>Контроль: {tooltipInfo.owner}</div>
+          <div style={{ fontWeight: 700, fontSize: '14px', color: '#c9b8ff' }}>{tooltipInfo.name}</div>
+          {tooltipInfo.owner && <div style={{ color: '#ccc', marginTop: '4px' }}>Контроль: {tooltipInfo.owner}</div>}
+          {tooltipInfo.population > 0 && (
+            <div style={{ color: '#aaa', marginTop: '6px' }}>👥 {tooltipInfo.population.toLocaleString()}</div>
           )}
-          <div style={{ color: '#aaa' }}>👥 {tooltipInfo.population?.toLocaleString()}</div>
-          <div style={{ color: '#aaa' }}>💰 {tooltipInfo.gdp}</div>
-          <div style={{ color: '#aaa' }}>⚔️ {tooltipInfo.militaryPower}</div>
+          {tooltipInfo.gdp > 0 && <div style={{ color: '#aaa' }}>💰 {tooltipInfo.gdp}</div>}
+          {tooltipInfo.militaryPower > 0 && <div style={{ color: '#aaa' }}>⚔️ {tooltipInfo.militaryPower}</div>}
         </div>
       )}
 
       {/* Кнопки зума поверх карты */}
-      <div style={{
-        position: 'absolute',
-        top: '10px',
-        left: '10px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '4px',
-        zIndex: 10,
-      }}>
-        <button
-          onClick={zoomIn}
-          style={{
-            width: '32px',
-            height: '32px',
-            background: 'rgba(20, 20, 30, 0.9)',
-            border: '1px solid #444',
-            borderRadius: '4px',
-            color: '#fff',
-            fontSize: '18px',
-            cursor: 'pointer',
-          }}
-          title="Приблизить (+)"
-        >
-          +
-        </button>
-        <button
-          onClick={zoomOut}
-          style={{
-            width: '32px',
-            height: '32px',
-            background: 'rgba(20, 20, 30, 0.9)',
-            border: '1px solid #444',
-            borderRadius: '4px',
-            color: '#fff',
-            fontSize: '18px',
-            cursor: 'pointer',
-          }}
-          title="Отдалить (−)"
-        >
-          −
-        </button>
-        <button
-          onClick={resetView}
-          style={{
-            width: '32px',
-            height: '32px',
-            background: 'rgba(20, 20, 30, 0.9)',
-            border: '1px solid #444',
-            borderRadius: '4px',
-            color: '#fff',
-            fontSize: '14px',
-            cursor: 'pointer',
-          }}
-          title="Сбросить вид (0)"
-        >
-          ⌂
-        </button>
+      <div style={{ position: 'absolute', top: '10px', left: '10px', display: 'flex', flexDirection: 'column', gap: '4px', zIndex: 10 }}>
+        <button onClick={zoomIn} style={buttonStyle} title="Приблизить (+)">+</button>
+        <button onClick={zoomOut} style={buttonStyle} title="Отдалить (−)">−</button>
+        <button onClick={resetView} style={{ ...buttonStyle, fontSize: '14px' }} title="Сбросить вид (0)">⌂</button>
       </div>
     </div>
   );
