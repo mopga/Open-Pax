@@ -54,9 +54,14 @@ export interface SimulationEvent {
 }
 
 export interface MapChange {
-  type: 'transfer' | 'create' | 'update' | 'delete' | 'spawn_battalion' | 'move_battalion' | 'create_polity';
+  type: 'transfer' | 'create' | 'update' | 'delete' | 'spawn_battalion' | 'move_battalion'
+    | 'create_polity' | 'update_polity' | 'dissolve_polity';
   /** Имя региона, как показано LLM в описании карты (основной способ адресации) */
   regionName?: string;
+  /** create_polity: дополнительные регионы нового государства */
+  regionNames?: string[];
+  /** update_polity / dissolve_polity: имя существующего государства */
+  polityName?: string;
   /** Legacy: прямой id региона (принимается для совместимости) */
   regionId?: string;
   /** Имя политии-получателя (существующей или новой) */

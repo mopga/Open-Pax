@@ -146,10 +146,13 @@ ${vars.CHATS_NON_CONSOLIDATED_ROUNDS || '(Дипломатии не было)'}
       "kind": "reaction|independent",
       "mapChanges": [
         {
-          "type": "transfer|create|update|delete|spawn_battalion|move_battalion|create_polity",
+          "type": "transfer|create_polity|update_polity|dissolve_polity|delete|update|spawn_battalion|move_battalion",
           "regionName": "ИМЯ региона из описания карты",
-          "newOwner": "ИМЯ политии из описания карты (если transfer/create)",
-          "newColor": "#hex (если update или новая полития)"
+          "newOwner": "ИМЯ политии-получателя (transfer) или новой политии (create_polity)",
+          "polityName": "ИМЯ существующей политии (update_polity, dissolve_polity)",
+          "regionNames": ["ещё регионы новой политии (create_polity)"],
+          "newName": "новое имя (update_polity — политии, update — региона)",
+          "newColor": "#hex (новая полития или update_polity)"
         }
       ]
     }
@@ -168,11 +171,19 @@ ${vars.CHATS_NON_CONSOLIDATED_ROUNDS || '(Дипломатии не было)'}
 }
 
 Правила mapChanges:
-- "type": "transfer" (передать регион), "create"/"update"/"delete" (политии),
-  "spawn_battalion" (появление батальона в регионе),
-  "move_battalion" (с targetRegionName), "create_polity" (новая полития).
-- "regionName" и "newOwner" — ТОЛЬКО имена из [Описание карты] (или имя новой
-  политии, если ты её создаёшь). НЕ используй id и координаты.
+- Карта состоит из РЕГИОНОВ (области, провинции, штаты); полития владеет многими
+  регионами. Территория меняется только передачей отдельных регионов.
+- "transfer": регион "regionName" переходит к политии "newOwner" (существующей
+  или новой — тогда добавь "newColor").
+- "create_polity": новая полития "newOwner" с цветом "newColor" и регионами
+  "regionName" + "regionNames" (отделение, восстание, марионетка).
+- "update_polity": смена имени ("newName") и/или цвета ("newColor") политии
+  "polityName" — только при смене строя.
+- "dissolve_polity": полития "polityName" распадается, её регионы становятся ничьими.
+- "delete": регион "regionName" становится ничьим; "update": переименование региона.
+- "spawn_battalion" (появление батальона в регионе), "move_battalion" (с targetRegionName).
+- Имена регионов и политий — ТОЛЬКО из [Описание карты] (или имя новой политии,
+  если ты её создаёшь). НЕ используй id и координаты.
 - Если границы не менялись — оставляй "mapChanges" пустым массивом.
 - "worldChanges.regionOwners" дублирует итоговые смены владельцев по именам.
 

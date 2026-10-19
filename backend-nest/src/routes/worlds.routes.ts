@@ -14,6 +14,8 @@ import { getLLMRouter } from '../llm';
 import { loadPreset, loadPresetMap } from '../utils/preset-loader';
 import { computeBorders } from '../utils/borders';
 import { colorFromCode, resolveRegionColor } from '../utils/color';
+import { buildRegionWorld, type RegionFeature } from '../utils/region-world';
+import type { PolityRecord } from '../repositories/world.repository';
 
 export const worldsRouter = Router();
 
@@ -61,6 +63,23 @@ function getStandardBorders(geojsonFeatures: Record<string, any>): Record<string
     console.warn('[Generate World] не удалось записать кэш соседства:', e);
   }
   return standardBordersCache;
+}
+
+/**
+ * Регионы мельче стран (scripts/build-regions.mjs). Нет файла — мир
+ * строится по-старому, одна страна = один регион.
+ */
+let regionFeaturesCache: RegionFeature[] | null | undefined;
+function getRegionFeatures(): RegionFeature[] | null {
+  if (regionFeaturesCache !== undefined) return regionFeaturesCache;
+  const file = path.join(process.cwd(), 'data', 'geojson', 'regions.geojson');
+  try {
+    regionFeaturesCache = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf-8')).features : null;
+  } catch (e) {
+    console.warn('[Generate World] regions.geojson не прочитан — карта по странам:', e);
+    regionFeaturesCache = null;
+  }
+  return regionFeaturesCache ?? null;
 }
 
 function capitalObjectsFor(code: string): any[] {
@@ -220,6 +239,46 @@ worldsRouter.post('/generate', async (req, res) => {
       prompts: preset.prompts ? JSON.stringify(preset.prompts) : null,
     };
 
+    const regionFeatures = preset.has_custom_map ? null : getRegionFeatures();
+    let regionsArray: any[];
+    let polities: PolityRecord[] = [];
+    let regionIds: Record<string, string>;
+
+    if (regionFeatures) {
+      // Регионы мельче стран: государство владеет многими регионами
+      const memberOf: Record<string, string> = {};
+      for (const [polity, members] of Object.entries(preset.polity_members ?? {})) {
+        for (const m of members) memberOf[m] = polity;
+      }
+      const presetPolities = new Map([...worldState.countries].map(([code, st]) => [code, {
+        name: st.name,
+        color: st.color || colorFromCode(code),
+        metadata: { ideology: st.ideology, allies: st.allies, enemies: st.enemies, status: st.status },
+      }]));
+      const russianNames = [...presetPolities.values()].some(p => /[А-Яа-яЁё]/.test(p.name));
+      const registry = getCountryRegistry();
+      const built = buildRegionWorld({
+        worldId,
+        features: regionFeatures,
+        presetPolities,
+        memberOf,
+        fallbackPolity: code => {
+          const props = geojsonFeatures[code]?.properties || {};
+          return {
+            name: russianNames ? (props.name || props.nameEn || code) : (registry[code]?.name || props.nameEn || props.name || code),
+            color: resolveRegionColor(code, registry[code]?.color || colorFromCode(code), preset.country_colors),
+            metadata: { background: true },
+          };
+        },
+        capitals: getCapitals(),
+        russianNames,
+        makeId: shortId,
+      });
+      regionsArray = built.regions;
+      polities = built.polities;
+      // Игрок стартует в регионе со столицей своего государства
+      regionIds = built.homeRegion;
+    } else {
     // Convert regionsObj to array and use createWithRegions (which wraps in transaction)
     // Prefix region IDs with worldId to ensure global uniqueness (since id is PRIMARY KEY)
     // Borders are computed from actual geometry (turf) once, here — the NPC
@@ -235,7 +294,7 @@ worldsRouter.post('/generate', async (req, res) => {
       )
       : getStandardBorders(geojsonFeatures);
 
-    const regionsArray = Object.entries(regionsObj).map(([code, region]) => ({
+    regionsArray = Object.entries(regionsObj).map(([code, region]) => ({
       id: `${worldId}_${code}`,
       worldId,
       name: region.name,
@@ -251,8 +310,10 @@ worldsRouter.post('/generate', async (req, res) => {
       // GameSession keys regions by full id — store borders in the same id space
       borders: (bordersMap[code] ?? []).map(c => `${worldId}_${c}`),
     }));
+    regionIds = Object.fromEntries(Object.keys(regionsObj).map(code => [code, `${worldId}_${code}`]));
+    }
 
-    worldRepository.createWithRegions(worldData, regionsArray);
+    worldRepository.createWithRegions(worldData, regionsArray, polities);
 
     // Persist diplomatic relationships from Balance Agent allies/enemies
     const relEntries: { from: string; to: string; type: 'ally' | 'hostile' }[] = [];
@@ -273,10 +334,7 @@ worldsRouter.post('/generate', async (req, res) => {
       worldId,
       date: worldState.date,
       countries: countriesObj,
-      regions: regionsObj,
-      regionIds: Object.fromEntries(
-        Object.keys(regionsObj).map(code => [code, `${worldId}_${code}`])
-      ),
+      regionIds,
       playerCountryCode,
     });
   } catch (e: any) {
