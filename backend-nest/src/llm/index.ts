@@ -2,9 +2,14 @@ import { LLMRouter } from './router';
 import { loadLLMConfig, type LLMFullConfig } from './config';
 
 export * from './types';
-export { LLMRouter } from './router';
-export { loadLLMConfig } from './config';
-export type { LLMConfig, LLMFullConfig, MechanicConfig, ConsolidationConfig } from './config';
+export { LLMRouter, buildProvider } from './router';
+export { loadLLMConfig, applyUserSettings } from './config';
+export type {
+  LLMConfig, LLMFullConfig, MechanicConfig, ConsolidationConfig,
+  ProviderKind, BillingMode, UserLLMSettings,
+} from './config';
+export * from './usage';
+export * from './pricing';
 
 let router: LLMRouter | null = null;
 

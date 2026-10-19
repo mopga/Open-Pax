@@ -2,9 +2,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Mechanic } from './types';
 import { ALL_MECHANICS } from './types';
+import type { ModelPrice } from './pricing';
+
+export type ProviderKind = 'openai-compatible' | 'anthropic' | 'minimax' | 'ollama';
+
+/**
+ * Как оплачивается модель: payg — за токены (считаем $), subscription —
+ * подписка/token plan (считаем токены, $ = 0), local — локальная модель.
+ */
+export type BillingMode = 'payg' | 'subscription' | 'local';
 
 export interface MechanicConfig {
-  provider: 'openai-compatible' | 'anthropic' | 'minimax';
+  provider: ProviderKind;
   baseUrl: string;
   apiKey: string;
   model: string;
@@ -19,6 +28,11 @@ export interface MechanicConfig {
    * Включай только если провайдер это поддерживает — часть API отвечает 400.
    */
   jsonMode?: boolean;
+  billing?: BillingMode;
+  /** Своя цена модели; иначе встроенная таблица (llm/pricing.ts) */
+  pricing?: ModelPrice;
+  /** Длина контекста для локальных моделей (Ollama num_ctx) */
+  contextLength?: number;
 }
 
 export type LLMConfig = Record<Mechanic, MechanicConfig>;
@@ -41,6 +55,54 @@ export interface ConsolidationConfig {
 export interface LLMFullConfig {
   mechanics: LLMConfig;
   consolidation: ConsolidationConfig;
+  /** Откуда взята конфигурация — для экрана настроек */
+  source?: 'settings' | 'file' | 'env';
+}
+
+/**
+ * Настройки модели из UI (хранятся в SQLite, см. settings/llm-settings.ts).
+ * Одно подключение и две модели: основная — для прыжка (симуляции мира),
+ * лёгкая — для подсказок, конвертера, советника и консолидации.
+ */
+export interface UserLLMSettings {
+  presetId: string;
+  provider: ProviderKind;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  lightModel?: string;
+  billing: BillingMode;
+  pricing?: ModelPrice;
+  lightPricing?: ModelPrice;
+  contextLength?: number;
+  jsonMode?: boolean;
+  /** Мягкий бюджет на одну игру, $ (только предупреждение в UI) */
+  budgetPerGameUsd?: number;
+}
+
+/** Механики, которым достаточно лёгкой модели */
+const LIGHT_MECHANICS = new Set<Mechanic>(['converter', 'advisor', 'suggestions', 'consolidation', 'narration', 'npc', 'chat']);
+
+/** Накладывает настройки из UI поверх базовой конфигурации (файл/env). */
+export function applyUserSettings(base: LLMFullConfig, settings: UserLLMSettings): LLMFullConfig {
+  const mechanics = {} as LLMConfig;
+  for (const m of ALL_MECHANICS) {
+    const light = LIGHT_MECHANICS.has(m) && !!settings.lightModel;
+    mechanics[m] = {
+      ...base.mechanics[m],
+      provider: settings.provider,
+      baseUrl: settings.baseUrl,
+      apiKey: settings.apiKey,
+      model: light ? settings.lightModel! : settings.model,
+      billing: settings.billing,
+      pricing: light ? settings.lightPricing : settings.pricing,
+      contextLength: settings.contextLength,
+      jsonMode: settings.jsonMode ?? base.mechanics[m].jsonMode,
+      // Локальные модели на большом промпте медленные
+      timeoutMs: settings.billing === 'local' ? Math.max(base.mechanics[m].timeoutMs, 600_000) : base.mechanics[m].timeoutMs,
+    };
+  }
+  return { ...base, mechanics, source: 'settings' };
 }
 
 const DEFAULT_CACHE_MECHANICS = new Set<Mechanic>(['advisor', 'suggestions', 'converter']);
@@ -84,7 +146,9 @@ export function loadLLMConfig(configPath?: string): LLMFullConfig {
     keepRawTail: Number(process.env.LLM_CONSOLIDATION_KEEP_RAW_TAIL) || 10,
   };
 
+  let source: LLMFullConfig['source'] = 'env';
   if (fs.existsSync(file)) {
+    source = 'file';
     const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as {
       default?: Partial<MechanicConfig>;
       mechanics?: Partial<Record<Mechanic, Partial<MechanicConfig>>>;
@@ -103,5 +167,5 @@ export function loadLLMConfig(configPath?: string): LLMFullConfig {
     Object.assign(consolidation, raw.consolidation ?? {});
   }
 
-  return { mechanics: cfg, consolidation };
+  return { mechanics: cfg, consolidation, source };
 }

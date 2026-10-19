@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
     "@turf/bbox": "^7.3.5",
     "@turf/boolean-intersects": "^7.3.5",
     "adm-zip": "^0.6.0",

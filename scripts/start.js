@@ -5,7 +5,7 @@
  * Logs output to /logs directory.
  */
 
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -132,6 +132,30 @@ process.on('SIGTERM', shutdown);
 
 const processes = [];
 
+// Самое позднее время изменения файла в каталоге (рекурсивно)
+function newestMtime(dir) {
+  let newest = 0;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    const mtime = entry.isDirectory() ? newestMtime(full) : fs.statSync(full).mtimeMs;
+    if (mtime > newest) newest = mtime;
+  }
+  return newest;
+}
+
+// В production-режиме backend запускается из dist/ — собираем, если сборки нет или она устарела
+function ensureBackendBuilt(backendDir, npmCmd) {
+  const distEntry = path.join(backendDir, 'dist', 'index.js');
+  const srcDir = path.join(backendDir, 'src');
+  if (fs.existsSync(distEntry) && fs.statSync(distEntry).mtimeMs >= newestMtime(srcDir)) return;
+
+  log('Backend build is missing or stale — running npm run build...');
+  const result = spawnSync(npmCmd, ['run', 'build'], { cwd: backendDir, shell: true, stdio: 'inherit' });
+  if (result.status !== 0) {
+    throw new Error('Backend build failed (npm run build in backend-nest)');
+  }
+}
+
 async function main() {
   printBanner();
 
@@ -145,7 +169,14 @@ async function main() {
 
   const npmCmd = isWindows ? 'npm.cmd' : 'npm';
 
+  if (!fs.existsSync(path.join(process.cwd(), 'node_modules'))) {
+    log('Dependencies are not installed. Run "npm install" in the project root first.', 'ERROR');
+    process.exit(1);
+  }
+
   try {
+    if (!isDev) ensureBackendBuilt(backendDir, npmCmd);
+
     // Start backend
     const backendArgs = isDev ? ['run', 'dev'] : ['run', 'start'];
     processes.push({

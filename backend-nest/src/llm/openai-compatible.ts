@@ -7,7 +7,7 @@
  */
 
 import { postJson } from './http';
-import { LLMError, type LLMGenerateOptions, type LLMProvider, type LLMResponse } from './types';
+import { LLMError, type LLMGenerateOptions, type LLMProvider, type LLMResponse, type LLMUsage } from './types';
 
 export interface OpenAICompatibleOptions {
   /** Базовый URL, напр. http://localhost:11434/v1 или https://openrouter.ai/api/v1 */
@@ -22,6 +22,29 @@ export interface OpenAICompatibleOptions {
   name?: string;
   /** Extra headers (OpenRouter: HTTP-Referer, X-Title и т.п.) */
   extraHeaders?: Record<string, string>;
+  /**
+   * Просить usage в последнем чанке стрима (stream_options.include_usage).
+   * По умолчанию true; если сервер отвечает 400 на этот параметр,
+   * провайдер один раз повторяет запрос без него.
+   */
+  streamUsage?: boolean;
+}
+
+/**
+ * Разбирает usage в OpenAI-формате. Поддерживает кэш-поля OpenAI
+ * (prompt_tokens_details.cached_tokens) и DeepSeek (prompt_cache_hit_tokens).
+ */
+export function parseOpenAIUsage(raw: any): LLMUsage | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const input = Number(raw.prompt_tokens ?? raw.input_tokens);
+  const output = Number(raw.completion_tokens ?? raw.output_tokens);
+  if (!Number.isFinite(input) && !Number.isFinite(output)) return undefined;
+  const cached = Number(raw.prompt_tokens_details?.cached_tokens ?? raw.prompt_cache_hit_tokens ?? 0);
+  return {
+    inputTokens: Number.isFinite(input) ? input : 0,
+    outputTokens: Number.isFinite(output) ? output : 0,
+    ...(cached > 0 ? { cachedInputTokens: cached } : {}),
+  };
 }
 
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -37,6 +60,13 @@ export class OpenAICompatibleProvider implements LLMProvider {
   private timeoutMs: number;
   private retries: number;
   private extraHeaders: Record<string, string>;
+  private streamUsage: boolean;
+  /**
+   * Официальный API OpenAI: reasoning-модели (gpt-5, o-серия) отвечают 400
+   * на max_tokens и на нестандартную temperature — там шлём
+   * max_completion_tokens и не задаём temperature.
+   */
+  private openaiNative: boolean;
 
   constructor(opts: OpenAICompatibleOptions) {
     this.name = opts.name || 'openai-compatible';
@@ -47,6 +77,8 @@ export class OpenAICompatibleProvider implements LLMProvider {
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.retries = opts.retries ?? DEFAULT_RETRIES;
     this.extraHeaders = opts.extraHeaders || {};
+    this.streamUsage = opts.streamUsage ?? true;
+    this.openaiNative = /^https:\/\/api\.openai\.com(\/|$)/.test(this.baseUrl);
   }
 
   private buildHeaders(): Record<string, string> {
@@ -57,7 +89,8 @@ export class OpenAICompatibleProvider implements LLMProvider {
     };
   }
 
-  private buildBody(system: string, user: string, options: LLMGenerateOptions, stream: boolean) {
+  private buildBody(system: string, user: string, options: LLMGenerateOptions, stream: boolean, withStreamUsage = false) {
+    const maxTokens = options.maxTokens ?? 4096;
     return {
       model: this.model,
       messages: [
@@ -65,10 +98,12 @@ export class OpenAICompatibleProvider implements LLMProvider {
         // user никогда не пустой: часть моделей деградирует на пустом user-сообщении
         { role: 'user', content: user || 'Выполни инструкции из системного сообщения.' },
       ],
-      temperature: options.temperature ?? 0.7,
-      max_tokens: options.maxTokens ?? 4096,
+      ...(this.openaiNative
+        ? { max_completion_tokens: maxTokens }
+        : { temperature: options.temperature ?? 0.7, max_tokens: maxTokens }),
       ...(options.jsonMode ? { response_format: { type: 'json_object' } } : {}),
       ...(stream ? { stream: true } : {}),
+      ...(stream && withStreamUsage ? { stream_options: { include_usage: true } } : {}),
     };
   }
 
@@ -107,7 +142,8 @@ export class OpenAICompatibleProvider implements LLMProvider {
       );
     }
 
-    return { content, tokensUsed: data?.usage?.total_tokens };
+    const usage = parseOpenAIUsage(data?.usage);
+    return { content, tokensUsed: data?.usage?.total_tokens, usage };
   }
 
   async stream(
@@ -116,12 +152,22 @@ export class OpenAICompatibleProvider implements LLMProvider {
     onToken: (charsSoFar: number) => void,
     options: LLMGenerateOptions = {}
   ): Promise<LLMResponse> {
-    const res = await postJson(
+    const post = (withUsage: boolean) => postJson(
       `${this.baseUrl}${this.chatPath}`,
       this.buildHeaders(),
-      this.buildBody(system, user, options, true),
+      this.buildBody(system, user, options, true, withUsage),
       { timeoutMs: this.timeoutMs, retries: this.retries, providerName: this.name, stream: true }
     );
+
+    let res: Response;
+    try {
+      res = await post(this.streamUsage);
+    } catch (e) {
+      // Сервер не знает stream_options — больше не просим usage у этого провайдера
+      if (!(this.streamUsage && e instanceof LLMError && e.status === 400)) throw e;
+      this.streamUsage = false;
+      res = await post(false);
+    }
 
     if (!res.body) {
       throw new LLMError(`${this.name}: стриминг не поддерживается ответом`, { provider: this.name, retriable: true });
@@ -132,6 +178,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
     const decoder = new TextDecoder();
     let buffer = '';
     let content = '';
+    let usage: LLMUsage | undefined;
 
     try {
       while (true) {
@@ -149,6 +196,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
           if (payload === '[DONE]') continue;
           try {
             const chunk = JSON.parse(payload);
+            usage = parseOpenAIUsage(chunk?.usage) ?? usage;
             const delta = chunk?.choices?.[0]?.delta?.content;
             if (typeof delta === 'string' && delta.length > 0) {
               content += delta;
@@ -165,6 +213,6 @@ export class OpenAICompatibleProvider implements LLMProvider {
       throw new LLMError(`${this.name}: пустой стрим от модели`, { provider: this.name, retriable: true });
     }
 
-    return { content };
+    return { content, usage, tokensUsed: usage ? usage.inputTokens + usage.outputTokens : undefined };
   }
 }

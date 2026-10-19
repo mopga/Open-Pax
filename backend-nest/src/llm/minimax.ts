@@ -25,6 +25,8 @@ export function createMiniMaxProvider(opts: MiniMaxOptions): LLMProvider {
     apiKey: opts.apiKey,
     model: opts.model,
     chatPath: '/text/chatcompletion_v2',
+    // usage MiniMax присылает в последнем чанке сам; лишний параметр не шлём
+    streamUsage: false,
     timeoutMs: opts.timeoutMs,
     retries: opts.retries,
   });
