@@ -83,7 +83,7 @@ function createRegionWorld(worldId: string) {
   const built = buildRegionWorld({
     worldId,
     features: makeFeatures(),
-    presetPolities: new Map([
+    polities: new Map([
       ['FRA', { name: 'France', color: '#4466aa' }],
       ['YUG', { name: 'Yugoslavia', color: '#aa4444' }],
     ]),
@@ -118,6 +118,21 @@ describe('buildRegionWorld', () => {
     expect(built.homeRegion.FRA).toBe('rw_cap_FRA-1');
     expect(built.regions.find(r => r.id === 'rw_cap_FRA-1')!.objects[0]).toMatchObject({ type: 'capital', name: 'Paris' });
     expect(built.regions.find(r => r.id === 'rw_cap_FRA-2')!.objects).toEqual([]);
+  });
+
+  it('столица вне всех полигонов (упрощённый берег) — ближайший регион', () => {
+    const built = buildRegionWorld({
+      worldId: 'rw_coast',
+      features: makeFeatures(),
+      polities: new Map(),
+      memberOf: {},
+      fallbackPolity: code => ({ name: code, color: '#448844' }),
+      // Чуть южнее Прованса (FRA-2: квадрат 5..6 × 43..44), в море
+      capitals: { FRA: { capital: 'Marseille', lat: 42.9, lng: 5.4 } },
+      russianNames: false,
+      makeId: () => `obj${++idCounter}`,
+    });
+    expect(built.homeRegion.FRA).toBe('rw_coast_FRA-2');
   });
 
   it('pointInGeometry', () => {
@@ -207,8 +222,8 @@ describe('Реестр государств в игре', () => {
     worldRepository.createWithRegions(
       { id: 'legacy_w', name: 'Legacy', description: '', startDate: '1951-01-01', basePrompt: '', historicalAccuracy: 0.8 },
       [
-        { id: 'legacy_w_FRA', name: 'France', color: '#4466aa', owner: 'FRA', population: 1, gdp: 1, militaryPower: 1 },
-        { id: 'legacy_w_BEL', name: 'Belgium', color: '#448844', owner: 'BEL', population: 1, gdp: 1, militaryPower: 1 },
+        { id: 'legacy_w_FRA', name: 'France', color: '#4466aa', owner: 'FRA' },
+        { id: 'legacy_w_BEL', name: 'Belgium', color: '#448844', owner: 'BEL' },
       ],
     );
     const { session } = getSessionRegistry().createSession('legacy_w', 'Player', 'legacy_w_FRA', '#FF0000');

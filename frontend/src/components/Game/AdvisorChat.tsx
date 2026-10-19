@@ -27,9 +27,6 @@ export const AdvisorChat: React.FC<AdvisorChatProps> = ({ gameId }) => {
   const [inputText, setInputText] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Локальная игра без бэкенда — советник недоступен
-  const isLocal = gameId.startsWith('local_');
-
   // Прокрутка ленты вниз при новых сообщениях и токенах стрима
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -38,7 +35,7 @@ export const AdvisorChat: React.FC<AdvisorChatProps> = ({ gameId }) => {
   // Отправить вопрос советнику со стримингом ответа
   const handleSend = async () => {
     const text = inputText.trim();
-    if (!text || advisorStreaming || isLocal) return;
+    if (!text || advisorStreaming) return;
     setInputText('');
 
     // История: без проактивных сводок и пустых (стримящихся) сообщений
@@ -62,14 +59,6 @@ export const AdvisorChat: React.FC<AdvisorChatProps> = ({ gameId }) => {
       setAdvisorStreaming(false);
     }
   };
-
-  if (isLocal) {
-    return (
-      <div className="advisor-chat">
-        <div className="chats-empty">Советник доступен только в серверной игре</div>
-      </div>
-    );
-  }
 
   return (
     <div className="advisor-chat">

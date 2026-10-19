@@ -25,21 +25,11 @@ db.pragma('foreign_keys = ON');
 // ==============================================================================
 // Schema
 // ==============================================================================
+// Старые БД могут содержать таблицы и колонки удалённых механик (maps, chats,
+// chat_messages, country_relationships; world_regions.population/gdp/
+// military_power/svg_path) — код их не читает и не пишет.
 
 export function initDatabase() {
-  // Maps table
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS maps (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      width INTEGER DEFAULT 800,
-      height INTEGER DEFAULT 600,
-      regions TEXT NOT NULL DEFAULT '[]',
-      objects TEXT DEFAULT '[]',
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
   // Worlds table
   db.exec(`
     CREATE TABLE IF NOT EXISTS worlds (
@@ -78,13 +68,9 @@ export function initDatabase() {
       id TEXT PRIMARY KEY,
       world_id TEXT NOT NULL,
       name TEXT NOT NULL,
-      svg_path TEXT,
       geojson TEXT,
       color TEXT DEFAULT '#888888',
       owner TEXT DEFAULT 'neutral',
-      population INTEGER DEFAULT 1000000,
-      gdp INTEGER DEFAULT 100,
-      military_power INTEGER DEFAULT 100,
       borders TEXT DEFAULT '[]',
       objects TEXT DEFAULT '[]',
       status TEXT DEFAULT 'active',
@@ -123,39 +109,10 @@ export function initDatabase() {
     }
   }
 
-  // Country relationships table (allies/enemies per world)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS country_relationships (
-      id TEXT PRIMARY KEY,
-      world_id TEXT NOT NULL,
-      from_region_id TEXT NOT NULL,
-      to_region_id TEXT NOT NULL,
-      relationship TEXT DEFAULT 'neutral',
-      FOREIGN KEY (world_id) REFERENCES worlds(id) ON DELETE CASCADE
-    )
-  `);
-
-  // Migration: dedupe relationships, then add the UNIQUE index that
-  // relationshipRepository.bulkUpsert's ON CONFLICT(world_id, from_region_id, to_region_id)
-  // requires (without it every upsert threw "ON CONFLICT clause does not match...").
-  db.exec(`
-    DELETE FROM country_relationships
-    WHERE id NOT IN (
-      SELECT MIN(id) FROM country_relationships
-      GROUP BY world_id, from_region_id, to_region_id
-    )
-  `);
-  db.exec(`
-    CREATE UNIQUE INDEX IF NOT EXISTS ux_country_relationships_pair
-    ON country_relationships(world_id, from_region_id, to_region_id)
-  `);
-
   // Migration: unified polity-id convention. Region owner is the polity id
   // itself (template worlds: country code like 'USA', stored in `flag`;
   // custom-map worlds keep their 'player' / 'ai-N' ids, which are valid
-  // polity ids as-is). Previously owners were 'player' / 'ai-USA' while
-  // relationships were seeded with bare codes, so seeded diplomacy never
-  // matched engine keys.
+  // polity ids as-is). Previously owners were 'player' / 'ai-USA'.
   db.exec(`
     UPDATE world_regions SET owner = flag
     WHERE flag IS NOT NULL AND flag != '' AND (owner = 'player' OR owner LIKE 'ai-%')
@@ -292,36 +249,6 @@ export function initDatabase() {
       // Column might already exist
     }
   }
-
-  // Этап 3: дипломатические чаты (один чат на пару игра×полития)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS chats (
-      id TEXT PRIMARY KEY,
-      game_id TEXT NOT NULL,
-      polity_id TEXT NOT NULL,
-      polity_name TEXT NOT NULL,
-      polity_color TEXT DEFAULT '#888888',
-      created_at TEXT,
-      last_message_at TEXT,
-      UNIQUE(game_id, polity_id)
-    )
-  `);
-
-  // Этап 3: сообщения дипломатических чатов
-  // role: 'player' (игрок) | 'polity' (ответ политии); read — прочитано ли
-  // сообщение политии игроком (для счётчика непрочитанных).
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS chat_messages (
-      id TEXT PRIMARY KEY,
-      chat_id TEXT NOT NULL,
-      role TEXT NOT NULL,
-      content TEXT NOT NULL,
-      turn INTEGER DEFAULT 0,
-      read INTEGER DEFAULT 0,
-      created_at TEXT,
-      FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
-    )
-  `);
 
   // Реестр государств мира: имя, цвет, флаг. Регион хранит только owner =
   // id государства. Старые миры без строк здесь выводят государства из регионов.

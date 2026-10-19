@@ -50,7 +50,6 @@ const stubLlm: any = {
         events: [],
         narration: 'Тихо.',
         voided: [],
-        startChat: [],
         worldChanges: { regionOwners: {}, regionColors: {} },
       }),
     };
@@ -252,7 +251,7 @@ describe('ленивый DB-fallback: prompts мира по id игры', () => 
         historicalAccuracy: 0.8,
         prompts: JSON.stringify({ simulation: 'DB_ШАБЛОН: ${PLAYER_POLITY} → ${TARGET_ROUND_DATE}' }),
       },
-      [{ id: `${WORLD_ID}_DEU`, name: 'ФРГ', color: '#FF0000', owner: 'DEU', population: 1, gdp: 1, militaryPower: 1, flag: 'DEU' }]
+      [{ id: `${WORLD_ID}_DEU`, name: 'ФРГ', color: '#FF0000', owner: 'DEU', flag: 'DEU' }]
     );
 
     expect(worldRepository.findById(WORLD_ID).prompts).toContain('DB_ШАБЛОН');
@@ -280,7 +279,7 @@ describe('ленивый DB-fallback: prompts мира по id игры', () => 
   it('мир без prompts (NULL) не ломает дефолтный промпт', async () => {
     worldRepository.createWithRegions(
       { id: `${WORLD_ID}_plain`, name: 'Plain', description: '', startDate: '1951-01-01', basePrompt: 'лор', historicalAccuracy: 0.8 },
-      [{ id: `${WORLD_ID}_plain_DEU`, name: 'ФРГ', color: '#FF0000', owner: 'DEU', population: 1, gdp: 1, militaryPower: 1, flag: 'DEU' }]
+      [{ id: `${WORLD_ID}_plain_DEU`, name: 'ФРГ', color: '#FF0000', owner: 'DEU', flag: 'DEU' }]
     );
     gameRepository.create({ id: `${GAME_ID}_plain`, worldId: `${WORLD_ID}_plain` });
 

@@ -84,12 +84,9 @@ export interface MapFeature {
 export interface SimulationResult {
   events: SimulationEvent[];
   narration: string;
-  diplomacy: DiplomacyChat[];
   worldChanges: WorldChanges;
   /** Нереалистичные действия игрока, отклонённые симуляцией, с пояснением */
   voided: VoidedAction[];
-  /** ИИ инициирует дипломатический чат (полноценная обработка — Этап 3) */
-  startChat?: { polityName: string; topic: string }[];
   /** Для auto-jump: фактическая целевая дата, выбранная симуляцией */
   targetDate?: string;
 }
@@ -98,17 +95,6 @@ export interface SimulationResult {
 export interface VoidedAction {
   action: string;
   reason: string;
-}
-
-export interface DiplomacyChat {
-  round: number;
-  participants: string[];
-  messages: ChatMessage[];
-}
-
-export interface ChatMessage {
-  from: string;
-  text: string;
 }
 
 export interface WorldChanges {

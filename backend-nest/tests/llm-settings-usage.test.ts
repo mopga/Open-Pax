@@ -118,7 +118,7 @@ describe('applyUserSettings', () => {
     const cfg = applyUserSettings(makeConfig(), { ...SAVED, lightModel: 'deepseek-flash' });
     expect(cfg.source).toBe('settings');
     expect(cfg.mechanics.jump.model).toBe('deepseek-v4-pro');
-    expect(cfg.mechanics.balance.model).toBe('deepseek-v4-pro');
+
     expect(cfg.mechanics.suggestions.model).toBe('deepseek-flash');
     expect(cfg.mechanics.converter.model).toBe('deepseek-flash');
     expect(cfg.mechanics.jump.apiKey).toBe(SAVED.apiKey);

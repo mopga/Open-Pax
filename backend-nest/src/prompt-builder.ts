@@ -34,7 +34,7 @@ interface GameData {
     startDate: string;
     regions: any; // может быть Map или объект
     /** Реестр государств: id → { name, color }. Нет у старых миров — имя берётся из регионов */
-    polities?: Record<string, { id: string; name: string; color: string }>;
+    polities?: Record<string, { id: string; name: string; color: string; description?: string }>;
     /** Переопределённые промпты мира (приоритет над дефолтными builders) */
     prompts?: PromptOverrides | string | null;
   };
@@ -92,8 +92,6 @@ interface RegionData {
   name: string;
   color: string;
   owner: string;
-  population?: number;
-  militaryPower?: number;
   objects?: any[];
 }
 
@@ -224,6 +222,8 @@ export class PromptBuilder {
         : '';
 
       description += `${this.polityHeader(owner, regionList)}\n`;
+      const about = this.game.world.polities?.[owner]?.description;
+      if (about) description += `- ${about}\n`;
       if (capitalsStr) description += `- ${capitalsStr}\n`;
       description += `- Регионы: ${regionList.map(r => r.name).join(', ')}\n`;
       description += `\n`;

@@ -2,9 +2,9 @@
  * Open-Pax — сборка мира из регионов (мельче стран)
  * =================================================
  * Вход: регионы data/geojson/regions.geojson (scripts/build-regions.mjs),
- * страны пресета и справочники. Выход: регионы мира с владельцами и
- * реестр государств. Государство = страна Natural Earth; пресет может
- * собрать государство из нескольких стран (polity_members: YUG = SRB+HRV+…).
+ * каталог государств пресета и столицы. Выход: регионы мира с владельцами и
+ * реестр государств. Государство по умолчанию = страна Natural Earth; пресет
+ * может собрать государство из нескольких стран (members: YUG = SRB+HRV+…).
  */
 
 import type { PolityRecord } from '../repositories/world.repository';
@@ -26,11 +26,11 @@ export interface CapitalEntry { capital: string; lat: number; lng: number }
 export interface RegionWorldInput {
   worldId: string;
   features: RegionFeature[];
-  /** Государства пресета (имя/цвет/метаданные от BalanceAgent) по коду */
-  presetPolities: Map<string, PolitySeed>;
-  /** Код страны → код государства-владельца (polity_members пресета, развёрнутый) */
+  /** Государства по коду: имя, цвет, метаданные */
+  polities: Map<string, PolitySeed>;
+  /** Код страны → код государства-владельца (members пресета, развёрнутый) */
   memberOf: Record<string, string>;
-  /** Имя и цвет для стран вне пресета */
+  /** Имя и цвет страны, которой нет в каталоге */
   fallbackPolity: (code: string) => PolitySeed;
   capitals: Record<string, CapitalEntry>;
   /** Регионы называть по-русски (если пресет русскоязычный) */
@@ -45,9 +45,6 @@ export interface RegionWorldRegion {
   geojson: string;
   color: string;
   owner: string;
-  population: number;
-  gdp: number;
-  militaryPower: number;
   flag: string;
   objects: any[];
   borders: string[];
@@ -77,13 +74,29 @@ export function pointInGeometry(lng: number, lat: number, geometry: RegionFeatur
   return false;
 }
 
+/** Индекс региона с вершиной, ближайшей к точке (в градусах — для выбора столицы достаточно) */
+function nearestRegion(lng: number, lat: number, items: (readonly [number, RegionFeature['geometry']])[]): number | undefined {
+  let best: number | undefined;
+  let bestDist = Infinity;
+  for (const [i, geometry] of items) {
+    const polygons = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates;
+    for (const poly of polygons) {
+      for (const [x, y] of (poly as number[][][])[0]) {
+        const d = (x - lng) ** 2 + (y - lat) ** 2;
+        if (d < bestDist) { bestDist = d; best = i; }
+      }
+    }
+  }
+  return best;
+}
+
 export function buildRegionWorld(input: RegionWorldInput): RegionWorld {
-  const { worldId, features, presetPolities, memberOf, fallbackPolity, capitals, russianNames, makeId } = input;
+  const { worldId, features, memberOf, fallbackPolity, capitals, russianNames, makeId } = input;
   const regionId = (rid: string) => `${worldId}_${rid}`;
 
-  // Государства: пресет + все остальные страны карты (каждая — сама себе государство)
+  // Государства каталога + страны карты, которых в нём нет
   const polities = new Map<string, PolityRecord>();
-  for (const [code, seed] of presetPolities) {
+  for (const [code, seed] of input.polities) {
     polities.set(code, { id: code, name: seed.name, color: seed.color, flag: code, metadata: seed.metadata ?? null });
   }
   const ownerOf = (iso3: string) => memberOf[iso3] ?? iso3;
@@ -105,9 +118,6 @@ export function buildRegionWorld(input: RegionWorldInput): RegionWorld {
       geojson: JSON.stringify({ type: 'Feature', properties: props, geometry: f.geometry }),
       color: polities.get(owner)!.color,
       owner,
-      population: 0,
-      gdp: 0,
-      militaryPower: 0,
       // Флаг — государства-владельца (для флага на карте и в списках)
       flag: owner,
       objects: [],
@@ -115,7 +125,12 @@ export function buildRegionWorld(input: RegionWorldInput): RegionWorld {
     };
   });
 
-  // Столицы: точка из capitals.json → регион государства, внутри которого она лежит
+  // Столицы: точка из capitals.json → регион государства, внутри которого она лежит.
+  // У составного государства без своей записи (YUG) — столица первой страны-члена.
+  const membersOf = new Map<string, string[]>();
+  for (const [member, owner] of Object.entries(memberOf)) {
+    membersOf.set(owner, [...(membersOf.get(owner) ?? []), member]);
+  }
   const homeRegion: Record<string, string> = {};
   const byOwner = new Map<string, number[]>();
   regions.forEach((r, i) => {
@@ -124,10 +139,13 @@ export function buildRegionWorld(input: RegionWorldInput): RegionWorld {
     byOwner.set(r.owner, list);
   });
   for (const [owner, idxs] of byOwner) {
-    const cap = capitals[owner];
+    const cap = capitals[owner] ?? (membersOf.get(owner) ?? []).map(m => capitals[m]).find(Boolean);
     let home = idxs[0];
     if (cap && typeof cap.lat === 'number' && typeof cap.lng === 'number') {
-      const hit = idxs.find(i => pointInGeometry(cap.lng, cap.lat, features[i].geometry));
+      // Точка столицы на упрощённом берегу может не попасть ни в один регион —
+      // тогда берём регион с ближайшей к ней вершиной
+      const hit = idxs.find(i => pointInGeometry(cap.lng, cap.lat, features[i].geometry))
+        ?? nearestRegion(cap.lng, cap.lat, idxs.map(i => [i, features[i].geometry] as const));
       if (hit !== undefined) home = hit;
       regions[home].objects.push({ id: makeId(), type: 'capital', name: cap.capital, lat: cap.lat, lng: cap.lng });
     }

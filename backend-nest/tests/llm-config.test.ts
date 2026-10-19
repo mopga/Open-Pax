@@ -48,8 +48,7 @@ describe('loadLLMConfig: env-fallback (обратная совместимост
     expect(cfg.advisor.cache).toBe(true);
     expect(cfg.suggestions.cache).toBe(true);
     expect(cfg.jump.cache).toBe(false);
-    expect(cfg.narration.cache).toBe(false);
-    expect(cfg.npc.cache).toBe(false);
+    expect(cfg.consolidation.cache).toBe(false);
   });
 
   it('MINIMAX_API_KEY подхватывается из env', () => {
@@ -66,9 +65,9 @@ describe('loadLLMConfig: env-fallback (обратная совместимост
     process.env.LLM_BASE_URL = 'http://localhost:11434/v1';
     process.env.LLM_PROVIDER = 'openai-compatible';
     const { mechanics: cfg } = loadLLMConfig(NO_FILE);
-    expect(cfg.npc.provider).toBe('openai-compatible');
-    expect(cfg.npc.apiKey).toBe('llm-key');
-    expect(cfg.npc.baseUrl).toBe('http://localhost:11434/v1');
+    expect(cfg.consolidation.provider).toBe('openai-compatible');
+    expect(cfg.consolidation.apiKey).toBe('llm-key');
+    expect(cfg.consolidation.baseUrl).toBe('http://localhost:11434/v1');
   });
 });
 
@@ -115,11 +114,11 @@ describe('loadLLMConfig: файл llm.config.json', () => {
     process.env.OPENROUTER_API_KEY = 'sk-or-test';
     const file = writeTmpConfig({
       default: { baseUrl: 'https://openrouter.ai/api/v1', model: 'x', apiKey: 'env:OPENROUTER_API_KEY' },
-      mechanics: { npc: { apiKey: 'env:NO_SUCH_VAR_12345' } },
+      mechanics: { consolidation: { apiKey: 'env:NO_SUCH_VAR_12345' } },
     });
     const { mechanics: cfg } = loadLLMConfig(file);
     expect(cfg.jump.apiKey).toBe('sk-or-test');
-    expect(cfg.npc.apiKey).toBe('');
+    expect(cfg.consolidation.apiKey).toBe('');
     delete process.env.OPENROUTER_API_KEY;
     fs.rmSync(file);
   });

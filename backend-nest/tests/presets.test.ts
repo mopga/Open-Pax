@@ -1,7 +1,7 @@
 /**
  * Тесты Этапа 5 (пресет-пакеты, с заглушкой LLM):
- *   listPresets видит штатные пакеты (source='preset'),
- *   loadPreset парсит легаси-формат со строковыми country_codes,
+ *   listPresets видит штатные пакеты формата 2,
+ *   формат 1 приводится к формату 2,
  *   validatePresetJson отвергает битые preset.json,
  *   кастомные simulation_rules мира доезжают до промпта прыжка.
  */
@@ -36,7 +36,6 @@ const stubProvider: any = {
           events: [],
           narration: 'Тихий месяц.',
           voided: [],
-          startChat: [],
           worldChanges: { regionOwners: {}, regionColors: {} },
         }),
       };
@@ -74,8 +73,8 @@ beforeAll(async () => {
   worldRepository.createWithRegions(
     { id: WORLD_ID, name: 'Presets World', description: '', startDate: '1951-01-01', basePrompt: 'Тестовый лор', historicalAccuracy: 0.8, simulationRules: CUSTOM_RULES },
     [
-      { id: `${WORLD_ID}_DEU`, name: 'ФРГ', color: '#FF0000', owner: 'DEU', population: 5000000, gdp: 200, militaryPower: 300, flag: 'DEU' },
-      { id: `${WORLD_ID}_POL`, name: 'Польша', color: '#00FF00', owner: 'POL', population: 3000000, gdp: 100, militaryPower: 100, flag: 'POL' },
+      { id: `${WORLD_ID}_DEU`, name: 'ФРГ', color: '#FF0000', owner: 'DEU', flag: 'DEU' },
+      { id: `${WORLD_ID}_POL`, name: 'Польша', color: '#00FF00', owner: 'POL', flag: 'POL' },
     ]
   );
 
@@ -94,7 +93,7 @@ afterAll(() => {
 });
 
 describe('Этап 5: каталог пресетов', () => {
-  it('listPresets видит штатные пакеты cold_war_1951 и modern_world как source=preset', () => {
+  it('listPresets видит штатные пакеты cold_war_1951 и modern_world в формате 2', () => {
     const presets = presetLoader.listPresets();
     const byId = new Map(presets.map(p => [p.id, p]));
 
@@ -103,57 +102,57 @@ describe('Этап 5: каталог пресетов', () => {
 
     expect(coldWar).toBeDefined();
     expect(modern).toBeDefined();
-    expect(coldWar!.source).toBe('preset');
-    expect(modern!.source).toBe('preset');
-    // Пакет выигрывает у легаси-шаблона с тем же id — без дублей в списке
     expect(presets.filter(p => p.id === 'cold_war_1951')).toHaveLength(1);
-    expect(presets.filter(p => p.id === 'modern_world')).toHaveLength(1);
     // rules.md и lore.md подхвачены пакетом
     expect(coldWar!.simulation_rules).toBeTruthy();
     expect(coldWar!.lore).toBeTruthy();
     expect(modern!.simulation_rules).toBeTruthy();
     expect(modern!.lore).toBeTruthy();
+    // Государства пресета: СССР собран из союзных республик
+    expect(coldWar!.language).toBe('ru');
+    expect(coldWar!.polities.RUS).toMatchObject({ name: 'СССР' });
+    expect(coldWar!.polities.RUS.members).toContain('UKR');
+    expect(coldWar!.recommended[0]).toBe('USA');
+    expect(coldWar!.recommended).not.toContain('UKR');
+    expect(modern!.recommended).toContain('CHN');
   });
 
-  it('loadPreset парсит легаси-формат со строковыми country_codes', () => {
-    // Временный легаси-шаблон в старом формате (country_codes — строка)
-    const legacyId = 'test_legacy_string_codes';
-    const legacyPath = path.join(presetLoader.LEGACY_TEMPLATES_DIR, `${legacyId}.json`);
-    fs.writeFileSync(legacyPath, JSON.stringify({
-      id: legacyId,
-      name: 'Legacy String Codes',
-      description: 'Проверка парсинга строковых кодов',
-      country_codes: "['USA', 'RUS', 'DEU']",
-      base_prompt: 'Легаси-мир для теста',
-      start_date: '1951-01-01',
-    }));
-
-    try {
-      const preset = presetLoader.loadPreset(legacyId);
-      expect(preset).not.toBeNull();
-      expect(preset!.source).toBe('legacy');
-      expect(preset!.country_codes).toEqual(['USA', 'RUS', 'DEU']);
-      expect(preset!.has_custom_map).toBe(false);
-      expect(preset!.flags).toEqual([]);
-    } finally {
-      try { fs.rmSync(legacyPath); } catch { /* уже удалён */ }
-    }
+  it('формат 1 приводится к формату 2', () => {
+    const p = presetLoader.validatePresetJson({
+      id: 'old_fmt', name: 'X', base_prompt: 'p',
+      country_codes: ['USA', 'RUS'],
+      countries: [{ code: 'USA', name: 'Штаты', color: '#112233' }],
+      country_colors: { RUS: '#A83A32' },
+      polity_members: { RUS: ['UKR'] },
+    });
+    expect(p.recommended).toEqual(['USA', 'RUS']);
+    expect(p.polities.USA).toEqual({ name: 'Штаты', color: '#112233' });
+    expect(p.polities.RUS).toEqual({ color: '#A83A32', members: ['UKR'] });
+    expect(p.language).toBe('ru');
   });
 
   it('validatePresetJson отвергает битые preset.json', () => {
     const v = presetLoader.validatePresetJson;
     // Нет id
-    expect(() => v({ name: 'X', country_codes: ['USA'], base_prompt: 'p' })).toThrow(/id/);
-    // Пустые country_codes
+    expect(() => v({ name: 'X', polities: {}, base_prompt: 'p' })).toThrow(/id/);
+    // Формат 1: пустые country_codes
     expect(() => v({ id: 'ok_id', name: 'X', country_codes: [], base_prompt: 'p' })).toThrow(/country_codes/);
-    // Невалидный код страны (нужен ISO_A3 верхним регистром)
-    expect(() => v({ id: 'ok_id', name: 'X', country_codes: ['usa'], base_prompt: 'p' })).toThrow(/код страны/);
+    // Невалидный код государства (нужен ISO_A3 верхним регистром)
+    expect(() => v({ id: 'ok_id', name: 'X', polities: { usa: {} }, base_prompt: 'p' })).toThrow(/код/);
+    expect(() => v({ id: 'ok_id', name: 'X', polities: { USA: { color: 'blue' } }, base_prompt: 'p' })).toThrow(/color/);
+    expect(() => v({ id: 'ok_id', name: 'X', recommended: ['usa'], base_prompt: 'p' })).toThrow(/recommended/);
+    // Страна в двух государствах
+    expect(() => v({
+      id: 'ok_id', name: 'X', base_prompt: 'p',
+      polities: { RUS: { members: ['UKR'] }, POL: { members: ['UKR'] } },
+    })).toThrow(/UKR/);
     // Нет base_prompt
-    expect(() => v({ id: 'ok_id', name: 'X', country_codes: ['USA'] })).toThrow(/base_prompt/);
-    // Валидный минимум — проходит
-    const ok = v({ id: 'ok_id', name: 'X', country_codes: ['USA'], base_prompt: 'p' });
+    expect(() => v({ id: 'ok_id', name: 'X', polities: {} })).toThrow(/base_prompt/);
+    // Валидный минимум — проходит; без polities все страны карты — сами по себе
+    const ok = v({ id: 'ok_id', name: 'X', base_prompt: 'p' });
     expect(ok.id).toBe('ok_id');
-    expect(ok.country_codes).toEqual(['USA']);
+    expect(ok.polities).toEqual({});
+    expect(ok.recommended).toEqual([]);
   });
 });
 
@@ -183,7 +182,7 @@ describe('Этап 5: правила симуляции мира', () => {
     worldRepository.createWithRegions(
       { id: `${WORLD_ID}_plain`, name: 'Plain World', description: '', startDate: '1951-01-01', basePrompt: 'Обычный мир', historicalAccuracy: 0.8 },
       [
-        { id: `${WORLD_ID}_plain_DEU`, name: 'ФРГ', color: '#FF0000', owner: 'DEU', population: 5000000, gdp: 200, militaryPower: 300, flag: 'DEU' },
+        { id: `${WORLD_ID}_plain_DEU`, name: 'ФРГ', color: '#FF0000', owner: 'DEU', flag: 'DEU' },
       ]
     );
 

@@ -72,8 +72,8 @@ beforeAll(async () => {
   worldRepository.createWithRegions(
     { id: WORLD_ID, name: 'Advisor World', description: '', startDate: '1951-01-01', basePrompt: 'Тестовый лор', historicalAccuracy: 0.8 },
     [
-      { id: `${WORLD_ID}_DEU`, name: 'ФРГ', color: '#FF0000', owner: 'DEU', population: 5000000, gdp: 200, militaryPower: 300, flag: 'DEU' },
-      { id: `${WORLD_ID}_POL`, name: 'Польша', color: '#00FF00', owner: 'POL', population: 3000000, gdp: 100, militaryPower: 100, flag: 'POL' },
+      { id: `${WORLD_ID}_DEU`, name: 'ФРГ', color: '#FF0000', owner: 'DEU', flag: 'DEU' },
+      { id: `${WORLD_ID}_POL`, name: 'Польша', color: '#00FF00', owner: 'POL', flag: 'POL' },
     ]
   );
 

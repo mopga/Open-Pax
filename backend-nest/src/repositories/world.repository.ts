@@ -23,13 +23,9 @@ export interface WorldRecord {
 export interface RegionRecord {
   id: string;
   name: string;
-  svgPath: string;
   geojson?: string;
   color: string;
   owner: string;
-  population: number;
-  gdp: number;
-  militaryPower: number;
   borders: string[];
   objects: any[];
   status: string;
@@ -110,13 +106,9 @@ export const worldRepository = {
     return rows.map(row => ({
       id: row.id,
       name: row.name,
-      svgPath: row.svg_path,
       geojson: row.geojson,
       color: row.color,
       owner: row.owner,
-      population: row.population,
-      gdp: row.gdp,
-      militaryPower: row.military_power,
       borders: JSON.parse(row.borders),
       objects: JSON.parse(row.objects || '[]'),
       status: row.status,
@@ -124,50 +116,24 @@ export const worldRepository = {
     }));
   },
 
-  addRegion: (region: { id: string; worldId: string; name: string; svgPath?: string; geojson?: string; color?: string; owner?: string; population?: number; gdp?: number; militaryPower?: number; flag?: string; borders?: string[]; objects?: any[] }) => {
+  addRegion: (region: { id: string; worldId: string; name: string; geojson?: string; color?: string; owner?: string; flag?: string; borders?: string[]; objects?: any[] }) => {
     const stmt = db.prepare(`
-      INSERT INTO world_regions (id, world_id, name, svg_path, geojson, color, owner, population, gdp, military_power, flag, borders, objects)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO world_regions (id, world_id, name, geojson, color, owner, flag, borders, objects)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       region.id,
       region.worldId,
       region.name,
-      region.svgPath || '',
       region.geojson || null,
       region.color || '#888888',
       region.owner || 'neutral',
-      region.population || 1000000,
-      region.gdp || 100,
-      region.militaryPower || 100,
       region.flag || null,
       JSON.stringify(region.borders ?? []),
-      // Этап 4: маркеры на карте (столицы/города/батальоны) — иначе терялись при создании
+      // Маркеры на карте (столицы/города/батальоны)
       JSON.stringify(region.objects ?? [])
     );
     return region;
-  },
-
-  updateRegion: (regionId: string, updates: Partial<{
-    name: string; color: string; owner: string; population: number; gdp: number; militaryPower: number; objects: any[]; geojson: string
-  }>) => {
-    const fields: string[] = [];
-    const values: any[] = [];
-
-    if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
-    if (updates.color !== undefined) { fields.push('color = ?'); values.push(updates.color); }
-    if (updates.owner !== undefined) { fields.push('owner = ?'); values.push(updates.owner); }
-    if (updates.population !== undefined) { fields.push('population = ?'); values.push(updates.population); }
-    if (updates.gdp !== undefined) { fields.push('gdp = ?'); values.push(updates.gdp); }
-    if (updates.militaryPower !== undefined) { fields.push('military_power = ?'); values.push(updates.militaryPower); }
-    if (updates.objects !== undefined) { fields.push('objects = ?'); values.push(JSON.stringify(updates.objects)); }
-    if (updates.geojson !== undefined) { fields.push('geojson = ?'); values.push(updates.geojson); }
-
-    if (fields.length === 0) return;
-
-    values.push(regionId);
-    const stmt = db.prepare(`UPDATE world_regions SET ${fields.join(', ')} WHERE id = ?`);
-    stmt.run(...values);
   },
 
   update: (worldId: string, updates: Partial<{
@@ -206,13 +172,9 @@ export const worldRepository = {
           id: region.id,
           worldId: world.id,
           name: region.name,
-          svgPath: region.svgPath,
           geojson: region.geojson,
           color: region.color,
           owner: region.owner,
-          population: region.population,
-          gdp: region.gdp,
-          militaryPower: region.militaryPower,
           flag: region.flag,
           borders: region.borders,
           // Этап 4: маркеры на карте (столицы/города/батальоны)
@@ -235,9 +197,6 @@ export const worldRepository = {
    */
   updateRegionsBatch: (updates: {
     id: string;
-    population?: number;
-    gdp?: number;
-    militaryPower?: number;
     owner?: string;
     color?: string;
     name?: string;
@@ -247,9 +206,6 @@ export const worldRepository = {
 
     const stmt = db.prepare(`
       UPDATE world_regions SET
-        population   = COALESCE(?, population),
-        gdp          = COALESCE(?, gdp),
-        military_power = COALESCE(?, military_power),
         owner        = COALESCE(?, owner),
         color        = COALESCE(?, color),
         name         = COALESCE(?, name),
@@ -260,9 +216,6 @@ export const worldRepository = {
     const updateAll = db.transaction((items) => {
       for (const item of items) {
         stmt.run(
-          item.population ?? null,
-          item.gdp ?? null,
-          item.militaryPower ?? null,
           item.owner ?? null,
           item.color ?? null,
           item.name ?? null,

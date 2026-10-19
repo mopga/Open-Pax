@@ -2,7 +2,7 @@
   "_readme": [
     "Скопируй этот файл в llm.config.json (рядом с package.json backend-nest) и отредактируй под себя.",
     "Секция default задаёт провайдера/модель для ВСЕХ механик; mechanics.<имя> переопределяет отдельные механики.",
-    "Механики: jump (симуляция прыжка), converter, advisor, suggestions, narration, npc, chat, consolidation, balance.",
+    "Механики: jump (симуляция прыжка), converter, advisor, suggestions, consolidation.",
     "apiKey может быть строкой-ключом или \"env:ИМЯ_ПЕРЕМЕННОЙ\" — значение возьмётся из окружения.",
     "provider: \"openai-compatible\" покрывает Ollama, LM Studio, OpenRouter, vLLM и любой OpenAI-совместимый сервер.",
     "",
@@ -15,7 +15,7 @@
     "Пример 2 — OpenRouter:",
     "{ \"default\": { \"provider\": \"openai-compatible\", \"baseUrl\": \"https://openrouter.ai/api/v1\", \"apiKey\": \"env:OPENROUTER_API_KEY\", \"model\": \"anthropic/claude-sonnet-4\" } }",
     "",
-    "Пример 3 — смешанный: прыжки на сильной облачной модели, чаты/советник локально:",
+    "Пример 3 — смешанный: прыжки на сильной облачной модели, советник и подсказки локально:",
     "(см. секции ниже)"
   ],
 

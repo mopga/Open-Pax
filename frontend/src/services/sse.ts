@@ -6,15 +6,9 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 
-export interface SSEEvent {
-  type: string;
-  data: any;
-}
-
 interface UseSSEOptions {
   onTurnStart?: (data: any) => void;
   onTurnComplete?: (data: any) => void;
-  onGeneratingNarration?: (data: any) => void;
   onLLMProgress?: (data: { mechanic: string; chars: number }) => void;
   /** changedRegions — итоговое состояние регионов, затронутых событием */
   onJumpEvent?: (data: {
@@ -26,8 +20,6 @@ interface UseSSEOptions {
     changedPolities?: { id: string; name: string; color: string; flag?: string | null }[];
   }) => void;
   onActionVoided?: (data: { action: string; reason: string }) => void;
-  // Этап 3: входящее сообщение дипломатического чата
-  onChatMessage?: (data: { chatId: string; polityId: string; polityName: string; message: any }) => void;
   // Этап 3: проактивный комментарий советника после хода
   onAdvisorProactive?: (data: { content: string }) => void;
   onError?: (error: any) => void;
@@ -98,19 +90,6 @@ export function useSSE(gameId: string | null, options: UseSSEOptions) {
       }
     });
 
-    eventSource.addEventListener('generating_narration', (e) => {
-      console.log('[SSE] Generating narration:', e.data);
-      options.onGeneratingNarration?.({});
-    });
-
-    eventSource.addEventListener('processing_npcs_complete', (e) => {
-      console.log('[SSE] NPCs processed:', e.data);
-    });
-
-    eventSource.addEventListener('narration_generated', (e) => {
-      console.log('[SSE] Narration generated:', e.data);
-    });
-
     eventSource.addEventListener('llm_progress', (e) => {
       try {
         const data = JSON.parse(e.data);
@@ -142,16 +121,7 @@ export function useSSE(gameId: string | null, options: UseSSEOptions) {
       // Keep-alive, no action needed
     });
 
-    // Этап 3: дипломатические чаты + живой Советник
-    eventSource.addEventListener('chat_message', (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        options.onChatMessage?.(data);
-      } catch (err) {
-        console.error('[SSE] Failed to parse chat_message:', err);
-      }
-    });
-
+    // Этап 3: проактивный комментарий живого Советника
     eventSource.addEventListener('advisor_proactive', (e) => {
       try {
         const data = JSON.parse(e.data);

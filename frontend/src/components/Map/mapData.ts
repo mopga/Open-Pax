@@ -458,6 +458,38 @@ export function largestPartBounds(features: RegionFeature[]): [[number, number],
 }
 
 /**
+ * Габариты основной территории государства — самого крупного куска его
+ * общего контура (для СССР — вся материковая часть, а не крупнейший регион;
+ * заморские владения не растягивают кадр). null — у государства нет контура.
+ */
+export function polityFocusBounds(
+  edges: BorderEdge[],
+  ownerOf: (regionId: string) => string | null | undefined,
+  owner: string,
+): [[number, number], [number, number]] | null {
+  const rings = polityOutlines(edges, ownerOf).get(owner);
+  if (!rings || rings.length === 0) return null;
+  let best: Position[] | null = null;
+  let bestArea = 0;
+  for (const ring of rings) {
+    const area = ringArea(ring.map(project));
+    if (area > bestArea) {
+      bestArea = area;
+      best = ring;
+    }
+  }
+  if (!best) return null;
+  let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
+  for (const [lng, lat] of best) {
+    minLng = Math.min(minLng, lng);
+    maxLng = Math.max(maxLng, lng);
+    minLat = Math.min(minLat, lat);
+    maxLat = Math.max(maxLat, lat);
+  }
+  return [[minLng, Math.max(-85, minLat)], [maxLng, Math.min(85, maxLat)]];
+}
+
+/**
  * Приглушает цвет владельца для карты: цвета реестра — флаговые и кислотные,
  * а политическая карта в духе PaxHistoria читается в мягких тонах.
  * Насыщенность ≤ 0.55, светлота в коридоре 0.36–0.62 (тон сохраняется).

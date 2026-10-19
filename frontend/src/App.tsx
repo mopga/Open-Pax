@@ -5,35 +5,19 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { MapboxMapView } from './components/Map/MapboxMapView';
-import { MapView } from './components/Map/MapView';
-// ОТКЛЮЧЕНО: редактор карт (временно)
-// import { MapEditor, type EditorRegion, type EditorObject } from './components/Editor';
-// import { CreateWorld, type WorldConfig } from './components/WorldBuilder/CreateWorld';
 import { TemplateSelector } from './components/Game/TemplateSelector';
 import { CountrySelector } from './components/Game/CountrySelector';
-// ОТКЛЮЧЕНО: переговоры/дипломатические чаты (временно)
-// import { ChatsPanel } from './components/Game/ChatsPanel';
 import { AdvisorChat } from './components/Game/AdvisorChat';
 import { Landing } from './components/Game/Landing';
 import { SaveGameModal } from './components/Game/SaveGameModal';
 import { HudBar } from './components/Game/HudBar';
-import { GameLoader, WORLD_GEN_PHASES } from './components/Game/GameLoader';
+import { GameLoader } from './components/Game/GameLoader';
 import { Fab } from './components/Game/Fab';
-// ОТКЛЮЧЕНО: редактор карт (временно) — mapApi использовался только редактором/«Мои карты»
 import { gameApi, worldApi, savesApi, settingsApi, usageApi, type GameUsage, type LLMSettingsView } from './services/api';
 import { LLMSettingsModal } from './components/Settings/LLMSettingsModal';
-import type { Region, World, Game, Polity } from './types';
-// ОТКЛЮЧЕНО: переговоры — selectTotalUnread не нужен; редактор карт — тип LocalMap не нужен
+import type { Region, Polity } from './types';
 import { useGameStore, useUIStore, useActionsStore, useChatStore } from './stores';
 import { useSSE } from './services/sse';
-
-// ОТКЛЮЧЕНО: редактор карт (временно) — хелпер точек в SVG path использовался только
-// при сохранении карт из редактора (handleSaveMapLocal/handleSaveMap)
-// // Вспомогательная функция: точки в SVG path
-// const pointsToPath = (points: { x: number; y: number }[]): string => {
-//   if (points.length === 0) return '';
-//   return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-// };
 
 // Вспомогательная функция: форматирование диапазона дат
 const formatDateRange = (start: string, end: string): string => {
@@ -56,48 +40,37 @@ function App() {
   // Stores
   const {
     currentGame, currentWorld, selectedRegion, history, pendingActions, changedRegions,
-    generatedWorld, selectedCountry,
+    selectedCountry,
     setCurrentGame, setCurrentWorld, setSelectedRegion, setHistory, addHistory,
-    setPendingActions, addPendingAction, removePendingAction, clearPendingActions,
-    setChangedRegions, clearChangedRegions, setGeneratedWorld, setSelectedCountry,
-    reset: resetGame
+    addPendingAction, removePendingAction, clearPendingActions,
+    setChangedRegions, clearChangedRegions, setSelectedCountry,
   } = useGameStore();
 
   const {
-    currentView, loading, showJumpMenu, jumpDays, showSavesMenu,
+    currentView, loading, showJumpMenu,
     showPromptEditor, editingPrompt,
     showActions, actionsMaximized, actionsSize, isResizing,
-    // ОТКЛЮЧЕНО: редактор карт (временно) — selectedMapForWorld, savedMaps,
     selectedTemplate,
-    setCurrentView, setLoading, setShowJumpMenu, setJumpDays, setShowSavesMenu,
+    setCurrentView, setLoading, setShowJumpMenu,
     setShowPromptEditor, setEditingPrompt,
     setShowActions, setActionsMaximized, setActionsSize, setIsResizing,
-    // ОТКЛЮЧЕНО: редактор карт (временно) — setSelectedMapForWorld, setSavedMaps, addSavedMap,
     setSelectedTemplate,
-    resetUI
   } = useUIStore();
 
   const {
     suggestions, newActionText,
-    setSuggestions, setNewActionText, clearSuggestions,
-    reset: resetActions
+    setSuggestions, setNewActionText,
   } = useActionsStore();
 
-  // Этап 3: живой Советник (вкладки плавающей панели).
-  // ОТКЛЮЧЕНО: переговоры — дипломатические чаты и unread-бейдж (totalUnread) больше не используются
+  // Этап 3: живой Советник (вкладки плавающей панели)
   const panelTab = useChatStore(s => s.panelTab);
   const setPanelTab = useChatStore(s => s.setPanelTab);
-  // const totalUnread = useChatStore(selectTotalUnread); // ОТКЛЮЧЕНО: переговоры
 
   // Привязка chatStore к текущей игре (при смене игры лента советника сбрасывается)
   const currentGameId = currentGame?.id || null;
   useEffect(() => {
     const chatStore = useChatStore.getState();
     chatStore.setGameId(currentGameId);
-    // ОТКЛЮЧЕНО: переговоры — список дипломатических чатов с сервера больше не грузим
-    // if (currentGameId) {
-    //   chatStore.refreshChats();
-    // }
   }, [currentGameId]);
 
   // Модель ИИ: свой ключ / подписка / локальная модель + расход токенов
@@ -210,359 +183,6 @@ function App() {
       document.removeEventListener('mouseup', handleMouseUp);
     };
   }, [isResizing, setActionsSize, setIsResizing]);
-
-  // ОТКЛЮЧЕНО: редактор карт (временно) — загрузка сохраненных карт для «Мои карты»/редактора
-  // useEffect(() => {
-  //   const loadMaps = async () => {
-  //     const maps: LocalMap[] = [];
-  //
-  //     try {
-  //       const serverMaps = await mapApi.list();
-  //       for (const m of serverMaps) {
-  //         try {
-  //           const fullMap = await mapApi.get(m.id);
-  //           maps.push({
-  //             id: `server_${m.id}`,
-  //             name: fullMap.name,
-  //             regions: fullMap.regions.map(r => ({
-  //               id: r.id,
-  //               name: r.name,
-  //               color: r.color,
-  //               path: r.path,
-  //             })),
-  //           });
-  //         } catch (e) { /* skip */ }
-  //       }
-  //     } catch (e) { /* skip */ }
-  //
-  //     for (let i = 0; i < localStorage.length; i++) {
-  //       const key = localStorage.key(i);
-  //       if (key?.startsWith('map_')) {
-  //         try {
-  //           const data = JSON.parse(localStorage.getItem(key) || '{}');
-  //           if (!maps.find(m => m.name === data.name)) {
-  //             maps.push({ id: key, ...data });
-  //           }
-  //         } catch (e) { /* skip */ }
-  //       }
-  //     }
-  //
-  //     setSavedMaps(maps);
-  //   };
-  //
-  //   loadMaps();
-  // }, [setSavedMaps]);
-
-  // ОТКЛЮЧЕНО: редактор карт (временно) — сохранение карт, выбор карты и создание мира
-  // из кастомной карты (handleSaveMapLocal / handleSaveMap / handleSelectMap / handleCreateWorld)
-  /*
-  // Сохранить карту локально
-  const handleSaveMapLocal = (regions: EditorRegion[], mapName: string, objects?: EditorObject[]): LocalMap => {
-    const mapData: LocalMap = {
-      id: `map_${Date.now()}`,
-      name: mapName,
-      regions: regions.map(r => ({
-        id: r.id,
-        name: r.name,
-        color: r.color,
-        path: pointsToPath(r.points),
-      })),
-      objects: objects?.map(o => ({
-        id: o.id,
-        type: o.type,
-        name: o.name,
-        x: o.x,
-        y: o.y,
-        regionId: o.regionId,
-      })),
-    };
-    localStorage.setItem(mapData.id, JSON.stringify(mapData));
-    addSavedMap(mapData);
-    return mapData;
-  };
-
-  // Сохранить карту на сервере
-  const handleSaveMap = async (regions: EditorRegion[], mapName: string, objects?: EditorObject[]) => {
-    setLoading(true);
-    const mapRegions = regions.map(r => ({
-      id: r.id,
-      name: r.name,
-      color: r.color,
-      path: pointsToPath(r.points),
-    }));
-
-    let serverMapId = null;
-    try {
-      const mapData = {
-        name: mapName,
-        width: 2000,
-        height: 1500,
-        regions: mapRegions,
-        objects: objects?.map(o => ({
-          id: o.id,
-          type: o.type,
-          name: o.name,
-          x: o.x,
-          y: o.y,
-          regionId: o.regionId,
-        })) || [],
-      };
-      const result = await mapApi.create(mapData);
-      serverMapId = result.id;
-      alert(`Карта "${mapName}" сохранена на сервере!`);
-    } catch (e) {
-      console.warn('Failed to save map to server:', e);
-    }
-
-    const localMap = handleSaveMapLocal(regions, mapName, objects);
-    if (serverMapId) {
-      const updatedMap = { ...localMap, id: `server_${serverMapId}` };
-      localStorage.removeItem(localMap.id);
-      localStorage.setItem(updatedMap.id, JSON.stringify(updatedMap));
-      setSavedMaps(prev => prev.filter(m => m.id !== localMap.id).concat(updatedMap));
-    }
-
-    setCurrentView('menu');
-    setLoading(false);
-  };
-
-  // Выбрать карту для создания мира
-  const handleSelectMap = (map: LocalMap) => {
-    setSelectedMapForWorld(map);
-    setCurrentView('create-world');
-  };
-
-  // Создать мир из конфигурации
-  const handleCreateWorld = async (config: WorldConfig) => {
-    setLoading(true);
-
-    if (!selectedMapForWorld?.id.startsWith('server_')) {
-      alert('Сначала сохраните карту на сервере (кнопка "Сохранить" в редакторе карт)!');
-      setLoading(false);
-      return;
-    }
-
-    const mapId = selectedMapForWorld.id.replace('server_', '');
-
-    const initialOwners = config.regions
-      .filter(r => r.owner !== 'neutral')
-      .map(r => ({ id: r.id, owner: r.owner }));
-
-    try {
-      const result = await worldApi.createFromMap({
-        mapId,
-        name: config.name,
-        description: config.description,
-        startDate: config.startDate,
-        basePrompt: config.basePrompt,
-        historicalAccuracy: config.historicalAccuracy / 100,
-        initialOwners,
-      });
-
-      const world = await worldApi.get(result.world_id);
-      const mapObjects = selectedMapForWorld?.objects || [];
-
-      const regions: Region[] = Object.values(world.regions || {}).map((r: any) => {
-        const regionObjects = mapObjects
-          .filter((o: any) => o.regionId === r.id)
-          .map((o: any) => ({
-            id: o.id,
-            type: o.type,
-            name: o.name,
-            x: o.x,
-            y: o.y,
-            level: 1,
-            metadata: {},
-          }));
-
-        return {
-          id: r.id,
-          name: r.name,
-          svgPath: r.svgPath,
-          color: r.color,
-          owner: r.owner || 'neutral',
-          population: r.population || 1000000,
-          gdp: r.gdp || 100,
-          militaryPower: r.militaryPower || 100,
-          objects: regionObjects,
-          borders: r.borders || [],
-          status: r.status || 'active',
-          metadata: {},
-        };
-      });
-
-      setCurrentWorld({
-        ...world,
-        regions: regions.reduce((acc: any, r) => { acc[r.id] = r; return acc; }, {}),
-      } as World);
-
-      const playerRegionInWorld = regions.find(r => r.owner === 'player');
-      const initialPlayerRegionId = playerRegionInWorld?.id || regions[0]?.id || null;
-
-      if (result.world_id && initialPlayerRegionId) {
-        try {
-          const gameResponse = await gameApi.create({
-            world_id: result.world_id,
-            player_name: 'Player',
-            player_region_id: initialPlayerRegionId,
-            difficulty,
-          });
-          const game = await gameApi.get(gameResponse.game_id);
-          setCurrentGame(game);
-
-          const playerRegionId = game.players[0]?.regionId || initialPlayerRegionId;
-          setSelectedRegion(playerRegionId);
-        } catch (e) {
-          console.error('[DEBUG] Failed to create game via API:', e);
-          setCurrentGame({
-            id: 'local_' + Date.now(),
-            world: { ...world, regions: regions.reduce((acc: any, r) => { acc[r.id] = r; return acc; }, {}) } as World,
-            players: [{ id: 'player_1', name: 'Player', regionId: initialPlayerRegionId, color: '#ff0000' }],
-            currentTurn: 1,
-            maxTurns: 100,
-            status: 'playing' as any,
-          } as Game);
-          setSelectedRegion(initialPlayerRegionId);
-        }
-      }
-
-      setCurrentView('game');
-    } catch (e) {
-      console.error('[DEBUG] Failed to create world via API:', e);
-      const mapObjects = selectedMapForWorld?.objects || [];
-      const regions: Region[] = selectedMapForWorld?.regions.map(r => {
-        const regionObjects = mapObjects
-          .filter((o: any) => o.regionId === r.id)
-          .map((o: any) => ({
-            id: o.id,
-            type: o.type,
-            name: o.name,
-            x: o.x,
-            y: o.y,
-            level: 1,
-            metadata: {},
-          }));
-
-        return {
-          id: r.id,
-          name: r.name,
-          svgPath: r.path,
-          color: r.color,
-          owner: 'neutral',
-          population: 1000000,
-          gdp: 100,
-          militaryPower: 100,
-          objects: regionObjects,
-          borders: [],
-          status: 'active' as any,
-          metadata: {},
-        };
-      }) || [];
-
-      const regionsWithOwner = regions.map(r => {
-        const ownerConfig = config.regions.find(cr => cr.id === r.id);
-        return {
-          ...r,
-          owner: ownerConfig?.owner || 'neutral',
-        };
-      });
-
-      setCurrentWorld({
-        id: selectedMapForWorld?.id || 'local',
-        name: selectedMapForWorld?.name || 'Local World',
-        description: 'Локальная карта',
-        startDate: '1951-01-01',
-        basePrompt: 'Альтернативная история',
-        historicalAccuracy: 0.8,
-        regions: regionsWithOwner.reduce((acc: any, r) => { acc[r.id] = r; return acc; }, {}),
-        blocs: {},
-      });
-
-      const playerConfigRegion = config.regions.find(cr => cr.owner === 'player');
-      const playerRegionId = playerConfigRegion?.id || regions[0]?.id || null;
-      setSelectedRegion(playerRegionId);
-
-      if (playerRegionId) {
-        setCurrentGame({
-          id: 'local_' + Date.now(),
-          world: { ...currentWorld, regions: regionsWithOwner.reduce((acc: any, r) => { acc[r.id] = r; return acc; }, {}) },
-          players: [{ id: 'player_1', name: 'Player', regionId: playerRegionId, color: '#ff0000' }],
-          currentTurn: 1,
-          maxTurns: 100,
-          status: 'playing' as any,
-        } as Game);
-      }
-
-      setCurrentView('game');
-    }
-    setLoading(false);
-  };
-  */
-
-  // Отправить действия (несколько)
-  const handleSubmitActions = async (actions: string[]) => {
-    if (!currentGame || actions.length === 0 || !selectedRegion) {
-      return;
-    }
-
-    setLoading(true);
-
-    const turn = currentGame.currentTurn;
-    const actionsText = actions.join(' | ');
-
-    if (currentGame.id.startsWith('local_')) {
-      addHistory({
-        turn,
-        action: actionsText,
-        result: `Мир отреагировал на ${actions.length} действий за ${jumpDays} дней...`,
-        date: `${jumpDays} дней`,
-      });
-      setCurrentGame({ ...currentGame, currentTurn: turn + 1 });
-      setLoading(false);
-      return;
-    }
-
-    try {
-      const result = await gameApi.submitAction({
-        game_id: currentGame.id,
-        player_id: currentGame.players[0].id,
-        text: actionsText,
-        jump_days: jumpDays,
-      } as any);
-
-      addHistory({
-        turn,
-        action: actionsText,
-        result: result.narration,
-        events: result.events || [],
-        date: `${jumpDays} дней`,
-      });
-
-      if (result.objects && currentWorld && selectedRegion) {
-        const updatedRegions = { ...currentWorld.regions };
-        const region = updatedRegions[selectedRegion];
-        if (region) {
-          updatedRegions[selectedRegion] = {
-            ...region,
-            objects: result.objects,
-          };
-          setCurrentWorld({ ...currentWorld, regions: updatedRegions });
-        }
-      }
-
-      await syncGameFromServer(currentGame.id);
-    } catch (e) {
-      console.error('Failed to submit action:', e);
-      addHistory({
-        turn,
-        action: actionsText,
-        result: 'Мир отреагировал на ваши действия...',
-        date: `${jumpDays} дней`,
-      });
-    }
-
-    setLoading(false);
-  };
 
   // Time-skip handler (Phase 4)
   const handleTimeSkip = async (days: number) => {
@@ -679,8 +299,6 @@ function App() {
         } catch (e) { console.error(e); }
       })();
     }
-    // ОТКЛЮЧЕНО: переговоры — актуализация чатов при открытии панели больше не нужна
-    // useChatStore.getState().refreshChats();
   };
 
   // Этап 6: возобновление сохранённой игры с лендинга
@@ -715,10 +333,7 @@ function App() {
       onNewGame={() => requireModel(() => setCurrentView('select-template'))}
       llmView={llmView}
       onOpenSettings={() => setSettingsModal({ onboarding: false })}
-      // ОТКЛЮЧЕНО: редактор карт (временно) — onOpenEditor={() => setCurrentView('editor')}
-      // ОТКЛЮЧЕНО: редактор карт (временно) — onSelectMap={handleSelectMap}
       onResumeSave={handleResumeSave}
-      // ОТКЛЮЧЕНО: редактор карт (временно) — savedMaps={savedMaps}
     />
   );
 
@@ -744,19 +359,8 @@ function App() {
   // Этап 2: сложность новой игры
   const [difficulty, setDifficulty] = useState<string>('normal');
 
-  // Этап 6: модалка сохранения (замена prompt()) и фазы лоадера генерации мира
+  // Этап 6: модалка сохранения (замена prompt())
   const [showSaveModal, setShowSaveModal] = useState(false);
-  const [genPhase, setGenPhase] = useState(0);
-
-  // Ротация этапов лоадера, пока идёт генерация мира на экране выбора страны
-  useEffect(() => {
-    if (!loading || currentView !== 'select-country') return;
-    setGenPhase(0);
-    const t = setInterval(() => {
-      setGenPhase(p => Math.min(p + 1, WORLD_GEN_PHASES.length - 1));
-    }, 12000);
-    return () => clearInterval(t);
-  }, [loading, currentView]);
 
   useSSE(currentGame?.id || null, {
     onTurnStart: (data) => {
@@ -764,10 +368,6 @@ function App() {
       setIsProcessingTurn(true);
       setTurnProgress('Обработка хода...');
       setLiveTimelineEvents([]);
-    },
-    onGeneratingNarration: () => {
-      console.log('[SSE] Generating narration...');
-      setTurnProgress('Генерация нарратива...');
     },
     onLLMProgress: (data) => {
       setTurnProgress(`Модель генерирует… ${data.chars} зн.`);
@@ -791,14 +391,6 @@ function App() {
         kind: 'reaction',
       }]);
     },
-    // ОТКЛЮЧЕНО: переговоры — входящие сообщения дипломатических чатов не обрабатываем
-    // // Этап 3: входящее сообщение от политии — бейдж unread + обновление списка чатов
-    // onChatMessage: (data) => {
-    //   const chatStore = useChatStore.getState();
-    //   chatStore.handleIncomingChatMessage(data);
-    //   // Синхронизируем список с сервером (новые чаты, актуальные unread)
-    //   chatStore.refreshChats();
-    // },
     // Этап 3: проактивный комментарий советника после хода — в ленту с пометкой
     onAdvisorProactive: (data) => {
       if (data?.content) {
@@ -900,43 +492,14 @@ function App() {
           )}
           {/* Карта слева */}
           <div className="game-map">
-            {regions.some(r => r.geojson) ? (
-              <MapboxMapView
-                regions={regions}
-                selectedRegionId={selectedRegion || undefined}
-                onRegionClick={handleCountryChange}
-                changedRegionIds={changedRegions}
-                showFlags={!!selectedCountry}
-                playerCountryCode={selectedCountry || undefined}
-                polities={currentWorld?.polities}
-              />
-            ) : regions.some(r => r.svgPath) ? (
-              <MapView
-                regions={regions}
-                selectedRegionId={selectedRegion || undefined}
-                onRegionClick={handleCountryChange}
-                changedRegionIds={changedRegions}
-              />
-            ) : (
-              <div style={{
-                width: '100%',
-                height: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: '#0a0a0f',
-                color: '#667eea',
-                padding: '40px',
-                textAlign: 'center',
-              }}>
-                <div style={{ fontSize: '48px', marginBottom: '16px' }}>🗺️</div>
-                <h3>Карта загружается…</h3>
-                <p style={{ color: '#888', maxWidth: '300px' }}>
-                  У регионов мира пока нет геометрии.
-                </p>
-              </div>
-            )}
+            <MapboxMapView
+              regions={regions}
+              selectedRegionId={selectedRegion || undefined}
+              onRegionClick={handleCountryChange}
+              changedRegionIds={changedRegions}
+              playerCountryCode={selectedCountry || undefined}
+              polities={currentWorld?.polities}
+            />
           </div>
 
           {/* Панель справа */}
@@ -1032,21 +595,10 @@ function App() {
               </div>
             )}
 
-            {/* Этап 6: FAB-группа (действия). ОТКЛЮЧЕНО: переговоры — FAB «💬 Дипломатия» с бейджем убран */}
+            {/* Этап 6: FAB-группа (действия) */}
             {!showActions && (
               <Fab items={[
                 { icon: '⚡', title: 'Действия', onClick: openActionsPanel },
-                /* ОТКЛЮЧЕНО: переговоры (временно)
-                {
-                  icon: '💬',
-                  title: 'Дипломатия',
-                  badge: totalUnread > 0 ? totalUnread : undefined,
-                  onClick: () => {
-                    setPanelTab('chats');
-                    openActionsPanel();
-                  },
-                },
-                */
               ]} />
             )}
 
@@ -1084,7 +636,7 @@ function App() {
                   </div>
                 </div>
 
-                {/* Этап 3: вкладки панели — Предложения | Советник (ОТКЛЮЧЕНО: переговоры — вкладка «Дипломатия») */}
+                {/* Этап 3: вкладки панели — Предложения | Советник */}
                 <div className="advisor-tabs-row">
                   <button
                     className={`advisor-tab ${panelTab === 'suggestions' ? 'active' : ''}`}
@@ -1098,15 +650,6 @@ function App() {
                   >
                     Советник
                   </button>
-                  {/* ОТКЛЮЧЕНО: переговоры (временно)
-                  <button
-                    className={`advisor-tab ${panelTab === 'chats' ? 'active' : ''}`}
-                    onClick={() => setPanelTab('chats')}
-                  >
-                    Дипломатия
-                    {totalUnread > 0 && <span className="tab-badge">{totalUnread}</span>}
-                  </button>
-                  */}
                 </div>
 
                 {/* Actions Content */}
@@ -1208,16 +751,6 @@ function App() {
                 {panelTab === 'advisor' && currentGame && (
                   <AdvisorChat gameId={currentGame.id} />
                 )}
-
-                {/* ОТКЛЮЧЕНО: переговоры (временно) — вкладка дипломатических чатов
-                {panelTab === 'chats' && currentGame && (
-                  <ChatsPanel
-                    gameId={currentGame.id}
-                    regions={regions}
-                    playerPolityId={playerPolityId}
-                  />
-                )}
-                */}
 
                 {/* Submit Button */}
                 {panelTab === 'suggestions' && (
@@ -1363,48 +896,11 @@ function App() {
     );
   };
 
-  // ОТКЛЮЧЕНО: редактор карт (временно) — рендеры редактора и создания мира из карты
-  /*
-  // Рендер редактора
-  const renderEditor = () => (
-    <MapEditor
-      onSave={handleSaveMap}
-      onCancel={() => setCurrentView('menu')}
-    />
-  );
-
-  const renderCreateWorld = () => {
-    if (!selectedMapForWorld) {
-      return (
-        <div className="error-container">
-          <p>Карта не выбрана</p>
-          <button onClick={() => setCurrentView('menu')}>Назад в меню</button>
-        </div>
-      );
-    }
-
-    return (
-      <CreateWorld
-        mapId={selectedMapForWorld.id.startsWith('server_')
-          ? selectedMapForWorld.id.replace('server_', '')
-          : selectedMapForWorld.id.replace('map_', '')}
-        mapName={selectedMapForWorld.name}
-        regions={selectedMapForWorld.regions}
-        onSave={handleCreateWorld}
-        onCancel={() => {
-          setSelectedMapForWorld(null);
-          setCurrentView('menu');
-        }}
-      />
-    );
-  };
-  */
-
   return (
     <div className="app">
       {/* Этап 6: полноэкранный лоадер генерации мира с этапами */}
       {loading && currentView === 'select-country' && (
-        <GameLoader title="Создание мира…" phase={WORLD_GEN_PHASES[genPhase]} />
+        <GameLoader title="Создание мира…" phase="Раскладываем государства по карте…" />
       )}
       {/* Этап 6: лоадер при возобновлении сохранённой игры */}
       {loading && currentView === 'menu' && (
@@ -1446,7 +942,6 @@ function App() {
                 selectedTemplate.id,
                 countryCode
               );
-              setGeneratedWorld(worldData);
 
               // Use correct region ID (prefixed with worldId)
               const actualRegionId = worldData.regionIds?.[countryCode] || countryCode;
@@ -1487,10 +982,6 @@ function App() {
           }}
         />
       )}
-      {/* ОТКЛЮЧЕНО: редактор карт (временно) — маршруты 'editor' и 'create-world'
-      {currentView === 'editor' && renderEditor()}
-      {currentView === 'create-world' && renderCreateWorld()}
-      */}
     </div>
   );
 }

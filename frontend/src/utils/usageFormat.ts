@@ -17,14 +17,11 @@ export function formatUsd(n: number): string {
   return `$${n.toFixed(2)}`;
 }
 
+/** Подписи механик; неизвестная механика показывается по сырому ключу */
 export const MECHANIC_LABELS: Record<string, string> = {
   jump: 'Симуляция мира',
   converter: 'Обработка приказов',
   suggestions: 'Идеи действий',
   advisor: 'Советник',
   consolidation: 'Сжатие истории',
-  balance: 'Генерация мира',
-  narration: 'Нарратив',
-  npc: 'NPC',
-  chat: 'Переговоры',
 };

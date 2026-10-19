@@ -2,10 +2,10 @@
  * Дым-тест этапа 0 (интеграционный, с заглушкой LLM):
  *   создание мира → создание игры → действие из очереди → mapChanges ПО ИМЕНАМ
  *   применяются к карте → дата/ход персистятся → «рестарт сервера» не сбрасывает
- *   дату → матрица дипломатии работает (bulkUpsert).
+ *   дату.
  *
  * Покрывает регрессии багов №1 (лор в промпте), №2 (дата при рестарте),
- * №3 (UNIQUE-индекс отношений), №4 (polityId), №5 (mapChanges по именам).
+ * №4 (polityId), №5 (mapChanges по именам).
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import os from 'os';
@@ -20,7 +20,6 @@ let db: any;
 let initDatabase: any;
 let worldRepository: any;
 let gameRepository: any;
-let relationshipRepository: any;
 let initSessionRegistry: any;
 let getSessionRegistry: any;
 
@@ -88,7 +87,6 @@ beforeAll(async () => {
   const repos = await import('../src/repositories');
   worldRepository = repos.worldRepository;
   gameRepository = repos.gameRepository;
-  relationshipRepository = repos.relationshipRepository;
 
   const registryModule = await import('../src/session-registry');
   initSessionRegistry = registryModule.initSessionRegistry;
@@ -105,16 +103,11 @@ beforeAll(async () => {
       historicalAccuracy: 0.8,
     },
     [
-      { id: `${WORLD_ID}_DEU`, name: 'ФРГ', color: '#FF0000', owner: 'DEU', population: 5000000, gdp: 200, militaryPower: 300, flag: 'DEU' },
-      { id: `${WORLD_ID}_POL`, name: 'Польша', color: '#00FF00', owner: 'POL', population: 3000000, gdp: 100, militaryPower: 100, flag: 'POL' },
-      { id: `${WORLD_ID}_CZE`, name: 'Чехословакия', color: '#0000FF', owner: 'CZE', population: 2000000, gdp: 90, militaryPower: 80, flag: 'CZE' },
+      { id: `${WORLD_ID}_DEU`, name: 'ФРГ', color: '#FF0000', owner: 'DEU', flag: 'DEU' },
+      { id: `${WORLD_ID}_POL`, name: 'Польша', color: '#00FF00', owner: 'POL', flag: 'POL' },
+      { id: `${WORLD_ID}_CZE`, name: 'Чехословакия', color: '#0000FF', owner: 'CZE', flag: 'CZE' },
     ]
   );
-
-  relationshipRepository.initForWorld(WORLD_ID, [
-    { from: 'DEU', to: 'CZE', type: 'ally' },
-    { from: 'DEU', to: 'POL', type: 'hostile' },
-  ]);
 });
 
 afterAll(() => {
@@ -134,7 +127,7 @@ describe('Этап 0: сквозной дым-тест', () => {
   let gameId: string;
   let session: any;
 
-  it('создаёт игру: polityId игрока = код страны, матрица по кодам (баг №4)', async () => {
+  it('создаёт игру: polityId игрока = код страны (баг №4)', async () => {
     initSessionRegistry(stubProvider);
     const created = getSessionRegistry().createSession(WORLD_ID, 'Player', `${WORLD_ID}_DEU`);
     gameId = created.gameId;
@@ -142,24 +135,6 @@ describe('Этап 0: сквозной дым-тест', () => {
     await new Promise(r => setImmediate(r));
 
     expect(session.getPlayer().polityId).toBe('DEU');
-    const rels = session.getRelationships();
-    expect(rels['DEU']?.['CZE']).toBe('ally');
-    expect(rels['DEU']?.['POL']).toBe('hostile');
-  });
-
-  it('bulkUpsert отношений не падает и обновляет, а не дублирует (баг №3)', () => {
-    relationshipRepository.bulkUpsert(WORLD_ID, [
-      { from: 'DEU', to: 'CZE', newRelationship: 'hostile', reason: 'test' },
-    ]);
-    relationshipRepository.bulkUpsert(WORLD_ID, [
-      { from: 'DEU', to: 'CZE', newRelationship: 'ally', reason: 'test-again' },
-    ]);
-
-    const rows = db
-      .prepare('SELECT * FROM country_relationships WHERE world_id = ? AND from_region_id = ? AND to_region_id = ?')
-      .all(WORLD_ID, 'DEU', 'CZE');
-    expect(rows).toHaveLength(1);
-    expect(rows[0].relationship).toBe('ally');
   });
 
   it('ход из очереди: лор в промпте (№1), mapChanges по именам применяются (№5)', async () => {

@@ -6,7 +6,7 @@
  * Проблема: цвета флагов из реестра data/countries.json — «сырые»
  * (#FF0000, #000000). Чёрные регионы невидимы на тёмном фоне, а множество
  * красных оттенков сливаются в «красную карту». Решения:
- *  - кураторская палитра пресета (country_colors в preset.json) — приоритет;
+ *  - цвет государства из пресета (polities.<код>.color) — приоритет;
  *  - анти-тёмный post-process для остальных цветов: если относительная
  *    яркость ниже порога — микс с белым (~45%), регион становится читаемым.
  */
@@ -80,10 +80,6 @@ export function ensureVisibleOnDark(hex: string, threshold: number = DARK_LUMINA
 }
 
 /**
- * Цвет региона при генерации мира:
- *  1. если у пресета есть кураторский цвет для кода страны (country_colors) — он;
- *  2. иначе — прежний цвет (реестр/пресет countries[]) + анти-тёмный post-process.
- */
 /**
  * Детерминированный цвет страны по коду — для стран вне реестра и палитры
  * пресета. Приглушённые насыщенные тона в духе политических карт; один и тот
@@ -107,6 +103,10 @@ export function colorFromCode(code: string): string {
   return toHex({ r: Math.round((r + m) * 255), g: Math.round((g + m) * 255), b: Math.round((b + m) * 255) });
 }
 
+/**
+ * Цвет государства при сборке мира: цвет из пресета (presetColors) как есть,
+ * иначе fallback (реестр countries.json) + анти-тёмный post-process.
+ */
 export function resolveRegionColor(
   code: string,
   fallback: string | undefined,

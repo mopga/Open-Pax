@@ -9,18 +9,11 @@ import { shortId } from './utils/short-id';
 import { LLMRouter } from './llm';
 import { GameController } from './agents';
 import { PromptEngine } from './prompt-builder';
-import { worldRepository, gameRepository, relationshipRepository } from './repositories';
-// ОТКЛЮЧЕНО: переговоры — chatRepository и типы чатов больше не используются
-// (фича дипломатических чатов выключена решением владельца; таблицы chats/chat_messages в БД сохраняются).
-// import { chatRepository } from './repositories';
-// import type { ChatRecord, ChatSummary, ChatMessageRecord } from './repositories';
+import { worldRepository, gameRepository } from './repositories';
 import db from './database';
-import { RelationshipMatrix } from './core/RelationshipMatrix';
 import { RegionResolver, PolityResolver, politiesFromRegions } from './utils/name-resolver';
 import { colorFromCode } from './utils/color';
 import { Difficulty, normalizeDifficulty } from './prompts/difficulty';
-// ОТКЛЮЧЕНО: переговоры — промпт дипломатических чатов не собирается
-// import { buildChatPrompt, parseChatResponse } from './prompts/chat';
 import type { MapChange, SimulationEvent } from './prompts/types';
 
 export interface RegionState {
@@ -28,11 +21,7 @@ export interface RegionState {
   name: string;
   color: string;
   owner: string;
-  population: number;
-  gdp: number;
-  militaryPower: number;
   objects: any[];
-  svgPath?: string;
   borders: string[];
   status: 'active' | 'occupied' | 'destroyed' | 'independent';
 }
@@ -43,6 +32,8 @@ export interface PolityState {
   name: string;
   color: string;
   flag?: string | null;
+  /** Описание государства из пресета — видит ИИ */
+  description?: string;
 }
 
 /** Изменение региона, рассылаемое в SSE jump_event */
@@ -108,9 +99,6 @@ export interface TimeSkipExecution {
 export interface WorldChanges {
   regionOwners?: Record<string, string>;
   regionColors?: Record<string, string>;
-  regionGDP?: Record<string, number>;
-  regionMilitary?: Record<string, number>;
-  regionPopulation?: Record<string, number>;
 }
 
 export interface SaveData {
@@ -120,6 +108,7 @@ export interface SaveData {
   regions: [string, RegionState][]; // [regionId, state] pairs
   /** Реестр государств; в старых сейвах отсутствует — выводится из регионов */
   polities?: [string, PolityState][];
+  /** Матрица отношений из старых сейвов — больше не читается */
   relationships?: Record<string, Record<string, string>>;
   /** Этап 2: история ходов — иначе rewind/лоад теряет контекст для LLM */
   actions?: ActionRecord[];
@@ -217,9 +206,6 @@ export class GameSession {
     }
   }
 
-  // Diplomatic relationships
-  private relationships: RelationshipMatrix = new RelationshipMatrix();
-
   // SSE broadcaster for real-time updates
   private sseBroadcaster: ((type: string, data: any) => void) | null = null;
 
@@ -284,161 +270,8 @@ export class GameSession {
       playerPolityId: this.playerPolityId,
       actions: this.actions,
       results: this.results,
-      // ОТКЛЮЧЕНО: переговоры — транскрипты чатов в промпт симуляции не передаём
-      // (prompt-builder подставляет chatTranscripts ?? '')
-      // chatTranscripts: this.buildChatTranscripts(),
     };
   }
-
-  // =========================================================================
-  // Этап 3: дипломатические чаты — ОТКЛЮЧЕНО: переговоры
-  // =========================================================================
-  // Фича дипломатических чатов выключена решением владельца: симуляция не
-  // создаёт чаты, LLM-вызовы механики 'chat' не выполняются, роуты не
-  // смонтированы (см. routes/index.ts). Код сохранён закомментированным;
-  // таблицы chats/chat_messages и chat.repository не тронуты — данные и
-  // возможность быстрого возврата фичи сохраняются.
-  //
-  // /**
-  //  * Список чатов игры (с последним сообщением и счётчиком непрочитанных).
-  //  */
-  // getChats(): ChatSummary[] {
-  //   return chatRepository.getChatsByGame(this.id);
-  // }
-  //
-  // /**
-  //  * Сообщения чата (404, если чат чужой или не существует).
-  //  */
-  // getChatMessages(chatId: string): ChatMessageRecord[] {
-  //   const chat = chatRepository.getChatById(chatId);
-  //   if (!chat || chat.gameId !== this.id) {
-  //     throw new Error(`Chat not found: ${chatId}`);
-  //   }
-  //   return chatRepository.getMessages(chatId);
-  // }
-  //
-  // /** Пометить сообщения политии в чате прочитанными. */
-  // markChatRead(chatId: string): void {
-  //   const chat = chatRepository.getChatById(chatId);
-  //   if (!chat || chat.gameId !== this.id) {
-  //     throw new Error(`Chat not found: ${chatId}`);
-  //   }
-  //   chatRepository.markRead(chatId);
-  // }
-  //
-  // /**
-  //  * Найти или создать чат с политией по её ИМЕНИ (так её называет LLM/игрок).
-  //  * Полития резолвится через PolityResolver по текущим регионам; чат с самим
-  //  * собой, с 'neutral' и с несуществующей политией — 404-ошибка.
-  //  */
-  // ensureChat(polityName: string): ChatRecord {
-  //   const resolvers = this.buildResolvers();
-  //   const resolution = resolvers.polities.resolve(polityName);
-  //
-  //   if (!resolution || resolution.isNew
-  //       || resolution.polityId === 'neutral'
-  //       || resolution.polityId === this.playerPolityId) {
-  //     throw new Error(`Polity not found: ${polityName}`);
-  //   }
-  //
-  //   const polityId = resolution.polityId;
-  //   const polityRegions = Array.from(this.regions.values()).filter(r => r.owner === polityId);
-  //   const displayName = polityRegions[0]?.name || polityId;
-  //   const color = polityRegions[0]?.color || '#888888';
-  //
-  //   const existing = chatRepository.getChatByGameAndPolity(this.id, polityId);
-  //   if (existing) return existing;
-  //
-  //   return chatRepository.createChat({
-  //     id: shortId(),
-  //     gameId: this.id,
-  //     polityId,
-  //     polityName: displayName,
-  //     polityColor: color,
-  //   });
-  // }
-  //
-  // /**
-  //  * Отправить сообщение в чат: сохраняет сообщение игрока, спрашивает LLM
-  //  * (механика 'chat'), сохраняет ответ политии и рассылает его по SSE.
-  //  */
-  // async sendChatMessage(chatId: string, content: string): Promise<{ message: ChatMessageRecord; reply: ChatMessageRecord }> {
-  //   const chat = chatRepository.getChatById(chatId);
-  //   if (!chat || chat.gameId !== this.id) {
-  //     throw new Error(`Chat not found: ${chatId}`);
-  //   }
-  //
-  //   // История ДО нового сообщения игрока
-  //   const history = chatRepository.getMessages(chatId)
-  //     .map(m => ({ role: m.role, content: m.content }));
-  //
-  //   const message = chatRepository.addMessage(chatId, 'player', content, this.currentTurn);
-  //
-  //   const prompt = buildChatPrompt({
-  //     polityName: chat.polityName,
-  //     worldContext: this.worldBasePrompt || 'Альтернативная история',
-  //     mapContext: this.buildChatMapContext(),
-  //     date: this.currentDate,
-  //     relationship: this.relationships.get(chat.polityId, this.playerPolityId),
-  //     history,
-  //     playerMessage: content,
-  //   });
-  //
-  //   const response = await this.llm.generate(
-  //     'chat',
-  //     `Ты — лидер и МИД политии ${chat.polityName} в стратегической игре. Отвечай на русском, от первого лица державы, не выходи из роли.`,
-  //     prompt,
-  //     { temperature: 0.7 }
-  //   );
-  //
-  //   const reply = chatRepository.addMessage(chatId, 'polity', parseChatResponse(response.content), this.currentTurn);
-  //
-  //   this.broadcast('chat_message', {
-  //     chatId: chat.id,
-  //     polityId: chat.polityId,
-  //     polityName: chat.polityName,
-  //     message: reply,
-  //   });
-  //
-  //   return { message, reply };
-  // }
-  //
-  // /**
-  //  * Компактное описание карты для чат-промпта: «Полития: регион1, регион2».
-  //  */
-  // private buildChatMapContext(): string {
-  //   const byOwner = new Map<string, RegionState[]>();
-  //   for (const region of this.regions.values()) {
-  //     if (region.owner === 'neutral') continue;
-  //     if (!byOwner.has(region.owner)) byOwner.set(region.owner, []);
-  //     byOwner.get(region.owner)!.push(region);
-  //   }
-  //   const lines: string[] = [];
-  //   for (const regions of byOwner.values()) {
-  //     lines.push(`${regions[0].name}: ${regions.map(r => r.name).join(', ')}`);
-  //   }
-  //   return lines.join('\n');
-  // }
-  //
-  // /**
-  //  * Предформатированные транскрипты последних чатов для промпта симуляции:
-  //  * до 3 самых свежих чатов, до 15 последних сообщений каждого.
-  //  */
-  // private buildChatTranscripts(): string {
-  //   const chats = chatRepository.getChatsByGame(this.id).slice(0, 3);
-  //   const parts: string[] = [];
-  //
-  //   for (const chat of chats) {
-  //     const messages = chatRepository.getMessages(chat.id).slice(-15);
-  //     if (messages.length === 0) continue;
-  //     const lines = messages.map(m =>
-  //       m.role === 'player' ? `Игрок: ${m.content}` : `${chat.polityName}: ${m.content}`
-  //     );
-  //     parts.push(`[Переговоры с ${chat.polityName}]\n${lines.join('\n')}`);
-  //   }
-  //
-  //   return parts.join('\n\n');
-  // }
 
   /**
    * Initialize session from existing world data
@@ -462,11 +295,7 @@ export class GameSession {
         name: region.name,
         color: region.color,
         owner: region.owner,
-        population: region.population,
-        gdp: region.gdp,
-        militaryPower: region.militaryPower,
         objects: region.objects || [],
-        svgPath: region.svgPath,
         borders: region.borders,
         status: (region.status || 'active') as 'active' | 'occupied' | 'destroyed' | 'independent',
       });
@@ -490,12 +319,6 @@ export class GameSession {
     // Initialize session-specific game controller
     this.gameController.initPromptEngine(this.buildGameData());
     this.gameController.setupWorld(world.base_prompt);
-
-    // Load diplomatic relationships from DB
-    const rels = relationshipRepository.getForWorld(this.worldId);
-    for (const rel of rels) {
-      this.relationships.set(rel.from, rel.to, rel.type);
-    }
 
     this.currentDate = world.start_date || '1951-01-01';
 
@@ -554,11 +377,7 @@ export class GameSession {
           name: region.name,
           color: region.color,
           owner: region.owner,
-          population: region.population,
-          gdp: region.gdp,
-          militaryPower: region.militaryPower,
           objects: region.objects || [],
-          svgPath: region.svgPath,
           borders: region.borders,
           status: (region.status || 'active') as 'active' | 'occupied' | 'destroyed' | 'independent',
         });
@@ -571,12 +390,6 @@ export class GameSession {
     this.gameController.initPromptEngine(this.buildGameData());
 
     this.gameController.setupWorld(this.worldBasePrompt);
-
-    // Load relationships from DB
-    const rels = relationshipRepository.getForWorld(this.worldId);
-    for (const rel of rels) {
-      this.relationships.set(rel.from, rel.to, rel.type);
-    }
 
     console.log('[GameSession] Reconstructed session from DB, turn:', this.currentTurn);
   }
@@ -602,7 +415,10 @@ export class GameSession {
   private loadPolities(): void {
     const rows = worldRepository.getPolities(this.worldId);
     const list = rows.length > 0
-      ? rows.map(r => ({ id: r.id, name: r.name, color: r.color, flag: r.flag ?? null }))
+      ? rows.map(r => ({
+        id: r.id, name: r.name, color: r.color, flag: r.flag ?? null,
+        ...(r.metadata?.description ? { description: String(r.metadata.description) } : {}),
+      }))
       : politiesFromRegions(Array.from(this.regions.values()))
         .filter(p => p.id !== 'neutral')
         .map(p => ({ id: p.id, name: p.name, color: p.color || '#888888', flag: null }));
@@ -756,29 +572,6 @@ export class GameSession {
       }
     }
 
-    if (changes.regionGDP) {
-      for (const [regionKey, gdp] of Object.entries(changes.regionGDP)) {
-        const region = this.regions.get(regionKey) || resolvers.regions.resolve(regionKey);
-        const liveRegion = region && this.regions.get(region.id);
-        if (liveRegion) liveRegion.gdp = gdp;
-      }
-    }
-
-    if (changes.regionMilitary) {
-      for (const [regionKey, military] of Object.entries(changes.regionMilitary)) {
-        const region = this.regions.get(regionKey) || resolvers.regions.resolve(regionKey);
-        const liveRegion = region && this.regions.get(region.id);
-        if (liveRegion) liveRegion.militaryPower = military;
-      }
-    }
-
-    if (changes.regionPopulation) {
-      for (const [regionKey, pop] of Object.entries(changes.regionPopulation)) {
-        const region = this.regions.get(regionKey) || resolvers.regions.resolve(regionKey);
-        const liveRegion = region && this.regions.get(region.id);
-        if (liveRegion) liveRegion.population = pop;
-      }
-    }
   }
 
   /**
@@ -819,15 +612,15 @@ export class GameSession {
     const dir = Object.entries(dirMap).find(([k]) => norm === k || norm.startsWith(k + ' '))?.[1];
     if (dir) {
       const withCentroid = all
-        .map(r => ({ r, c: this.svgCentroid(r.svgPath) }))
-        .filter((x): x is { r: RegionState; c: { x: number; y: number } } => !!x.c);
+        .map(r => ({ r, c: this.regionCenter(r) }))
+        .filter((x): x is { r: RegionState; c: { lat: number; lng: number } } => !!x.c);
       if (withCentroid.length === 0) return pickDeterministic(all);
       withCentroid.sort((a, b) => {
         switch (dir) {
-          case 'west': return a.c.x - b.c.x;
-          case 'east': return b.c.x - a.c.x;
-          case 'north': return a.c.y - b.c.y; // SVG: y растёт вниз
-          case 'south': return b.c.y - a.c.y;
+          case 'west': return a.c.lng - b.c.lng;
+          case 'east': return b.c.lng - a.c.lng;
+          case 'north': return b.c.lat - a.c.lat;
+          case 'south': return a.c.lat - b.c.lat;
         }
       });
       return withCentroid[0].r;
@@ -836,42 +629,18 @@ export class GameSession {
     return undefined;
   }
 
-  /** Центроид региона из SVG-пути (среднее всех координат). */
-  private svgCentroid(path: string | undefined): { x: number; y: number } | null {
-    if (!path) return null;
-    const nums = path.match(/-?\d+\.?\d*/g);
-    if (!nums || nums.length < 4) return null;
-    let sumX = 0, sumY = 0, count = 0;
-    for (let i = 0; i < nums.length; i += 2) {
-      sumX += Number(nums[i]);
-      sumY += Number(nums[i + 1] || 0);
-      count++;
-    }
-    return count > 0 ? { x: sumX / count, y: sumY / count } : null;
-  }
-
   /** Кэш геоцентроидов регионов: geojson тяжёлый, считаем один раз на сессию. */
   private geoCenterCache: Map<string, { lat: number; lng: number } | null> = new Map();
 
   /**
-   * Центр региона в lat/lng — для маркеров Этапа 4 ({ id, type, name, lat, lng }).
-   * Приоритет: geojson-геометрия из БД (шаблонные миры Natural Earth; кастомные
-   * SVG-карты тоже сконвертированы в lng/lat через svgPathToGeoJSON) →
-   * центроид SVG-пути по конвенции 2000x1500 → null.
+   * Центр региона в lat/lng по geojson-геометрии из БД — для маркеров
+   * ({ id, type, name, lat, lng }) и выбора региона по стороне света.
    */
   private regionCenter(region: RegionState): { lat: number; lng: number } | null {
     if (!this.geoCenterCache.has(region.id)) {
       this.geoCenterCache.set(region.id, this.computeGeoCenter(region.id));
     }
-    const fromGeo = this.geoCenterCache.get(region.id);
-    if (fromGeo) return fromGeo;
-
-    const c = this.svgCentroid(region.svgPath);
-    if (c) {
-      // Та же конвенция SVG→lng/lat, что в svgPathToGeoJSON (холст 2000x1500)
-      return { lng: (c.x / 2000) * 360 - 180, lat: 90 - (c.y / 1500) * 180 };
-    }
-    return null;
+    return this.geoCenterCache.get(region.id) ?? null;
   }
 
   /**
@@ -1043,90 +812,15 @@ export class GameSession {
   }
 
   /**
-   * Detect and create objects from action text
-   */
-  private detectAndCreateObjects(region: RegionState, text: string): { text: string }[] {
-    const createdObjects: { text: string }[] = [];
-
-    const objectPatterns: Record<string, RegExp[]> = {
-      army: [/арми(?:ю|я|ю|)\s/iu, /войск(?:а|о|у|)\s/iu, /воен(?:ый|ая|ое)\s/iu, /soldiers/iu],
-      fleet: [/флот(?:а|у|ом|)\s/iu, /корабл(?:ь|ей|ям|)\s/iu, /морск(?:ой|ая|ое)\s/iu, /navy/iu, /fleet/iu],
-      missile: [/ракет(?:а|ы|е|)\s/iu, /баллистическ/iu, /missile/iu],
-      radar: [/радар(?:а|у|ом|)\s/iu, /радиолокацион/iu, /radar/iu],
-      port: [/порт(?:а|у|ом|)\s/iu, /гаван(?:ь|и|ью|)\s/iu, /port/iu],
-      exchange: [/бирж(?:а|у|ей|)\s/iu, /обмен(?:а|у|)\s/iu, /exchange/iu],
-      clearing: [/клиринг(?:а|у|ов|)\s/iu, /расчет(?:а|ов|)\s/iu, /clearing/iu],
-      grouping: [/группировк(?:а|и|у|)\s/iu, /объединен/iu, /grouping/iu],
-      factory: [/завод(?:а|у|ом|)\s/iu, /фабрик(?:а|и|у|)\s/iu, /предприят/iu, /factory/iu, /plant/iu],
-      university: [/университет(?:а|у|ом|)\s/iu, /университет/iu, /институт(?:а|у|)\s/iu, /академи(?:я|и|)\s/iu, /university/iu, / institute/iu],
-      city: [/город(?:а|у|ом|)?\s/iu, /city/iu, /capital/iu, /столиц/iu, /посел(?:ок|ение|ий)/iu],
-    };
-
-    // Helper to calculate centroid from SVG path
-    const getCentroid = (path: string): { x: number; y: number } | null => {
-      const nums = path.match(/-?\d+\.?\d*/g);
-      if (!nums || nums.length < 2) return null;
-      const points: number[] = nums.map(Number);
-      let sumX = 0, sumY = 0, count = 0;
-      for (let i = 0; i < points.length; i += 2) {
-        sumX += points[i];
-        sumY += points[i + 1] || 0;
-        count++;
-      }
-      return count > 0 ? { x: sumX / count, y: sumY / count } : null;
-    };
-
-    const combinedText = text.toLowerCase();
-    const centroid = getCentroid(region.svgPath || '');
-
-    for (const [objType, patterns] of Object.entries(objectPatterns)) {
-      for (const pattern of patterns) {
-        if (pattern.test(combinedText)) {
-          // For cities, use centroid position; for others, use random with offset
-          const baseX = centroid ? centroid.x : 500;
-          const baseY = centroid ? centroid.y : 400;
-          const offsetX = objType === 'city' ? 0 : (Math.random() - 0.5) * 200;
-          const offsetY = objType === 'city' ? 0 : (Math.random() - 0.5) * 150;
-
-          const newObject = {
-            id: shortId(),
-            type: objType,
-            name: `${region.name} ${objType === 'city' ? 'гор.' : objType.charAt(0).toUpperCase() + objType.slice(1)} ${(region.objects?.length || 0) + 1}`,
-            x: baseX + offsetX,
-            y: baseY + offsetY,
-            level: 1,
-          };
-
-          if (!region.objects) {
-            region.objects = [];
-          }
-
-          region.objects.push(newObject);
-          createdObjects.push({ text: `✓ Создан ${objType}: ${newObject.name}` });
-          break;
-        }
-      }
-    }
-
-    return createdObjects;
-  }
-
-  /**
    * Sync all region changes to database.
    * Uses batch update for performance (single transaction for all regions).
    *
-   * Persists population/gdp/militaryPower (every turn) and owner/color
-   * (rarely changes, but LLM-driven mapChanges in applyWorldChanges mutate
-   * them in memory, so we
-   * write them too to keep the DB consistent with the in-memory state
-   * across restarts).
+   * Пишет владельца, цвет, имя и объекты: mapChanges меняют их в памяти,
+   * а БД должна совпадать с памятью после рестарта.
    */
   async syncRegionsToDB(): Promise<void> {
     const updates = Array.from(this.regions.values()).map(region => ({
       id: region.id,
-      population: region.population,
-      gdp: region.gdp,
-      militaryPower: region.militaryPower,
       owner: region.owner,
       color: region.color,
       // mapChanges type=update может переименовать регион
@@ -1152,7 +846,6 @@ export class GameSession {
       players: this.players,
       regions: Array.from(this.regions.entries()),
       polities: Array.from(this.polities.entries()),
-      relationships: this.relationships.toJSON(),
       actions: this.actions,
       results: this.results,
       consolidatedHistory: this.consolidatedHistory,
@@ -1198,11 +891,6 @@ export class GameSession {
       this.loadPolities();
     }
 
-    // Restore relationships
-    if (saveData.relationships) {
-      this.relationships = RelationshipMatrix.fromJSON(saveData.relationships);
-    }
-
     // Этап 2: история, консолидация, сложность (без них rewind терял контекст)
     this.actions = saveData.actions || [];
     this.results = saveData.results || [];
@@ -1238,7 +926,6 @@ export class GameSession {
       players: this.players,
       regions: Array.from(this.regions.entries()),
       polities: Array.from(this.polities.entries()),
-      relationships: this.relationships.toJSON(),
       actions: this.actions,
       results: this.results,
       consolidatedHistory: this.consolidatedHistory,
@@ -1344,13 +1031,6 @@ ${toSummarize.map(r => `Раунд ${r.turn}: ${r.narration}`).join('\n\n')}
     this.consolidatedUpTo = lastTurn;
     gameRepository.updateConsolidation(this.id, this.consolidatedHistory, this.consolidatedUpTo);
     console.log('[GameSession] Consolidated history updated, length:', this.consolidatedHistory.length);
-  }
-
-  /**
-   * Get all relationships for the frontend UI
-   */
-  getRelationships(): Record<string, Record<string, string>> {
-    return this.relationships.toJSON();
   }
 
   /**
@@ -1534,36 +1214,6 @@ ${toSummarize.map(r => `Раунд ${r.turn}: ${r.narration}`).join('\n\n')}
         this.applyWorldChanges(promptResult.worldChanges);
       }
 
-      // ОТКЛЮЧЕНО: переговоры — LLM-initiated дипломатические чаты.
-      // Симуляция больше не создаёт чаты по startChat из promptResult:
-      // фича выключена решением владельца, LLM-вызовы/сообщения не создаются.
-      // for (const startChat of promptResult.startChat || []) {
-      //   try {
-      //     const chat = this.ensureChat(startChat.polityName);
-      //     const firstMessage = chatRepository.addMessage(
-      //       chat.id,
-      //       'polity',
-      //       startChat.topic || 'Хотим обсудить текущую ситуацию',
-      //       this.currentTurn
-      //     );
-      //     this.broadcast('chat_message', {
-      //       chatId: chat.id,
-      //       polityId: chat.polityId,
-      //       polityName: chat.polityName,
-      //       message: firstMessage,
-      //     });
-      //   } catch (e) {
-      //     console.warn('[GameSession] startChat: полития не найдена:', startChat.polityName, e);
-      //   }
-      // }
-
-      // Detect and create objects
-      const createdObjects = this.detectAndCreateObjects(
-        playerRegion,
-        actionsToProcess.map(a => a.text).join(' ') + ' ' +
-          promptResult.convertedActions.map((a: any) => a.text).join(' ')
-      );
-
       // The shared world jump is the sole owner of non-player decisions.
       // Do not run a second per-polity NPC pass here: it duplicates LLM cost
       // and can contradict the events/map state the jump just produced.
@@ -1597,7 +1247,7 @@ ${toSummarize.map(r => `Раунд ${r.turn}: ${r.narration}`).join('\n\n')}
         turn: this.currentTurn,
         narration: promptResult.narration,
         countryResponse: promptResult.convertedActions.map((a: any) => a.text).join('\n'),
-        events: [...voidedHeadlines, ...llmEventHeadlines, ...createdObjects.map(o => o.text)],
+        events: [...voidedHeadlines, ...llmEventHeadlines],
       };
       this.results.push(turnResult);
 

@@ -4,7 +4,8 @@
  * SVG-карта мира на реальной геометрии Natural Earth (без внешних зависимостей).
  * Equirectangular-проекция: x = (lng + 180) / 360 * width,
  *                           y = (90 - lat) / 180 * height.
- * Клик по доступной стране → onSelect(code).
+ * Клик по доступной стране → onSelect(code). Страны окрашены в цвет
+ * государства-владельца (ownerOf/colorOf): СССР — все союзные республики.
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -43,8 +44,14 @@ function geometryToPath(geometry: GeoCountryFeature['geometry']): string {
 interface WorldSelectMapProps {
   /** Коды стран, доступных для выбора (ISO_A3) */
   availableCodes: string[];
-  /** Текущий выделенный код (подсвечивается на карте) */
+  /** Выделенное государство: подсвечиваются все его страны */
   selectedCode?: string | null;
+  /** Страна → государство-владелец (по умолчанию сама страна) */
+  ownerOf?: Record<string, string>;
+  /** Цвет государства */
+  colorOf?: Record<string, string>;
+  /** Имя государства для подсказки */
+  nameOf?: Record<string, string>;
   /** true — кликабельны все страны, false — только availableCodes */
   allowAll?: boolean;
   /** Клик по стране (выделение; подтверждение — кнопкой у родителя) */
@@ -62,6 +69,9 @@ interface TooltipState {
 export const WorldSelectMap: React.FC<WorldSelectMapProps> = ({
   availableCodes,
   selectedCode = null,
+  ownerOf,
+  colorOf,
+  nameOf,
   allowAll = false,
   onSelect,
   onError,
@@ -133,8 +143,11 @@ export const WorldSelectMap: React.FC<WorldSelectMapProps> = ({
         aria-label="Карта мира"
       >
         {paths.map(({ code, name, d }) => {
-          const isAvailable = allowAll || availableSet.has(code);
-          const isSelected = selectedCode === code;
+          const owner = ownerOf?.[code] ?? code;
+          const isAvailable = allowAll || availableSet.has(owner);
+          const isSelected = selectedCode === owner;
+          const label = nameOf?.[owner] && nameOf[owner] !== name ? `${name} — ${nameOf[owner]}` : name;
+          const color = colorOf?.[owner];
           const className = [
             'world-country',
             isAvailable ? 'available' : 'disabled',
@@ -147,10 +160,11 @@ export const WorldSelectMap: React.FC<WorldSelectMapProps> = ({
               key={code}
               d={d}
               className={className}
-              onMouseMove={(e) => updateTooltip(e, name)}
+              style={color ? ({ '--owner-color': color } as React.CSSProperties) : undefined}
+              onMouseMove={(e) => updateTooltip(e, label)}
               onMouseLeave={() => setTooltip(null)}
               onClick={() => {
-                if (isAvailable) onSelect(code);
+                if (isAvailable) onSelect(owner);
               }}
             />
           );

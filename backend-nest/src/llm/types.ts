@@ -12,15 +12,10 @@ export type Mechanic =
   | 'converter'     // конвертер действий description→action
   | 'advisor'       // советник
   | 'suggestions'   // подсказки действий
-  | 'narration'     // нарратив (legacy-путь)
-  | 'npc'           // ходы NPC-стран
-  | 'chat'          // дипломатические чаты (Этап 3)
-  | 'consolidation' // консолидация истории (Этап 2)
-  | 'balance';      // генерация начального мира (BalanceAgent)
+  | 'consolidation'; // консолидация истории
 
 export const ALL_MECHANICS: Mechanic[] = [
-  'jump', 'converter', 'advisor', 'suggestions',
-  'narration', 'npc', 'chat', 'consolidation', 'balance',
+  'jump', 'converter', 'advisor', 'suggestions', 'consolidation',
 ];
 
 /** Расход токенов одного вызова (для учёта стоимости). */

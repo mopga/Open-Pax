@@ -27,13 +27,6 @@ export interface PendingAction {
   text: string;
 }
 
-export interface GeneratedWorld {
-  date: string;
-  countries: Record<string, any>;
-  regions: Record<string, any>;
-  playerCountryCode: string;
-}
-
 type GameUpdater = (game: Game | null) => Game | null;
 
 interface GameState {
@@ -45,8 +38,7 @@ interface GameState {
   pendingActions: PendingAction[];
   changedRegions: string[];
 
-  // Template-based world generation
-  generatedWorld: GeneratedWorld | null;
+  // Страна игрока, выбранная в пресете
   selectedCountry: string | null;
 
   // Actions
@@ -62,7 +54,6 @@ interface GameState {
   setChangedRegions: (regions: string[]) => void;
   addChangedRegion: (regionId: string) => void;
   clearChangedRegions: () => void;
-  setGeneratedWorld: (world: GeneratedWorld | null) => void;
   setSelectedCountry: (countryCode: string | null) => void;
 
   // Computed
@@ -76,7 +67,6 @@ const initialState = {
   history: [] as HistoryItem[],
   pendingActions: [] as PendingAction[],
   changedRegions: [] as string[],
-  generatedWorld: null,
   selectedCountry: null,
 };
 
@@ -109,7 +99,6 @@ export const useGameStore = create<GameState>((set) => ({
   })),
   clearChangedRegions: () => set({ changedRegions: [] }),
 
-  setGeneratedWorld: (world) => set({ generatedWorld: world }),
   setSelectedCountry: (countryCode) => set({ selectedCountry: countryCode }),
 
   reset: () => set(initialState),

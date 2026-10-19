@@ -81,7 +81,7 @@ export interface UserLLMSettings {
 }
 
 /** Механики, которым достаточно лёгкой модели */
-const LIGHT_MECHANICS = new Set<Mechanic>(['converter', 'advisor', 'suggestions', 'consolidation', 'narration', 'npc', 'chat']);
+const LIGHT_MECHANICS = new Set<Mechanic>(['converter', 'advisor', 'suggestions', 'consolidation']);
 
 /** Накладывает настройки из UI поверх базовой конфигурации (файл/env). */
 export function applyUserSettings(base: LLMFullConfig, settings: UserLLMSettings): LLMFullConfig {

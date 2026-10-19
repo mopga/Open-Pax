@@ -68,7 +68,7 @@ try {
   await page.click('.btn-play');
   log('country confirmed, world generation started…');
 
-  // 5. Генерация мира (реальный LLM) — лоадер, затем игра
+  // 5. Сборка мира из пресета (без LLM) — лоадер, затем игра
   await page.waitForTimeout(3000);
   await shot(page, '04-world-gen-loader.png');
   await page.waitForSelector('.game-wrapper', { timeout: 10 * 60 * 1000 });
@@ -111,9 +111,6 @@ try {
     await page.waitForTimeout(45000); // стриминг ответа
   }
   await shot(page, '10-advisor.png');
-
-  // (шаг 9 «Дипломатия» удалён — ОТКЛЮЧЕНО: переговоры; скриншот 11-diplomacy.png больше не создаётся,
-  //  нумерация остальных скриншотов не менялась)
 
   // 10. Сохранение игры через новую модалку
   await page.click('.btn-close'); // закрыть панель
