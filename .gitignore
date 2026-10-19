@@ -40,3 +40,6 @@ backend-nest/data/open-pax.db
 
 # Logs
 logs/
+
+# Local reference recordings
+*.mp4
