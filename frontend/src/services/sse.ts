@@ -16,7 +16,13 @@ interface UseSSEOptions {
   onTurnComplete?: (data: any) => void;
   onGeneratingNarration?: (data: any) => void;
   onLLMProgress?: (data: { mechanic: string; chars: number }) => void;
-  onJumpEvent?: (data: { index: number; total: number; event: any }) => void;
+  /** changedRegions — итоговое состояние регионов, затронутых событием */
+  onJumpEvent?: (data: {
+    index: number;
+    total: number;
+    event: any;
+    changedRegions?: { id: string; owner: string; color: string; name: string; status: string }[];
+  }) => void;
   onActionVoided?: (data: { action: string; reason: string }) => void;
   // Этап 3: входящее сообщение дипломатического чата
   onChatMessage?: (data: { chatId: string; polityId: string; polityName: string; message: any }) => void;

@@ -12,8 +12,8 @@
  *
  * Панель «Таймлайн» (TimelinePanel, экспортируется из этого же файла):
  *  - «⏭ До следующего крупного события» → onTimeSkip(0);
- *  - пресеты: 1 неделя (7), 1 месяц (30), 3 месяца (90), 6 месяцев (180), 12 месяцев (365);
- *  - кастомный прыжок: инпут числа + «дней» + кнопка ✓;
+ *  - пресеты: 1–4 недели и 1–4 месяца;
+ *  - кастомный прыжок: 1–9 недель или месяцев;
  *  - закрытие: клик по оверлею-ловцу, Esc, крестик или выбор пункта.
  *
  * Компонент самодостаточный: не ходит в API, только вызывает колбэки пропсов.
@@ -21,6 +21,8 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import type { GameUsage } from '../../services/api';
+import { MECHANIC_LABELS, formatTokens, formatUsd } from '../../utils/usageFormat';
 
 // ============================================================================
 // Типы
@@ -41,6 +43,13 @@ export interface HudBarProps {
   onRewind: () => void;
   /** Тайм-скип: days = 0 → «до следующего крупного события», иначе прыжок на N дней */
   onTimeSkip: (days: number) => void;
+  /** Панель периода контролируется родителем, чтобы открыть её из окна действий. */
+  timelineOpen: boolean;
+  onTimelineOpenChange: (open: boolean) => void;
+  /** Расход токенов по игре (null — ещё не загружен) */
+  usage?: GameUsage | null;
+  /** Открыть окно «Модель ИИ» */
+  onOpenSettings?: () => void;
 }
 
 export interface TimelinePanelProps {
@@ -94,10 +103,13 @@ function formatDatePlusDays(dateISO: string, days: number): string {
 
 const TIME_PRESETS: { label: string; days: number }[] = [
   { label: '1 неделя', days: 7 },
+  { label: '2 недели', days: 14 },
+  { label: '3 недели', days: 21 },
+  { label: '4 недели', days: 28 },
   { label: '1 месяц', days: 30 },
+  { label: '2 месяца', days: 60 },
   { label: '3 месяца', days: 90 },
-  { label: '6 месяцев', days: 180 },
-  { label: '12 месяцев', days: 365 },
+  { label: '4 месяца', days: 120 },
 ];
 
 // ============================================================================
@@ -110,13 +122,14 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
   onTimeSkip,
   onClose,
 }) => {
-  const [customDays, setCustomDays] = useState('30');
+  const [customAmount, setCustomAmount] = useState('1');
+  const [customUnit, setCustomUnit] = useState<'weeks' | 'months'>('weeks');
 
-  const parsedCustom = parseInt(customDays, 10);
-  const customValid = Number.isFinite(parsedCustom) && parsedCustom > 0 && parsedCustom <= 36500;
+  const parsedCustom = parseInt(customAmount, 10);
+  const customValid = Number.isFinite(parsedCustom) && parsedCustom >= 1 && parsedCustom <= 9;
 
   const submitCustom = () => {
-    if (customValid && !loading) onTimeSkip(parsedCustom);
+    if (customValid && !loading) onTimeSkip(parsedCustom * (customUnit === 'weeks' ? 7 : 30));
   };
 
   return (
@@ -175,29 +188,38 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
 
       <div className="hud-timeline-divider" />
 
-      {/* Кастомный прыжок на произвольное число дней */}
+      {/* Кастомный прыжок: 1–9 недель или месяцев */}
       <div className="hud-timeline-custom">
         <input
           className="hud-timeline-input"
           type="number"
           min={1}
-          max={36500}
+          max={9}
           step={1}
-          value={customDays}
+          value={customAmount}
           disabled={loading}
-          onChange={(e) => setCustomDays(e.target.value)}
+          onChange={(e) => setCustomAmount(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') submitCustom();
           }}
-          aria-label="Количество дней для прыжка"
+          aria-label="Количество недель или месяцев для прыжка"
         />
-        <span className="hud-timeline-custom-label">дней</span>
+        <select
+          className="hud-timeline-custom-label"
+          value={customUnit}
+          disabled={loading}
+          onChange={(e) => setCustomUnit(e.target.value as 'weeks' | 'months')}
+          aria-label="Единица периода"
+        >
+          <option value="weeks">недель</option>
+          <option value="months">месяцев</option>
+        </select>
         <button
           type="button"
           className="hud-timeline-custom-go"
           onClick={submitCustom}
           disabled={loading || !customValid}
-          title="Прыжок на указанное число дней"
+          title="Прыжок на указанный период"
           aria-label="Подтвердить прыжок"
         >
           ✓
@@ -219,12 +241,16 @@ export const HudBar: React.FC<HudBarProps> = ({
   onBack,
   onRewind,
   onTimeSkip,
+  timelineOpen,
+  onTimelineOpenChange,
+  usage,
+  onOpenSettings,
 }) => {
-  const [timelineOpen, setTimelineOpen] = useState(false);
+  const [usageOpen, setUsageOpen] = useState(false);
 
   /** Выбор пункта панели: закрываем её и проксируем прыжок наверх */
   const handleTimeSkip = (days: number) => {
-    setTimelineOpen(false);
+    onTimelineOpenChange(false);
     onTimeSkip(days);
   };
 
@@ -232,11 +258,11 @@ export const HudBar: React.FC<HudBarProps> = ({
   useEffect(() => {
     if (!timelineOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setTimelineOpen(false);
+      if (e.key === 'Escape') onTimelineOpenChange(false);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [timelineOpen]);
+  }, [timelineOpen, onTimelineOpenChange]);
 
   return (
     <div className={`hud-bar${loading ? ' hud-loading' : ''}`}>
@@ -258,8 +284,14 @@ export const HudBar: React.FC<HudBarProps> = ({
         <div className="hud-turn-badge">ХОД {turn}</div>
       </div>
 
-      {/* Правая часть: пилюля даты с навигацией (как в оригинале) */}
+      {/* Правая часть: расход токенов, настройки модели, пилюля даты (как в оригинале) */}
       <div className="hud-right">
+        {usage && <UsageChip usage={usage} open={usageOpen} onToggle={() => setUsageOpen(o => !o)} />}
+        {onOpenSettings && (
+          <button type="button" className="hud-icon-btn" onClick={onOpenSettings} title="Модель ИИ" aria-label="Настройки модели ИИ">
+            ⚙
+          </button>
+        )}
         <div className="hud-date-pill">
           <button
             type="button"
@@ -277,7 +309,7 @@ export const HudBar: React.FC<HudBarProps> = ({
           <button
             type="button"
             className={`hud-date-nav hud-timeline-toggle${timelineOpen ? ' active' : ''}`}
-            onClick={() => setTimelineOpen((v) => !v)}
+            onClick={() => onTimelineOpenChange(!timelineOpen)}
             title="Тайм-скип"
             aria-label="Открыть панель таймлайна"
             aria-expanded={timelineOpen}
@@ -290,13 +322,74 @@ export const HudBar: React.FC<HudBarProps> = ({
       {/* Панель таймлайна + оверлей-ловец для закрытия по клику вне её */}
       {timelineOpen && (
         <>
-          <div className="hud-timeline-overlay" onClick={() => setTimelineOpen(false)} />
+          <div className="hud-timeline-overlay" onClick={() => onTimelineOpenChange(false)} />
           <TimelinePanel
             dateISO={dateISO}
             loading={loading}
             onTimeSkip={handleTimeSkip}
-            onClose={() => setTimelineOpen(false)}
+            onClose={() => onTimelineOpenChange(false)}
           />
+        </>
+      )}
+    </div>
+  );
+};
+
+// ============================================================================
+// Индикатор расхода (аналог баланса в шапке оригинала)
+// ============================================================================
+
+const UsageChip: React.FC<{ usage: GameUsage; open: boolean; onToggle: () => void }> = ({ usage, open, onToggle }) => {
+  const t = usage.totals;
+  const tokens = t.inputTokens + t.outputTokens;
+  const paid = usage.billing === 'payg';
+  const overBudget = paid && usage.budgetPerGameUsd != null && t.costUsd >= usage.budgetPerGameUsd;
+  const main = paid && t.costUsd > 0 ? formatUsd(t.costUsd) : `${formatTokens(tokens)} ток.`;
+
+  return (
+    <div className="hud-usage">
+      <button
+        type="button"
+        className={`hud-usage-chip${overBudget ? ' over' : ''}`}
+        onClick={onToggle}
+        aria-expanded={open}
+        title="Расход модели в этой игре"
+      >
+        <span className="hud-usage-main">{main}{paid && t.costIncomplete ? '+' : ''}</span>
+        {paid && t.costUsd > 0 && <span className="hud-usage-sub">{formatTokens(tokens)} ток.</span>}
+      </button>
+      {open && (
+        <>
+          <div className="hud-timeline-overlay" onClick={onToggle} />
+          <div className="hud-usage-popover" role="dialog" aria-label="Расход модели">
+            <div className="hud-usage-title">Расход в этой игре</div>
+            <div className="hud-usage-total">
+              {formatTokens(t.inputTokens)} вход · {formatTokens(t.outputTokens)} выход
+              {t.cachedInputTokens > 0 && ` · ${formatTokens(t.cachedInputTokens)} из кэша`}
+            </div>
+            <div className="hud-usage-total">
+              {paid
+                ? <>Стоимость: <b>{formatUsd(t.costUsd)}</b>{t.costIncomplete && ' + вызовы без известной цены'}</>
+                : usage.billing === 'local' ? 'Локальная модель — бесплатно' : 'Подписка — оплачено тарифом'}
+              {overBudget && <div className="hud-usage-warn">Бюджет {formatUsd(usage.budgetPerGameUsd!)} превышен</div>}
+            </div>
+            {usage.byMechanic.length > 0 && (
+              <table className="hud-usage-table">
+                <tbody>
+                  {usage.byMechanic.map(m => (
+                    <tr key={`${m.mechanic}-${m.model}`}>
+                      <td>{MECHANIC_LABELS[m.mechanic] ?? m.mechanic}<small>{m.model}</small></td>
+                      <td>{m.calls}×</td>
+                      <td>{formatTokens(m.inputTokens + m.outputTokens)}</td>
+                      {paid && <td>{formatUsd(m.costUsd)}</td>}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {t.failedCalls > 0 && <div className="hud-usage-warn">Ошибок вызова: {t.failedCalls}</div>}
+            {t.estimated && <div className="hud-usage-note">Часть токенов оценена по длине текста.</div>}
+          </div>
         </>
       )}
     </div>

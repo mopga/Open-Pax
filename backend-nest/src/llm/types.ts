@@ -23,9 +23,21 @@ export const ALL_MECHANICS: Mechanic[] = [
   'narration', 'npc', 'chat', 'consolidation', 'balance',
 ];
 
+/** Расход токенов одного вызова (для учёта стоимости). */
+export interface LLMUsage {
+  /** Все входные токены, включая прочитанные из кэша провайдера */
+  inputTokens: number;
+  outputTokens: number;
+  /** Сколько входных токенов провайдер взял из своего prompt-кэша (дешевле) */
+  cachedInputTokens?: number;
+  /** true — провайдер не вернул usage, числа оценены по длине текста */
+  estimated?: boolean;
+}
+
 export interface LLMResponse {
   content: string;
   tokensUsed?: number;
+  usage?: LLMUsage;
 }
 
 export interface LLMGenerateOptions {

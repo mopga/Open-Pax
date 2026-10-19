@@ -49,6 +49,8 @@ export interface SimulationEvent {
   description: string;
   date: string;
   mapChanges: MapChange[];
+  /** Reaction to a player order or an autonomous preset/world event. */
+  kind?: 'reaction' | 'independent' | 'world';
 }
 
 export interface MapChange {

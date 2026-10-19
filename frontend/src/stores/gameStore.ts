@@ -11,6 +11,12 @@ export interface HistoryItem {
   action: string;
   result: string;
   events?: string[];
+  timelineEvents?: Array<{
+    headline: string;
+    description: string;
+    date: string;
+    kind?: 'reaction' | 'independent' | 'world';
+  }>;
   periodStart?: string;
   periodEnd?: string;
   date?: string;

@@ -20,7 +20,7 @@ import { RegionResolver, PolityResolver } from './utils/name-resolver';
 import { Difficulty, normalizeDifficulty } from './prompts/difficulty';
 // ОТКЛЮЧЕНО: переговоры — промпт дипломатических чатов не собирается
 // import { buildChatPrompt, parseChatResponse } from './prompts/chat';
-import type { MapChange } from './prompts/types';
+import type { MapChange, SimulationEvent } from './prompts/types';
 
 export interface RegionState {
   id: string;
@@ -34,6 +34,15 @@ export interface RegionState {
   svgPath?: string;
   borders: string[];
   status: 'active' | 'occupied' | 'destroyed' | 'independent';
+}
+
+/** Изменение региона, рассылаемое в SSE jump_event */
+export interface RegionDelta {
+  id: string;
+  owner: string;
+  color: string;
+  name: string;
+  status: RegionState['status'];
 }
 
 export interface PlayerInfo {
@@ -61,20 +70,30 @@ export interface TurnResultRecord {
   events: string[];
 }
 
+export interface ProcessedTurnResult {
+  narration: string;
+  countryResponse: string;
+  events: string[];
+  /** Full ordered reactions for card rendering; `events` remains the legacy headline list. */
+  timelineEvents: SimulationEvent[];
+  objects: any[];
+  turn: number;
+  periodStart: string;
+  periodEnd: string;
+}
+
 export interface PendingAction {
   id: string;
   text: string;
   createdAt: string;
   status: 'pending' | 'processing' | 'completed';
-  result?: {
-    narration: string;
-    countryResponse: string;
-    events: string[];
-    objects: any[];
-    turn: number;
-    periodStart: string;  // Date before processing this action
-    periodEnd: string;    // Date after processing this action
-  };
+  result?: ProcessedTurnResult;
+}
+
+export interface TimeSkipExecution {
+  /** Real player orders included in the round. Empty means an autonomous world turn. */
+  actions: PendingAction[];
+  result: ProcessedTurnResult;
 }
 
 export interface WorldChanges {
@@ -456,13 +475,6 @@ export class GameSession {
     this.gameController.initPromptEngine(this.buildGameData());
     this.gameController.setupWorld(world.base_prompt);
 
-    // Setup NPC agents: NPC = любая полития, кроме игрока и 'neutral'
-    // (раньше фильтр был owner.startsWith('ai-') и не видел шаблонные коды).
-    const regionConfigs = Array.from(this.regions.values())
-      .filter(r => r.owner !== 'neutral' && r.owner !== this.playerPolityId)
-      .map(r => ({ id: r.id, name: r.name, owner: r.owner }));
-    this.gameController.setupNPCCountries(regionConfigs);
-
     // Load diplomatic relationships from DB
     const rels = relationshipRepository.getForWorld(this.worldId);
     for (const rel of rels) {
@@ -548,12 +560,6 @@ export class GameSession {
       this.relationships.set(rel.from, rel.to, rel.type);
     }
 
-    // Re-setup NPC countries: любая полития, кроме игрока и 'neutral'
-    const regionConfigs = Array.from(this.regions.values())
-      .filter(r => r.owner !== 'neutral' && r.owner !== this.playerPolityId)
-      .map(r => ({ id: r.id, name: r.name, owner: r.owner }));
-    this.gameController.setupNPCCountries(regionConfigs);
-
     console.log('[GameSession] Reconstructed session from DB, turn:', this.currentTurn);
   }
 
@@ -569,6 +575,26 @@ export class GameSession {
    */
   getAllRegions(): RegionState[] {
     return Array.from(this.regions.values());
+  }
+
+  /** Отпечаток видимого на карте состояния регионов (для диффа по событию) */
+  private regionSnapshot(): Map<string, string> {
+    const snap = new Map<string, string>();
+    for (const [id, r] of this.regions) {
+      snap.set(id, `${r.owner}|${r.color}|${r.name}|${r.status}`);
+    }
+    return snap;
+  }
+
+  /** Регионы, изменившиеся (или появившиеся) после снимка */
+  private regionDelta(before: Map<string, string>): RegionDelta[] {
+    const out: RegionDelta[] = [];
+    for (const [id, r] of this.regions) {
+      if (before.get(id) !== `${r.owner}|${r.color}|${r.name}|${r.status}`) {
+        out.push({ id, owner: r.owner, color: r.color, name: r.name, status: r.status });
+      }
+    }
+    return out;
   }
 
   /**
@@ -968,124 +994,12 @@ export class GameSession {
   }
 
   /**
-   * Process NPC turns for all NPC countries
-   */
-  private async processNPCTurns(): Promise<string[]> {
-    const npcEvents: string[] = [];
-    const npcRegionIds = this.gameController.getNPCCountries();
-
-    const regionResolver = new RegionResolver(Array.from(this.regions.values()));
-
-    for (const npcRegionId of npcRegionIds) {
-      const npcRegion = this.regions.get(npcRegionId);
-      if (!npcRegion) continue;
-
-      // Build neighbors: реальные границы, посчитанные turf при генерации мира;
-      // для старых миров (borders пуст) — прежний fallback на первые 8 регионов.
-      const bordered = (npcRegion.borders || [])
-        .map(id => this.regions.get(id))
-        .filter((r): r is RegionState => !!r && r.id !== npcRegionId);
-      const neighborSource = bordered.length > 0
-        ? bordered
-        : Array.from(this.regions.values()).filter(r => r.id !== npcRegionId).slice(0, 8);
-      const neighbors = neighborSource.map(r => ({
-        id: r.id,
-        name: r.name,
-        owner: r.owner,
-        militaryPower: r.militaryPower,
-        gdp: r.gdp,
-      }));
-
-      const npcContext = {
-        turn: this.currentTurn,
-        population: npcRegion.population,
-        gdp: npcRegion.gdp,
-        militaryPower: npcRegion.militaryPower,
-        neighbors,
-        recentEvents: this.results.slice(-3).map(r => r.narration),
-      };
-
-      try {
-        const npcAction = await this.gameController.processNPCTurn(npcRegionId, npcContext);
-        if (npcAction) {
-          npcEvents.push(`${npcRegion.name}: ${npcAction.description}`);
-
-          // Apply NPC action effects
-          if (npcAction.type === 'develop') {
-            npcRegion.gdp = Math.floor(npcRegion.gdp * 1.05);
-            npcRegion.militaryPower = Math.floor(npcRegion.militaryPower * 1.03);
-          } else if (npcAction.type === 'war' && npcAction.targetRegionId) {
-            // LLM может вернуть как id, так и ИМЯ региона — резолвим оба варианта
-            const resolved = this.regions.get(npcAction.targetRegionId)
-              || regionResolver.resolve(npcAction.targetRegionId);
-            const targetRegion = resolved ? this.regions.get(resolved.id) : undefined;
-            if (targetRegion && targetRegion.militaryPower < npcRegion.militaryPower * 0.7) {
-              // Bug fix: раньше сюда писался npcRegionId (id региона) вместо
-              // id политии-владельца — это ломало владение и матрицу дипломатии.
-              targetRegion.owner = npcRegion.owner;
-              targetRegion.color = npcRegion.color;
-              npcEvents.push(`⚔️ ${npcRegion.name} захватила ${targetRegion.name}!`);
-            }
-          }
-        }
-      } catch (e) {
-        console.error(`NPC turn error for ${npcRegionId}:`, e);
-      }
-    }
-
-    return npcEvents;
-  }
-
-  /**
-   * Apply random events (15% chance)
-   */
-  private applyRandomEvents(): string[] {
-    const randomEvents: string[] = [];
-
-    if (Math.random() < 0.15) {
-      const eventTypes = [
-        { name: 'Природное бедствие', effects: ['землетрясение', 'наводнение', 'засуха', 'ураган'] },
-        { name: 'Экономический кризис', effects: ['рецессия', 'инфляция', 'дефицит'] },
-        { name: 'Технологический прорыв', effects: ['изобретение', 'открытие', 'инновация'] },
-        { name: 'Социальные волнения', effects: ['протесты', 'забастовка', 'революция'] },
-        { name: 'Эпидемия', effects: ['чума', 'грипп', 'вирус'] },
-      ];
-
-      const event = eventTypes[Math.floor(Math.random() * eventTypes.length)];
-      const effect = event.effects[Math.floor(Math.random() * event.effects.length)];
-      const regionsArray = Array.from(this.regions.values());
-      const targetRegion = regionsArray[Math.floor(Math.random() * regionsArray.length)];
-
-      const eventText = `🔮 ${event.name}: ${effect} в ${targetRegion.name}`;
-      randomEvents.push(eventText);
-
-      // Apply effects
-      if (event.name === 'Природное бедствие') {
-        targetRegion.population = Math.floor(targetRegion.population * 0.95);
-        targetRegion.gdp = Math.floor(targetRegion.gdp * 0.9);
-      } else if (event.name === 'Экономический кризис') {
-        targetRegion.gdp = Math.floor(targetRegion.gdp * 0.85);
-      } else if (event.name === 'Технологический прорыв') {
-        targetRegion.gdp = Math.floor(targetRegion.gdp * 1.15);
-        targetRegion.militaryPower = Math.floor(targetRegion.militaryPower * 1.1);
-      } else if (event.name === 'Социальные волнения') {
-        targetRegion.militaryPower = Math.floor(targetRegion.militaryPower * 0.9);
-      } else if (event.name === 'Эпидемия') {
-        targetRegion.population = Math.floor(targetRegion.population * 0.9);
-        targetRegion.militaryPower = Math.floor(targetRegion.militaryPower * 0.85);
-      }
-    }
-
-    return randomEvents;
-  }
-
-  /**
    * Sync all region changes to database.
    * Uses batch update for performance (single transaction for all regions).
    *
    * Persists population/gdp/militaryPower (every turn) and owner/color
-   * (rarely changes, but NPC conquests in processNPCTurns and LLM-driven
-   * mapChanges in applyWorldChanges both mutate them in memory, so we
+   * (rarely changes, but LLM-driven mapChanges in applyWorldChanges mutate
+   * them in memory, so we
    * write them too to keep the DB consistent with the in-memory state
    * across restarts).
    */
@@ -1097,6 +1011,8 @@ export class GameSession {
       militaryPower: region.militaryPower,
       owner: region.owner,
       color: region.color,
+      // mapChanges type=update может переименовать регион
+      name: region.name,
       // Этап 4: маркеры на карте (столицы/батальоны) — передаём всегда,
       // иначе updateRegionsBatch их не сохранял и объекты терялись при рестарте
       objects: region.objects || [],
@@ -1343,6 +1259,10 @@ ${toSummarize.map(r => `Раунд ${r.turn}: ${r.narration}`).join('\n\n')}
    * Add action to pending queue (without processing)
    */
   queueAction(text: string): PendingAction {
+    return this.createPendingAction(text);
+  }
+
+  private createPendingAction(text: string): PendingAction {
     const action: PendingAction = {
       id: shortId(),
       text,
@@ -1377,23 +1297,33 @@ ${toSummarize.map(r => `Раунд ${r.turn}: ${r.narration}`).join('\n\n')}
    * turn is already in flight for this session.
    */
   async processNextAction(jumpDays: number = 30): Promise<PendingAction | null> {
-    return (await this.withLock(async () => this._processNextActionUnlocked(jumpDays))) as PendingAction | null;
+    return (await this.withLock(async () => {
+      const action = this.pendingActions.find(a => a.status === 'pending');
+      if (!action) {
+        console.log('[GameSession] No pending actions to process');
+        return null;
+      }
+      await this._processTurnUnlocked([action], jumpDays);
+      return action;
+    })) as PendingAction | null;
   }
 
   /**
-   * Body of processNextAction, without the lock. Private so external
-   * callers cannot bypass withLock.
+   * Execute one complete world round without taking the session lock.
+   * `actionsToProcess` may be empty: that is a real autonomous time-skip,
+   * not a synthetic player order. External callers must go through one of
+   * the locked public methods below.
    */
-  private async _processNextActionUnlocked(jumpDays: number = 30): Promise<PendingAction | null> {
-    // Find next pending action
-    const action = this.pendingActions.find(a => a.status === 'pending');
-    if (!action) {
-      console.log('[GameSession] No pending actions to process');
-      return null;
-    }
-
-    action.status = 'processing';
-    console.log('[GameSession] Processing action:', action.id, 'text:', action.text.substring(0, 50));
+  private async _processTurnUnlocked(
+    actionsToProcess: PendingAction[],
+    jumpDays: number = 30,
+  ): Promise<ProcessedTurnResult> {
+    for (const pending of actionsToProcess) pending.status = 'processing';
+    console.log('[GameSession] Processing turn:', {
+      actionCount: actionsToProcess.length,
+      actionIds: actionsToProcess.map(a => a.id),
+      autonomous: actionsToProcess.length === 0,
+    });
 
     try {
       const player = this.players[0];
@@ -1409,7 +1339,12 @@ ${toSummarize.map(r => `Раунд ${r.turn}: ${r.narration}`).join('\n\n')}
       const autoJump = jumpDays <= 0;
       const timeJump = autoJump ? 365 : jumpDays;
 
-      this.broadcast('turn_start', { turn: this.currentTurn, action: action.text });
+      this.broadcast('turn_start', {
+        turn: this.currentTurn,
+        action: actionsToProcess[0]?.text ?? null,
+        actions: actionsToProcess.map(a => a.text),
+        autonomous: actionsToProcess.length === 0,
+      });
 
       // Build game data for prompt engine
       const gameData = this.buildGameData();
@@ -1417,7 +1352,7 @@ ${toSummarize.map(r => `Раунд ${r.turn}: ${r.narration}`).join('\n\n')}
       // Process turn with prompts (single action)
       const promptResult = await this.gameController.processTurnWithPrompts(
         gameData,
-        [action.text], // Single action as array
+        actionsToProcess.map(a => a.text),
         timeJump,
         (chars) => this.broadcast('llm_progress', { mechanic: 'jump', chars }),
         autoJump
@@ -1441,11 +1376,16 @@ ${toSummarize.map(r => `Раунд ${r.turn}: ${r.narration}`).join('\n\n')}
           break;
         }
         const event = events[i];
+        let changedRegions: RegionDelta[] = [];
         if (event.mapChanges && event.mapChanges.length > 0) {
+          const before = this.regionSnapshot();
           this.applyMapChanges(event.mapChanges);
+          changedRegions = this.regionDelta(before);
         }
         appliedEvents.push(event);
-        this.broadcast('jump_event', { turn: this.currentTurn, index: i, total: events.length, event });
+        // changedRegions — итоговое состояние затронутых регионов: фронт
+        // перекрашивает карту прямо по ходу событий, не дожидаясь конца хода
+        this.broadcast('jump_event', { turn: this.currentTurn, index: i, total: events.length, event, changedRegions });
         // Пауза, чтобы фронт успел показать событие (только при живом SSE)
         if (this.sseBroadcaster && i < events.length - 1) {
           await new Promise(r => setTimeout(r, 350));
@@ -1488,33 +1428,33 @@ ${toSummarize.map(r => `Раунд ${r.turn}: ${r.narration}`).join('\n\n')}
       // Detect and create objects
       const createdObjects = this.detectAndCreateObjects(
         playerRegion,
-        action.text + ' ' + promptResult.convertedActions.map((a: any) => a.text).join(' ')
+        actionsToProcess.map(a => a.text).join(' ') + ' ' +
+          promptResult.convertedActions.map((a: any) => a.text).join(' ')
       );
 
-      // Process NPC turns (for this period)
-      const npcEvents = await this.processNPCTurns();
+      // The shared world jump is the sole owner of non-player decisions.
+      // Do not run a second per-polity NPC pass here: it duplicates LLM cost
+      // and can contradict the events/map state the jump just produced.
 
-      // Apply random events
-      const randomEvents = this.applyRandomEvents();
-
-      // Record action
-      const actionRecord: ActionRecord = {
-        id: action.id,
-        playerId: player.id,
-        turn: this.currentTurn,
-        text: action.text,
-        createdAt: action.createdAt,
-      };
-      this.actions.push(actionRecord);
-
-      // Persist action to DB
-      gameRepository.addAction({
-        id: actionRecord.id,
-        gameId: this.id,
-        playerId: player.id,
-        turn: this.currentTurn,
-        text: action.text,
-      });
+      // Record every submitted order under the SAME turn. Previously each
+      // queued order created a separate turn and advanced the date again.
+      for (const pending of actionsToProcess) {
+        const actionRecord: ActionRecord = {
+          id: pending.id,
+          playerId: player.id,
+          turn: this.currentTurn,
+          text: pending.text,
+          createdAt: pending.createdAt,
+        };
+        this.actions.push(actionRecord);
+        gameRepository.addAction({
+          id: actionRecord.id,
+          gameId: this.id,
+          playerId: player.id,
+          turn: this.currentTurn,
+          text: pending.text,
+        });
+      }
 
       // Create turn result (заголовки только ПРИМЕНЁННЫХ событий + voided)
       const llmEventHeadlines = appliedEvents.map((e: any) => e.headline).filter(Boolean);
@@ -1525,7 +1465,7 @@ ${toSummarize.map(r => `Раунд ${r.turn}: ${r.narration}`).join('\n\n')}
         turn: this.currentTurn,
         narration: promptResult.narration,
         countryResponse: promptResult.convertedActions.map((a: any) => a.text).join('\n'),
-        events: [...voidedHeadlines, ...llmEventHeadlines, ...npcEvents, ...randomEvents, ...createdObjects.map(o => o.text)],
+        events: [...voidedHeadlines, ...llmEventHeadlines, ...createdObjects.map(o => o.text)],
       };
       this.results.push(turnResult);
 
@@ -1542,18 +1482,18 @@ ${toSummarize.map(r => `Раунд ${r.turn}: ${r.narration}`).join('\n\n')}
       // Persist ALL region changes to DB
       await this.syncRegionsToDB();
 
-      // Update action with result (before advancing date)
-      action.status = 'completed';
+      // Remember the interval before advancing the shared world clock.
       const periodStart = this.currentDate;
-      action.result = {
-        narration: turnResult.narration,
-        countryResponse: turnResult.countryResponse,
-        events: turnResult.events,
-        objects: playerRegion.objects,
-        turn: this.currentTurn,
-        periodStart,
-        periodEnd: '', // Will be set after date advance
-      };
+      const timelineEvents: SimulationEvent[] = [
+        ...voided.map(v => ({
+          headline: `⊘ Отклонено: ${v.action}`,
+          description: v.reason,
+          date: periodStart,
+          kind: 'reaction' as const,
+          mapChanges: [],
+        })),
+        ...appliedEvents,
+      ];
 
       // Advance turn and date
       this.currentTurn++;
@@ -1573,8 +1513,23 @@ ${toSummarize.map(r => `Раунд ${r.turn}: ${r.narration}`).join('\n\n')}
         this.currentDate = date.toISOString().split('T')[0];
       }
 
-      // Now set periodEnd (after advancing)
-      action.result.periodEnd = this.currentDate;
+      const processedTurn: ProcessedTurnResult = {
+        narration: turnResult.narration,
+        countryResponse: turnResult.countryResponse,
+        events: turnResult.events,
+        timelineEvents,
+        objects: playerRegion.objects,
+        turn: turnResult.turn,
+        periodStart,
+        periodEnd: this.currentDate,
+      };
+
+      // Real queued orders share this result. An autonomous time-skip has no
+      // PendingAction at all, so it cannot leak into player action history.
+      for (const pending of actionsToProcess) {
+        pending.status = 'completed';
+        pending.result = processedTurn;
+      }
 
       // Persist turn and date to DB in single operation
       gameRepository.updateTurnAndDate(this.id, this.currentTurn, this.currentDate);
@@ -1590,6 +1545,7 @@ ${toSummarize.map(r => `Раунд ${r.turn}: ${r.narration}`).join('\n\n')}
         turn: this.currentTurn - 1,
         narration: turnResult.narration,
         events: turnResult.events,
+        timelineEvents,
         newTurn: this.currentTurn,
         newDate: this.currentDate,
         intervened,
@@ -1605,52 +1561,46 @@ ${toSummarize.map(r => `Раунд ${r.turn}: ${r.narration}`).join('\n\n')}
         .then(content => this.broadcast('advisor_proactive', { content }))
         .catch(e => console.error('[GameSession] Proactive advisor failed:', e));
 
-      console.log('[GameSession] Action processed, new date:', this.currentDate);
-      return action;
+      console.log('[GameSession] Turn processed, new date:', this.currentDate);
+      return processedTurn;
 
     } catch (e) {
       console.error('[GameSession] Error processing action:', e);
-      action.status = 'pending'; // Reset status on error
+      for (const pending of actionsToProcess) pending.status = 'pending';
       throw e;
     }
   }
 
   /**
-   * Process all pending actions sequentially.
-   *
-   * Holds the session lock for the whole loop. If another call comes
-   * in while we're processing the queue, that caller gets `[]` back
-   * and can poll. We intentionally do NOT await the in-flight queue
-   * because the queue itself may take many minutes (each action does
-   * an LLM call) and the caller would block for the entire duration.
+   * Process all pending actions as one atomic round and one world jump.
+   * If another caller holds the session lock, this returns `[]` immediately.
    */
   async processAllPendingActions(jumpDays: number = 30): Promise<PendingAction[]> {
     const result = await this.withLock(async () => {
-      const processed: PendingAction[] = [];
-      let action = await this._processNextActionUnlocked(jumpDays);
-      while (action) {
-        processed.push(action);
-        action = await this._processNextActionUnlocked(jumpDays);
-      }
-      return processed;
+      const turnActions = this.pendingActions.filter(a => a.status === 'pending');
+      if (turnActions.length === 0) return [];
+      await this._processTurnUnlocked(turnActions, jumpDays);
+      return turnActions;
     });
     return result ?? [];
   }
 
   /**
-   * Advance date without processing actions (for time-skip without pending actions)
+   * Process a time-skip atomically. Pending player orders, if any, are one
+   * batch. With no orders, the exact same world simulator runs with an empty
+   * action list: no converter call, no synthetic PendingAction, no action row.
    */
-  advanceDate(jumpDays: number = 30): { newDate: string; newTurn: number } {
-    const periodStart = this.currentDate;
-    this.currentTurn++;
-    const date = new Date(this.currentDate);
-    date.setDate(date.getDate() + jumpDays);
-    this.currentDate = date.toISOString().split('T')[0];
-
-    // Persist to DB
-    gameRepository.updateTurnAndDate(this.id, this.currentTurn, this.currentDate);
-
-    console.log('[GameSession] Advanced date:', periodStart, '->', this.currentDate);
-    return { newDate: this.currentDate, newTurn: this.currentTurn };
+  async processTimeSkip(jumpDays: number = 30, actionTexts?: string[]): Promise<TimeSkipExecution | null> {
+    return await this.withLock(async () => {
+      if (actionTexts !== undefined) {
+        // The client submits its complete visible draft with the jump. Replace
+        // any stale legacy queue so removed UI items can never become ghost orders.
+        this.pendingActions = this.pendingActions.filter(a => a.status === 'completed');
+        for (const text of actionTexts) this.createPendingAction(text);
+      }
+      const turnActions = this.pendingActions.filter(a => a.status === 'pending');
+      const result = await this._processTurnUnlocked(turnActions, jumpDays);
+      return { actions: turnActions, result };
+    });
   }
 }

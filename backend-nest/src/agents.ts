@@ -2,7 +2,7 @@
  * Open-Pax — Game Agents
  * ======================
  * GameController: фасад над PromptEngine (конвертер действий, симуляция,
- * советник, подсказки) и NPC-агентами.
+ * советник, подсказки).
  *
  * Legacy-агенты (CountryAgent/WorldAgent/AdvisorAgent/TurnControllerAgent и
  * детерминированный processTurn) удалены на этапе стабилизации: они не
@@ -10,13 +10,11 @@
  */
 
 import { LLMRouter } from './llm';
-import { NPCCountryAgent, NPCCountryContext, createNPCCountries, type NPCAction } from './npc-agents';
 import { PromptEngine } from './prompt-builder';
 import type { SimulationEvent } from './prompts/types';
 
 export class GameController {
   private provider: LLMRouter;
-  private npcAgents: Map<string, NPCCountryAgent> = new Map();
   private worldPrompt: string = '';
   private promptEngine: PromptEngine | null = null;
 
@@ -125,34 +123,5 @@ export class GameController {
 
   setupWorld(worldPrompt: string): void {
     this.worldPrompt = worldPrompt;
-  }
-
-  /**
-   * Setup NPC countries from world configuration
-   */
-  setupNPCCountries(regionConfigs: { id: string; name: string; owner: string }[]): void {
-    this.npcAgents = createNPCCountries(this.provider, regionConfigs);
-  }
-
-  /**
-   * Process turn for a single NPC country
-   */
-  async processNPCTurn(
-    regionId: string,
-    context: NPCCountryContext
-  ): Promise<NPCAction | null> {
-    const npcAgent = this.npcAgents.get(regionId);
-    if (!npcAgent) {
-      return null;
-    }
-
-    return npcAgent.think(context);
-  }
-
-  /**
-   * Get all NPC countries
-   */
-  getNPCCountries(): string[] {
-    return Array.from(this.npcAgents.keys());
   }
 }

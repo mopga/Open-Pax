@@ -400,35 +400,42 @@ gamesRouter.post('/:id/actions/process-all', async (req, res) => {
 
 gamesRouter.post('/:id/time-skip', async (req, res) => {
   const gameId = req.params.id;
-  const { jump_days = 30 } = req.body;
+  const { jump_days = 30, actions } = req.body;
+
+  if (!Number.isInteger(jump_days) || jump_days < 0 || jump_days > 270) {
+    res.status(400).json({ error: 'jump_days должен быть 0 (до следующего события) или целым числом от 1 до 270' });
+    return;
+  }
+
+  if (actions !== undefined && (!Array.isArray(actions)
+    || actions.length > 20
+    || actions.some((text: unknown) => typeof text !== 'string' || !text.trim() || text.length > 2000))) {
+    res.status(400).json({ error: 'actions должен быть массивом из 0–20 непустых строк длиной до 2000 символов' });
+    return;
+  }
 
   try {
     const session = getSessionRegistry().getSessionOrThrow(gameId);
-    const pendingActions = session.getPendingActions();
+    const normalizedActions = Array.isArray(actions) ? actions.map((text: string) => text.trim()) : undefined;
+    const execution = await session.processTimeSkip(jump_days, normalizedActions);
 
-    if (pendingActions.length > 0) {
-      const processed = await session.processAllPendingActions(jump_days);
+    if (!execution) {
+      res.status(409).json({ error: 'Другой ход уже обрабатывается — попробуйте позже' });
+      return;
+    }
+
+    if (execution.actions.length > 0) {
       res.json({
         type: 'actions_processed',
-        processedCount: processed.length,
-        actions: processed,
-      });
-    } else if (jump_days <= 0) {
-      // Auto-jump «к следующему важному событию» без действий игрока:
-      // ставим служебное действие наблюдения и прогоняем симуляцию
-      session.queueAction('Наблюдать за развитием мира и вести внутреннюю политику');
-      const processed = await session.processAllPendingActions(0);
-      res.json({
-        type: 'actions_processed',
-        processedCount: processed.length,
-        actions: processed,
+        processedCount: execution.actions.length,
+        actions: execution.actions,
       });
     } else {
-      const result = session.advanceDate(jump_days);
       res.json({
-        type: 'date_advanced',
-        newDate: result.newDate,
-        newTurn: result.newTurn,
+        type: 'world_simulated',
+        result: execution.result,
+        newDate: execution.result.periodEnd,
+        newTurn: execution.result.turn + 1,
         jumpDays: jump_days,
       });
     }

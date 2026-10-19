@@ -39,7 +39,7 @@ describe('loadLLMConfig: env-fallback (обратная совместимост
     for (const m of ALL_MECHANICS) {
       expect(cfg[m].provider).toBe('minimax');
       expect(cfg[m].baseUrl).toBe('https://api.minimax.io/v1');
-      expect(cfg[m].model).toBe('MiniMax-M2.5');
+      expect(cfg[m].model).toBe('MiniMax-M3');
       expect(cfg[m].timeoutMs).toBe(120_000);
       expect(cfg[m].retries).toBe(2);
     }

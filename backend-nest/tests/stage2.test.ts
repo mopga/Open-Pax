@@ -21,13 +21,28 @@ let getSessionRegistry: any;
 let capturedPrompt = '';
 /** Счётчик вызовов механики consolidation */
 let consolidationCalls = 0;
+/** Счётчики для проверки атомарности раунда */
+let converterCalls = 0;
+let jumpCalls = 0;
+let npcCalls = 0;
 /** Режим ответа заглушки на механику jump */
-let jumpMode: 'normal' | 'voided' | 'auto' | 'intervene' = 'normal';
+let jumpMode: 'normal' | 'quiet' | 'voided' | 'auto' | 'intervene' = 'normal';
 
 const WORLD_ID = 'stage2_world';
 
 function jumpResponse(): any {
   switch (jumpMode) {
+    case 'quiet':
+      return {
+        events: [
+          { headline: 'Правительство отреагировало на приказ', description: 'Решение игрока начало менять политику.', date: '1951-01-10', kind: 'reaction', mapChanges: [] },
+          { headline: 'Мировая экономика продолжила меняться', description: 'Политии действовали самостоятельно.', date: '1951-01-20', kind: 'independent', mapChanges: [] },
+        ],
+        narration: 'Мир развивался без новых приказов игрока.',
+        voided: [],
+        startChat: [],
+        worldChanges: { regionOwners: {}, regionColors: {} },
+      };
     case 'voided':
       return {
         events: [],
@@ -77,6 +92,15 @@ const stubProvider: any = {
   consolidation: { startRound: 25, chunkSize: 5, keepRawTail: 10 },
   async generate(mechanic: string, system: string, user: string) {
     if (mechanic === 'converter') {
+      converterCalls++;
+      if (user.includes('формате JSON массива')) {
+        return {
+          content: JSON.stringify([
+            { index: 1, type: 'action', text: 'Первое уточнённое действие' },
+            { index: 2, type: 'action', text: 'Второе уточнённое действие' },
+          ]),
+        };
+      }
       return { content: JSON.stringify({ type: 'action', text: 'Действие игрока' }) };
     }
     if (mechanic === 'consolidation') {
@@ -84,9 +108,11 @@ const stubProvider: any = {
       return { content: 'КОНСПЕКТ: сжатая история первых раундов' };
     }
     if (mechanic === 'jump') {
+      jumpCalls++;
       capturedPrompt = `${system}\n${user}`;
       return { content: JSON.stringify(jumpResponse()) };
     }
+    if (mechanic === 'npc') npcCalls++;
     return { content: JSON.stringify({ type: 'develop', description: 'Развитие', priority: 5 }) };
   },
   async stream(mechanic: string, system: string, user: string, onToken: (chars: number) => void, options?: any) {
@@ -152,6 +178,101 @@ describe('Этап 2: voided-действия', () => {
     const events = action.result.events as string[];
     expect(events.some(e => e.includes('⊘ Отклонено') && e.includes('Захватить весь мир за неделю'))).toBe(true);
     expect(events.some(e => e.includes('Нереалистично для 1951 года'))).toBe(true);
+    jumpMode = 'normal';
+  });
+});
+
+describe('Раунд: атомарная обработка очереди', () => {
+  it('несколько приказов дают один converter-вызов, один jump и одно продвижение даты', async () => {
+    // Без mapChanges, чтобы тест не менял общий шаблон мира для соседних кейсов.
+    jumpMode = 'voided';
+    converterCalls = 0;
+    jumpCalls = 0;
+    npcCalls = 0;
+    const { gameId, session } = createGame();
+
+    session.queueAction('Укрепить промышленность');
+    session.queueAction('Предложить соседям торговый договор');
+    const processed = await session.processAllPendingActions(30);
+
+    expect(processed).toHaveLength(2);
+    expect(processed.every((a: any) => a.status === 'completed')).toBe(true);
+    expect(processed.every((a: any) => a.result.turn === 1)).toBe(true);
+    expect(converterCalls).toBe(1);
+    expect(jumpCalls).toBe(1);
+    expect(npcCalls).toBe(0);
+    expect(session.getCurrentTurn()).toBe(2);
+    expect(session.getCurrentDate()).toBe('1951-01-31');
+
+    const actionRows = db.prepare('SELECT turn FROM actions WHERE game_id = ? ORDER BY created_at').all(gameId);
+    const resultRows = db.prepare('SELECT turn FROM turn_results WHERE game_id = ?').all(gameId);
+    expect(actionRows).toHaveLength(2);
+    expect(actionRows.every((r: any) => r.turn === 1)).toBe(true);
+    expect(resultRows).toHaveLength(1);
+    expect(resultRows[0].turn).toBe(1);
+    jumpMode = 'normal';
+  });
+});
+
+describe('Раунд: автономный time-skip без фиктивного действия', () => {
+  it('запускает world jump без converter и не пишет действие игрока', async () => {
+    jumpMode = 'quiet';
+    converterCalls = 0;
+    jumpCalls = 0;
+    npcCalls = 0;
+    const { gameId, session } = createGame();
+
+    const execution = await session.processTimeSkip(30);
+
+    expect(execution).not.toBeNull();
+    expect(execution!.actions).toHaveLength(0);
+    expect(execution!.result.narration).toContain('без новых приказов игрока');
+    expect(execution!.result.periodStart).toBe('1951-01-01');
+    expect(execution!.result.periodEnd).toBe('1951-01-31');
+    expect(execution!.result.timelineEvents.map((e: any) => e.kind)).toEqual(['reaction', 'independent']);
+    expect(converterCalls).toBe(0);
+    expect(jumpCalls).toBe(1);
+    expect(npcCalls).toBe(0);
+    expect(session.getCurrentTurn()).toBe(2);
+    expect(session.getCurrentDate()).toBe('1951-01-31');
+    expect(capturedPrompt).toContain('Правила событий этого раунда');
+    expect(capturedPrompt).toContain('Игрок не отдавал приказов');
+    expect(capturedPrompt).not.toContain('Наблюдать за развитием мира и вести внутреннюю политику');
+
+    const actionRows = db.prepare('SELECT turn, text FROM actions WHERE game_id = ?').all(gameId);
+    const resultRows = db.prepare('SELECT turn FROM turn_results WHERE game_id = ?').all(gameId);
+    expect(actionRows).toHaveLength(0);
+    expect(resultRows).toHaveLength(1);
+    expect(resultRows[0].turn).toBe(1);
+    expect(session.canRewind()).toBe(true);
+
+    jumpMode = 'normal';
+  });
+
+  it('атомарная отправка черновика заменяет устаревшую серверную очередь', async () => {
+    jumpMode = 'quiet';
+    converterCalls = 0;
+    jumpCalls = 0;
+    const { gameId, session } = createGame();
+    session.queueAction('Старое удалённое действие');
+
+    const execution = await session.processTimeSkip(14, [
+      'Укрепить промышленность',
+      'Перебросить резервы к границе',
+    ]);
+
+    expect(execution!.actions.map((a: any) => a.text)).toEqual([
+      'Укрепить промышленность',
+      'Перебросить резервы к границе',
+    ]);
+    expect(converterCalls).toBe(1);
+    expect(jumpCalls).toBe(1);
+    expect(session.getCurrentDate()).toBe('1951-01-15');
+    const rows = db.prepare('SELECT text FROM actions WHERE game_id = ? ORDER BY created_at').all(gameId);
+    expect(rows.map((r: any) => r.text)).toEqual([
+      'Укрепить промышленность',
+      'Перебросить резервы к границе',
+    ]);
     jumpMode = 'normal';
   });
 });
@@ -224,12 +345,15 @@ describe('Этап 2: Intervene', () => {
 });
 
 describe('Этап 2: auto-jump «к следующему событию»', () => {
-  it('дата берётся из targetDate ответа LLM, а не +365 дней', async () => {
+  it('без приказов игрока дата берётся из targetDate ответа LLM, а не +365 дней', async () => {
     jumpMode = 'auto';
+    converterCalls = 0;
     const { session } = createGame();
-    session.queueAction('Ждать важных новостей');
-    await session.processNextAction(0); // jumpDays <= 0 — auto-режим
+    const execution = await session.processTimeSkip(0); // jumpDays <= 0 — auto-режим
 
+    expect(execution).not.toBeNull();
+    expect(execution!.actions).toHaveLength(0);
+    expect(converterCalls).toBe(0);
     expect(session.getCurrentDate()).toBe('1951-03-10');
     jumpMode = 'normal';
   });
@@ -301,5 +425,47 @@ describe('Этап 2: консолидация истории', () => {
     consolidationCalls = 0;
     await (session as any).maybeConsolidate();
     expect(consolidationCalls).toBe(0);
+  });
+});
+
+describe('Карта: изменения регионов по событиям и дата старта', () => {
+  it('jump_event несёт итоговое состояние только изменившихся регионов', async () => {
+    jumpMode = 'normal';
+    // Отдельный мир: регионы общего WORLD_ID уже изменены предыдущими тестами
+    const repos = await import('../src/repositories');
+    const worldId = 'stage2_map_world';
+    repos.worldRepository.createWithRegions(
+      { id: worldId, name: 'Map', description: '', startDate: '1951-01-01', basePrompt: '', historicalAccuracy: 0.8 },
+      [
+        { id: `${worldId}_DEU`, name: 'ФРГ', color: '#FF0000', owner: 'DEU', population: 1, gdp: 1, militaryPower: 1, flag: 'DEU' },
+        { id: `${worldId}_POL`, name: 'Польша', color: '#00FF00', owner: 'POL', population: 1, gdp: 1, militaryPower: 1, flag: 'POL' },
+        { id: `${worldId}_FRA`, name: 'Франция', color: '#FFFF00', owner: 'FRA', population: 1, gdp: 1, militaryPower: 1, flag: 'FRA' },
+      ],
+    );
+    const { session } = getSessionRegistry().createSession(worldId, 'Player', `${worldId}_DEU`, '#FF0000');
+    const jumpEvents: any[] = [];
+    session.setSSEBroadcaster((type: string, data: any) => {
+      if (type === 'jump_event') jumpEvents.push(data);
+    });
+
+    session.queueAction('Наступление на восток');
+    await session.processNextAction(30);
+
+    expect(jumpEvents).toHaveLength(1);
+    const changed = jumpEvents[0].changedRegions;
+    expect(changed).toEqual([
+      expect.objectContaining({ id: 'stage2_map_world_POL', owner: 'DEU' }),
+    ]);
+  });
+
+  it('новая игра сразу получает дату старта мира, а не дефолт схемы', async () => {
+    const repos = await import('../src/repositories');
+    const worldId = 'stage2_world_2033';
+    repos.worldRepository.createWithRegions(
+      { id: worldId, name: 'Modern', description: '', startDate: '2033-08-20', basePrompt: '', historicalAccuracy: 0.8 },
+      [{ id: `${worldId}_UKR`, name: 'Украина', color: '#FFD700', owner: 'UKR', population: 1, gdp: 1, militaryPower: 1, flag: 'UKR' }],
+    );
+    const { gameId } = getSessionRegistry().createSession(worldId, 'Player', `${worldId}_UKR`, '#FF0000');
+    expect(repos.gameRepository.findById(gameId).current_date).toBe('2033-08-20');
   });
 });

@@ -8,16 +8,26 @@ import 'dotenv/config';
 
 import express from 'express';
 import cors from 'cors';
-import { initLLMRouter } from './llm';
+import { initLLMRouter, runWithLLMContext } from './llm';
+import { applySavedSettings } from './settings/llm-settings';
+import { usageRepository } from './repositories/usage.repository';
 import { initDatabase } from './database';
 import { initSessionRegistry } from './session-registry';
 import { registerRoutes } from './routes';
 
 const app = express();
-const PORT = process.env.PORT || 8000;
+const PORT = Number(process.env.PORT) || 8000;
+// Сервер хранит API-ключи пользователя — по умолчанию доступен только с этой машины.
+// HOST=0.0.0.0 открывает его в сеть (на свой риск).
+const HOST = process.env.HOST || '127.0.0.1';
 
-// Middleware
-app.use(cors());
+// Middleware: CORS только для локальных страниц, чтобы чужой сайт в браузере
+// не мог дёргать API (и тратить токены пользователя)
+const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
+const extraOrigins = (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+app.use(cors({
+  origin: (origin, cb) => cb(null, !origin || LOCAL_ORIGIN.test(origin) || extraOrigins.includes(origin)),
+}));
 app.use(express.json({ limit: '10mb' }));
 
 // Global request logging
@@ -31,10 +41,21 @@ initDatabase();
 
 // Initialize LLM router (providers from llm.config.json / env)
 const llmRouter = initLLMRouter();
+// Поверх файла/env — настройки модели, сохранённые в UI
+try {
+  applySavedSettings(llmRouter);
+} catch (e) {
+  console.error('[LLM] Не удалось применить сохранённые настройки:', e);
+}
+// Каждый вызов модели — в журнал расхода токенов
+llmRouter.setUsageSink(record => usageRepository.record(record));
 const sessionRegistry = initSessionRegistry(llmRouter);
 for (const [mechanic, cfg] of Object.entries(llmRouter.describe())) {
   console.log(`[LLM] ${mechanic}: ${cfg.provider} / ${cfg.model}`);
 }
+
+// LLM-вызовы внутри запросов к игре относим к этой игре (usage ledger)
+app.use('/api/games/:id', (req, _res, next) => runWithLLMContext({ gameId: req.params.id }, next));
 
 // Register all route files
 registerRoutes(app);
@@ -42,8 +63,8 @@ registerRoutes(app);
 // Reload active sessions from database (survives server restart)
 sessionRegistry.reloadActiveSessions();
 
-const server = app.listen(PORT, () => {
-  console.log(`🚀 Open-Pax API running on http://localhost:${PORT}`);
+const server = app.listen(PORT, HOST, () => {
+  console.log(`🚀 Open-Pax API running on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
 });
 
 /**

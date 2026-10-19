@@ -21,7 +21,8 @@ import { HudBar } from './components/Game/HudBar';
 import { GameLoader, WORLD_GEN_PHASES } from './components/Game/GameLoader';
 import { Fab } from './components/Game/Fab';
 // ОТКЛЮЧЕНО: редактор карт (временно) — mapApi использовался только редактором/«Мои карты»
-import { gameApi, worldApi, savesApi } from './services/api';
+import { gameApi, worldApi, savesApi, settingsApi, usageApi, type GameUsage, type LLMSettingsView } from './services/api';
+import { LLMSettingsModal } from './components/Settings/LLMSettingsModal';
 import type { Region, World, Game } from './types';
 // ОТКЛЮЧЕНО: переговоры — selectTotalUnread не нужен; редактор карт — тип LocalMap не нужен
 import { useGameStore, useUIStore, useActionsStore, useChatStore } from './stores';
@@ -99,6 +100,73 @@ function App() {
     //   chatStore.refreshChats();
     // }
   }, [currentGameId]);
+
+  // Модель ИИ: свой ключ / подписка / локальная модель + расход токенов
+  const [llmView, setLlmView] = useState<LLMSettingsView | null>(null);
+  const [settingsModal, setSettingsModal] = useState<null | { onboarding: boolean; then?: () => void }>(null);
+  const [gameUsage, setGameUsage] = useState<GameUsage | null>(null);
+
+  useEffect(() => {
+    settingsApi.getLLM().then(setLlmView).catch(e => console.warn('[LLM] настройки недоступны:', e));
+  }, []);
+
+  /** Новая игра без подключённой модели — сначала окно настроек */
+  const requireModel = (next: () => void) => {
+    if (llmView && !llmView.configured) {
+      setSettingsModal({ onboarding: true, then: next });
+    } else {
+      next();
+    }
+  };
+
+  // Расход по игре: при смене игры/хода и периодически (подсказки и советник тоже тратят токены)
+  const refreshUsage = () => {
+    if (!currentGameId) return;
+    usageApi.game(currentGameId).then(setGameUsage).catch(() => { /* индикатор не критичен */ });
+  };
+  useEffect(() => {
+    setGameUsage(null);
+    if (!currentGameId || currentView !== 'game') return;
+    refreshUsage();
+    const timer = window.setInterval(refreshUsage, 10_000);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentGameId, currentView, currentGame?.currentTurn]);
+
+  /**
+   * Накладывает изменения регионов на карту и подсвечивает изменившиеся.
+   * Читает мир из стора напрямую: вызывается из SSE-колбэков, где
+   * замыкание на currentWorld было бы устаревшим.
+   */
+  const applyRegionChanges = (changes: (Partial<Region> & { id: string })[], highlight = true) => {
+    const world = useGameStore.getState().currentWorld;
+    if (!world || changes.length === 0) return;
+    const regions = { ...world.regions };
+    const changed: string[] = [];
+    for (const c of changes) {
+      const old = regions[c.id];
+      if (!old || old.owner !== c.owner || old.color !== c.color || old.name !== c.name) changed.push(c.id);
+      regions[c.id] = { ...old, ...c } as Region;
+    }
+    if (changed.length === 0) return;
+    setCurrentWorld({ ...world, regions });
+    if (highlight) {
+      setChangedRegions(changed);
+      setTimeout(() => clearChangedRegions(), 3000);
+    }
+  };
+
+  /** Полная сверка игры и карты с сервером — после хода и отката */
+  const syncGameFromServer = async (gameId: string, highlight = true) => {
+    const updatedGame = await gameApi.get(gameId);
+    setCurrentGame(prev => (prev ? {
+      ...prev,
+      currentTurn: updatedGame.currentTurn,
+      currentDate: updatedGame.currentDate,
+      players: updatedGame.players,
+    } : updatedGame));
+    applyRegionChanges(Object.values(updatedGame.world?.regions || {}), highlight);
+  };
 
   // Refs (not in store - DOM refs)
   const actionsRef = useRef<HTMLDivElement>(null);
@@ -473,38 +541,7 @@ function App() {
         }
       }
 
-      const updatedGame = await gameApi.get(currentGame.id);
-      setCurrentGame(updatedGame);
-
-      const changed: string[] = [];
-      if (updatedGame.world && currentWorld) {
-        const newRegions = { ...currentWorld.regions };
-        const gameRegions = Array.isArray(updatedGame.world.regions)
-          ? updatedGame.world.regions
-          : Object.values(updatedGame.world.regions);
-        gameRegions.forEach((r: any) => {
-          if (newRegions[r.id]) {
-            const oldRegion = newRegions[r.id];
-            if (oldRegion.owner !== r.owner || oldRegion.color !== r.color) {
-              changed.push(r.id);
-            }
-            newRegions[r.id] = {
-              ...newRegions[r.id],
-              owner: r.owner,
-              color: r.color,
-              population: r.population,
-              militaryPower: r.militaryPower,
-              gdp: r.gdp,
-            };
-          }
-        });
-        setCurrentWorld({ ...currentWorld, regions: newRegions });
-
-        if (changed.length > 0) {
-          setChangedRegions(changed);
-          setTimeout(() => clearChangedRegions(), 3000);
-        }
-      }
+      await syncGameFromServer(currentGame.id);
     } catch (e) {
       console.error('Failed to submit action:', e);
       addHistory({
@@ -525,20 +562,22 @@ function App() {
     setLoading(true);
 
     try {
-      const result = await gameApi.timeSkip(currentGame.id, days);
+      const draftActions = pendingActions.map(action => action.text);
+      const result = await gameApi.timeSkip(currentGame.id, days, draftActions);
 
       if (result.type === 'actions_processed') {
-        for (const action of result.actions || []) {
-          if (action.result) {
-            addHistory({
-              turn: action.result.turn,
-              action: action.text,
-              result: action.result.narration,
-              events: action.result.events,
-              periodStart: action.result.periodStart,
-              periodEnd: action.result.periodEnd,
-            });
-          }
+        const turnActions = result.actions || [];
+        const turnResult = turnActions.find(action => action.result)?.result;
+        if (turnResult) {
+          addHistory({
+            turn: turnResult.turn,
+            action: turnActions.map(action => action.text).join('\n'),
+            result: turnResult.narration,
+            events: turnResult.events,
+            timelineEvents: turnResult.timelineEvents,
+            periodStart: turnResult.periodStart,
+            periodEnd: turnResult.periodEnd,
+          });
         }
 
         const lastAction = result.actions?.[result.actions.length - 1];
@@ -549,24 +588,32 @@ function App() {
             currentDate: (lastAction.result as any).periodEnd,
           } : prev);
         }
-      } else if (result.type === 'date_advanced') {
-        const startDate = currentGame.currentDate || '1951-01-01';
+      } else if (result.type === 'world_simulated' && result.result) {
+        const turnResult = result.result;
         addHistory({
-          turn: currentGame.currentTurn,
-          action: `⏭️ Time-skip`,
-          result: `Продвинуто на ${days} дней`,
-          periodStart: startDate,
-          periodEnd: result.newDate,
+          turn: turnResult.turn,
+          action: '⏭️ Автономный ход мира',
+          result: turnResult.narration,
+          events: turnResult.events,
+          timelineEvents: turnResult.timelineEvents,
+          periodStart: turnResult.periodStart,
+          periodEnd: turnResult.periodEnd,
         });
 
         setCurrentGame(prev => prev ? {
           ...prev,
-          currentTurn: result.newTurn!,
-          currentDate: result.newDate,
+          currentTurn: turnResult.turn + 1,
+          currentDate: turnResult.periodEnd,
         } : prev);
       }
+      clearPendingActions();
+      setLiveTimelineEvents([]);
+      // Итоговая сверка карты: события уже перекрасили регионы по SSE,
+      // здесь доезжают worldChanges конца хода и всё, что SSE мог пропустить
+      await syncGameFromServer(currentGame.id);
     } catch (e) {
       console.error('Time-skip failed:', e);
+      setLiveTimelineEvents([]);
     }
 
     setLoading(false);
@@ -580,28 +627,8 @@ function App() {
     setLoading(true);
     try {
       await gameApi.rewind(currentGame.id);
-      const updatedGame = await gameApi.get(currentGame.id);
-      setCurrentGame(updatedGame);
-
-      if (updatedGame.world && currentWorld) {
-        const newRegions = { ...currentWorld.regions };
-        const gameRegions = Array.isArray(updatedGame.world.regions)
-          ? updatedGame.world.regions
-          : Object.values(updatedGame.world.regions);
-        gameRegions.forEach((r: any) => {
-          if (newRegions[r.id]) {
-            newRegions[r.id] = {
-              ...newRegions[r.id],
-              owner: r.owner,
-              color: r.color,
-              population: r.population,
-              militaryPower: r.militaryPower,
-              gdp: r.gdp,
-            };
-          }
-        });
-        setCurrentWorld({ ...currentWorld, regions: newRegions });
-      }
+      await syncGameFromServer(currentGame.id, false);
+      const updatedGame = useGameStore.getState().currentGame!;
 
       addHistory({
         turn: updatedGame.currentTurn,
@@ -647,25 +674,6 @@ function App() {
     // useChatStore.getState().refreshChats();
   };
 
-  // Выбрать тип действия и заполнить шаблон
-  const handleActionTypeSelect = (type: string, template: string, targetRegionId?: string) => {
-    setSelectedActionType(type);
-    let text = template;
-    if (targetRegionId && currentWorld) {
-      const targetRegion = currentWorld.regions[targetRegionId];
-      if (targetRegion) {
-        text = template.replace('{target}', targetRegion.name);
-      }
-    }
-    setNewActionText(text);
-  };
-
-  // Очистить выбор действия
-  const clearActionType = () => {
-    setSelectedActionType(null);
-    setTargetRegionForAttack('');
-  };
-
   // Этап 6: возобновление сохранённой игры с лендинга
   const handleResumeSave = async (save: any) => {
     if (!save?.id || !save?.game_id) return;
@@ -695,7 +703,9 @@ function App() {
   // Рендер главного меню — Этап 6: лендинг в духе pax_home
   const renderMenu = () => (
     <Landing
-      onNewGame={() => setCurrentView('select-template')}
+      onNewGame={() => requireModel(() => setCurrentView('select-template'))}
+      llmView={llmView}
+      onOpenSettings={() => setSettingsModal({ onboarding: false })}
       // ОТКЛЮЧЕНО: редактор карт (временно) — onOpenEditor={() => setCurrentView('editor')}
       // ОТКЛЮЧЕНО: редактор карт (временно) — onSelectMap={handleSelectMap}
       onResumeSave={handleResumeSave}
@@ -716,6 +726,12 @@ function App() {
   // SSE real-time updates
   const [isProcessingTurn, setIsProcessingTurn] = useState(false);
   const [turnProgress, setTurnProgress] = useState<string>('');
+  const [liveTimelineEvents, setLiveTimelineEvents] = useState<Array<{
+    headline: string;
+    description?: string;
+    date?: string;
+    kind?: 'reaction' | 'independent' | 'world';
+  }>>([]);
   // Этап 2: сложность новой игры
   const [difficulty, setDifficulty] = useState<string>('normal');
 
@@ -733,15 +749,12 @@ function App() {
     return () => clearInterval(t);
   }, [loading, currentView]);
 
-  // Action type selector
-  const [selectedActionType, setSelectedActionType] = useState<string | null>(null);
-  const [targetRegionForAttack, setTargetRegionForAttack] = useState<string>('');
-
   useSSE(currentGame?.id || null, {
     onTurnStart: (data) => {
       console.log('[SSE] Turn started:', data);
       setIsProcessingTurn(true);
       setTurnProgress('Обработка хода...');
+      setLiveTimelineEvents([]);
     },
     onGeneratingNarration: () => {
       console.log('[SSE] Generating narration...');
@@ -752,9 +765,21 @@ function App() {
     },
     onJumpEvent: (data) => {
       setTurnProgress(`Событие ${data.index + 1}/${data.total}: ${data.event?.headline || ''}`);
+      // Карта меняется прямо по ходу событий, а не только после хода
+      if (data.changedRegions?.length) {
+        applyRegionChanges(data.changedRegions as (Partial<Region> & { id: string })[]);
+      }
+      if (data.event?.headline) {
+        setLiveTimelineEvents(events => [...events, data.event]);
+      }
     },
     onActionVoided: (data) => {
       setTurnProgress(`⊘ Действие отклонено: ${data.reason || data.action}`);
+      setLiveTimelineEvents(events => [...events, {
+        headline: `⊘ Отклонено: ${data.action}`,
+        description: data.reason,
+        kind: 'reaction',
+      }]);
     },
     // ОТКЛЮЧЕНО: переговоры — входящие сообщения дипломатических чатов не обрабатываем
     // // Этап 3: входящее сообщение от политии — бейдж unread + обновление списка чатов
@@ -779,17 +804,10 @@ function App() {
       setIsProcessingTurn(false);
       setTurnProgress('');
 
-      // Add to history
+      // HTTP-ответ хода содержит полный список приказов, интервал и карточки
+      // событий; историю добавляет только он. SSE отвечает за live-прогресс
+      // и синхронизацию состояния, иначе один ход появлялся дважды.
       if (data) {
-        addHistory({
-          turn: data.turn,
-          action: data.action || 'Ход',
-          result: data.narration,
-          events: data.events,
-          periodEnd: data.newDate,
-        });
-
-        // Update current game state
         if (data.newTurn && data.newDate) {
           setCurrentGame(prev => prev ? {
             ...prev,
@@ -836,6 +854,10 @@ function App() {
           }}
           onRewind={handleRewind}
           onTimeSkip={handleTimeSkip}
+          timelineOpen={showJumpMenu}
+          onTimelineOpenChange={setShowJumpMenu}
+          usage={gameUsage}
+          onOpenSettings={() => setSettingsModal({ onboarding: false })}
         />
 
         <div className="game-container">
@@ -850,6 +872,20 @@ function App() {
               >
                 ⏸ Intervene
               </button>
+            </div>
+          )}
+          {liveTimelineEvents.length > 0 && (
+            <div className="live-event-sequence" aria-live="polite">
+              {liveTimelineEvents.map((event, index) => (
+                <div key={`${event.date || 'live'}-${index}`} className={`history-event-card ${event.kind || 'world'}`}>
+                  <div className="history-event-card-meta">
+                    <span>{event.kind === 'reaction' ? 'Реакция' : event.kind === 'independent' ? 'Событие мира' : 'Событие'}</span>
+                    {event.date && <time>{event.date}</time>}
+                  </div>
+                  <div className="history-event-card-title">{event.headline}</div>
+                  {event.description && <div className="history-event-card-description">{event.description}</div>}
+                </div>
+              ))}
             </div>
           )}
           {/* Карта слева */}
@@ -1098,14 +1134,8 @@ function App() {
                             <div
                               key={ai}
                               className="suggestion-action"
-                              onClick={async () => {
-                                if (!currentGame) return;
+                              onClick={() => {
                                 const text = a.content;
-                                try {
-                                  await gameApi.queueAction(currentGame.id, text);
-                                } catch (e) {
-                                  console.error('Failed to queue suggestion:', e);
-                                }
                                 addPendingAction({
                                   id: `suggestion-${Date.now()}-${ai}`,
                                   text
@@ -1145,120 +1175,22 @@ function App() {
 
                   {/* Manual Action Input */}
                   <div className="manual-action-input">
-                    {/* Action Type Buttons */}
-                    <div className="action-type-selector">
-                      <button
-                        className={`action-type-btn attack ${selectedActionType === 'attack' ? 'active' : ''}`}
-                        onClick={() => {
-                          if (selectedActionType === 'attack') {
-                            clearActionType();
-                          } else {
-                            const enemyRegions = Object.values(currentWorld?.regions || {})
-                              .filter(r => r.owner !== playerPolityId && r.owner !== 'neutral');
-                            const firstEnemy = enemyRegions[0] as Region | undefined;
-                            if (firstEnemy) {
-                              setTargetRegionForAttack(firstEnemy.id);
-                              handleActionTypeSelect('attack', 'атака на {target}', firstEnemy.id);
-                            } else {
-                              handleActionTypeSelect('attack', 'атака на {target}');
-                            }
-                          }
-                        }}
-                        title="Атаковать регион (💰20 ⚔️50)"
-                      >
-                        ⚔️ Attack
-                        <span className="action-cost">💰20 ⚔️50</span>
-                      </button>
-                      <button
-                        className={`action-type-btn develop ${selectedActionType === 'develop' ? 'active' : ''}`}
-                        onClick={() => {
-                          if (selectedActionType === 'develop') {
-                            clearActionType();
-                          } else {
-                            handleActionTypeSelect('develop', 'развить регион');
-                          }
-                        }}
-                        title="Развить регион (💰30)"
-                      >
-                        🏗️ Develop
-                        <span className="action-cost">💰30</span>
-                      </button>
-                      <button
-                        className={`action-type-btn trade ${selectedActionType === 'trade' ? 'active' : ''}`}
-                        onClick={() => {
-                          if (selectedActionType === 'trade') {
-                            clearActionType();
-                          } else {
-                            handleActionTypeSelect('trade', 'торговля');
-                          }
-                        }}
-                        title="Торговля (💰10)"
-                      >
-                        💰 Trade
-                        <span className="action-cost">💰10</span>
-                      </button>
-                      <button
-                        className={`action-type-btn build ${selectedActionType === 'build' ? 'active' : ''}`}
-                        onClick={() => {
-                          if (selectedActionType === 'build') {
-                            clearActionType();
-                          } else {
-                            handleActionTypeSelect('build', 'строительство');
-                          }
-                        }}
-                        title="Строительство (💰40)"
-                      >
-                        🏭 Build
-                        <span className="action-cost">💰40</span>
-                      </button>
-                    </div>
-
-                    {/* Target Region Selector (for attack) */}
-                    {selectedActionType === 'attack' && (
-                      <div className="target-region-selector">
-                        <label>Цель:</label>
-                        <select
-                          value={targetRegionForAttack}
-                          onChange={(e) => {
-                            setTargetRegionForAttack(e.target.value);
-                            const region = currentWorld?.regions[e.target.value];
-                            if (region) {
-                              setNewActionText(`атака на ${region.name}`);
-                            }
-                          }}
-                        >
-                          {(Object.values(currentWorld?.regions || {}) as Region[])
-                            .filter(r => r.owner !== playerPolityId && r.owner !== 'neutral')
-                            .map(r => (
-                              <option key={r.id} value={r.id}>{r.name} ({r.owner})</option>
-                            ))
-                          }
-                        </select>
-                      </div>
-                    )}
-
                     <textarea
                       value={newActionText}
                       onChange={(e) => setNewActionText(e.target.value)}
-                      placeholder={selectedActionType ? 'Отредактируйте текст или добавьте...' : 'Опишите действие или выберите тип выше...'}
+                      placeholder="Опишите действие своими словами…"
                       rows={2}
                     />
                     <button
                       className="btn-add-pending"
-                      onClick={async () => {
-                        if (newActionText.trim() && currentGame) {
-                          const text = newActionText.trim();
-                          try {
-                            await gameApi.queueAction(currentGame.id, text);
-                          } catch (e) {
-                            console.error('Failed to queue action:', e);
-                          }
-                          addPendingAction({
+                       onClick={() => {
+                         if (newActionText.trim() && currentGame) {
+                           const text = newActionText.trim();
+                           addPendingAction({
                             id: `manual-${Date.now()}`,
                             text
                           });
                           setNewActionText('');
-                          clearActionType();
                         }
                       }}
                       disabled={!newActionText.trim()}
@@ -1290,42 +1222,13 @@ function App() {
                   <button
                     className="btn-submit-actions"
                     disabled={pendingActions.length === 0 || loading}
-                    onClick={async () => {
-                      if (!currentGame || pendingActions.length === 0) return;
-                      setLoading(true);
-                      try {
-                        const result = await gameApi.processAllActions(currentGame.id, 30);
-
-                        for (const action of result.actions) {
-                          if (action.result) {
-                            addHistory({
-                              turn: action.result.turn,
-                              action: action.text,
-                              result: action.result.narration,
-                              events: action.result.events,
-                              periodStart: action.result.periodStart,
-                              periodEnd: action.result.periodEnd,
-                            });
-                          }
-                        }
-
-                        const lastAction = result.actions[result.actions.length - 1];
-                        if (lastAction?.result) {
-                          setCurrentGame(prev => prev ? {
-                            ...prev,
-                            currentTurn: (lastAction.result as any).turn + 1,
-                            currentDate: (lastAction.result as any).periodEnd,
-                          } : prev);
-                        }
-
-                        clearPendingActions();
-                      } catch (e) {
-                        console.error('Failed to process actions:', e);
-                      }
-                      setLoading(false);
+                    onClick={() => {
+                      if (pendingActions.length === 0) return;
+                      setShowActions(false);
+                      setShowJumpMenu(true);
                     }}
                   >
-                    {loading ? 'Думаю...' : `Отправить ${pendingActions.length} действие(й) →`}
+                    Выбрать период · приказов: {pendingActions.length} →
                   </button>
                 </div>
                 )}
@@ -1350,7 +1253,20 @@ function App() {
                     </div>
                     <div className="history-action">→ {item.action}</div>
                     <div className="history-result">{item.result}</div>
-                    {item.events && item.events.length > 0 && (
+                    {item.timelineEvents && item.timelineEvents.length > 0 ? (
+                      <div className="history-timeline-events">
+                        {item.timelineEvents.map((event, ei) => (
+                          <div key={`${event.date}-${ei}`} className={`history-event-card ${event.kind || 'world'}`}>
+                            <div className="history-event-card-meta">
+                              <span>{event.kind === 'reaction' ? 'Реакция' : event.kind === 'independent' ? 'Событие мира' : 'Событие'}</span>
+                              {event.date && <time>{event.date}</time>}
+                            </div>
+                            <div className="history-event-card-title">{event.headline}</div>
+                            {event.description && <div className="history-event-card-description">{event.description}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    ) : item.events && item.events.length > 0 && (
                       <div className="history-events">
                         {item.events.map((event, ei) => (
                           <div key={ei} className="history-event">• {event}</div>
@@ -1557,6 +1473,17 @@ function App() {
         </div>
       )}
       {currentView === 'game' && renderGame()}
+      {settingsModal && (
+        <LLMSettingsModal
+          onboarding={settingsModal.onboarding}
+          onClose={() => setSettingsModal(null)}
+          onSaved={view => {
+            setLlmView(view);
+            refreshUsage();
+            if (view.configured) settingsModal.then?.();
+          }}
+        />
+      )}
       {/* ОТКЛЮЧЕНО: редактор карт (временно) — маршруты 'editor' и 'create-world'
       {currentView === 'editor' && renderEditor()}
       {currentView === 'create-world' && renderCreateWorld()}

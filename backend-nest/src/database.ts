@@ -323,6 +323,38 @@ export function initDatabase() {
     )
   `);
 
+  // Настройки приложения (key → JSON), в т.ч. подключение к LLM из UI
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Журнал LLM-вызовов: токены, латентность, оценка стоимости.
+  // Без FK на games — история расходов переживает удаление игры.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS llm_calls (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      game_id TEXT,
+      mechanic TEXT NOT NULL,
+      provider TEXT,
+      model TEXT,
+      input_tokens INTEGER DEFAULT 0,
+      output_tokens INTEGER DEFAULT 0,
+      cached_input_tokens INTEGER DEFAULT 0,
+      estimated INTEGER DEFAULT 0,
+      cache_hit INTEGER DEFAULT 0,
+      latency_ms INTEGER,
+      ok INTEGER DEFAULT 1,
+      error TEXT,
+      cost_usd REAL
+    )
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_llm_calls_game ON llm_calls(game_id)`);
+
   console.log('✅ Database initialized');
 }
 
