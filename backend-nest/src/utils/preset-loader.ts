@@ -43,6 +43,11 @@ export interface PresetPackage {
   countries?: PresetCountry[];
   /** Кураторская палитра карты: код страны → приглушённый цвет (#RRGGBB) */
   country_colors?: Record<string, string>;
+  /**
+   * Государство из нескольких стран карты: { "YUG": ["SRB", "HRV", …] } —
+   * регионы этих стран при старте принадлежат YUG (историческая карта).
+   */
+  polity_members?: Record<string, string[]>;
   /** Переопределённые промпты ИИ пресета: механика → текст шаблона с ${VAR} */
   prompts?: Record<string, string>;
   /** rules.md — правила симуляции */
@@ -115,6 +120,16 @@ export function validatePresetJson(raw: any, context = 'preset.json'): Omit<Pres
       }
     }
   }
+  if (raw.polity_members !== undefined) {
+    if (!raw.polity_members || typeof raw.polity_members !== 'object' || Array.isArray(raw.polity_members)) {
+      throw new Error(`${context}: polity_members должен быть объектом { "YUG": ["SRB", "HRV"] }`);
+    }
+    for (const [code, members] of Object.entries(raw.polity_members)) {
+      if (!/^[A-Z]{3}$/.test(code) || !Array.isArray(members) || !members.every(m => typeof m === 'string' && /^[A-Z]{3}$/.test(m))) {
+        throw new Error(`${context}: polity_members["${code}"] — нужен массив кодов ISO_A3`);
+      }
+    }
+  }
   if (raw.prompts !== undefined) {
     if (!raw.prompts || typeof raw.prompts !== 'object' || Array.isArray(raw.prompts)) {
       throw new Error(`${context}: prompts должен быть объектом { "<механика>": "<текст промпта>" }`);
@@ -135,6 +150,7 @@ export function validatePresetJson(raw: any, context = 'preset.json'): Omit<Pres
     historical_accuracy: typeof raw.historical_accuracy === 'number' ? raw.historical_accuracy : undefined,
     countries: raw.countries,
     country_colors: raw.country_colors,
+    polity_members: raw.polity_members,
     prompts: raw.prompts,
     author: typeof raw.author === 'string' ? raw.author : undefined,
     version: typeof raw.version === 'string' ? raw.version : undefined,

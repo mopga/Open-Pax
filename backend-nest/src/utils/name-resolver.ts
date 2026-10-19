@@ -93,6 +93,26 @@ export interface PolityInfo {
   isPlayer: boolean;
 }
 
+/** Запись реестра государств для резолвера */
+export interface PolityEntry {
+  id: string;
+  name: string;
+  color?: string;
+}
+
+/**
+ * Государства, выведенные из регионов (старые миры без реестра):
+ * имя и цвет — у первого встреченного региона владельца.
+ */
+export function politiesFromRegions(regions: ResolvableRegion[]): PolityEntry[] {
+  const out = new Map<string, PolityEntry>();
+  for (const region of regions) {
+    const owner = region.owner || 'neutral';
+    if (!out.has(owner)) out.set(owner, { id: owner, name: region.name, color: region.color });
+  }
+  return [...out.values()];
+}
+
 export interface PolityResolution {
   polityId: string;
   /** true, если полития новая (LLM создала её в этом ходе) */
@@ -107,19 +127,22 @@ export class PolityResolver {
   private byNormalized: Map<string, PolityInfo> = new Map();
   private entries: { normalized: string; polity: PolityInfo }[] = [];
 
-  constructor(regions: ResolvableRegion[], private playerPolityId?: string) {
+  /**
+   * @param source реестр государств; для совместимости — регионы (тогда
+   *               государства выводятся из них, см. politiesFromRegions)
+   */
+  constructor(source: PolityEntry[] | ResolvableRegion[], private playerPolityId?: string) {
+    const entries: PolityEntry[] = source.length > 0 && 'owner' in source[0]
+      ? politiesFromRegions(source as ResolvableRegion[])
+      : (source as PolityEntry[]);
     const polities = new Map<string, PolityInfo>();
-
-    for (const region of regions) {
-      const owner = region.owner || 'neutral';
-      if (!polities.has(owner)) {
-        polities.set(owner, {
-          polityId: owner,
-          displayName: region.name, // первая встреченная — «главный» регион
-          color: region.color,
-          isPlayer: owner === playerPolityId,
-        });
-      }
+    for (const e of entries) {
+      polities.set(e.id, {
+        polityId: e.id,
+        displayName: e.name,
+        color: e.color,
+        isPlayer: e.id === playerPolityId,
+      });
     }
 
     for (const polity of polities.values()) {
@@ -180,6 +203,18 @@ export class PolityResolver {
 
     // Неизвестная полития — LLM создала новую. Id = само имя (валидный ключ матрицы).
     return { polityId: trimmed, isNew: true };
+  }
+
+  /** Только точное совпадение имени/кода/алиаса — для операций над существующим государством */
+  resolveExact(name: string | undefined | null): string | undefined {
+    if (!name) return undefined;
+    return this.byNormalized.get(normalizeName(name))?.polityId;
+  }
+
+  /** Существующее государство по имени (точно или нечётко), без создания нового */
+  resolveExisting(name: string | undefined | null): string | undefined {
+    const r = this.resolve(name);
+    return r && !r.isNew ? r.polityId : undefined;
   }
 
   /** Цвет существующей политии (для перекраски региона при передаче). */

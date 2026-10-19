@@ -166,6 +166,9 @@ export const gameApi = {
     if (Array.isArray(game?.world?.regions)) {
       game.world.regions = Object.fromEntries(game.world.regions.map((r: any) => [r.id, r]));
     }
+    if (Array.isArray(game?.world?.polities)) {
+      game.world.polities = Object.fromEntries(game.world.polities.map((p: any) => [p.id, p]));
+    }
     return game as Game;
   },
   

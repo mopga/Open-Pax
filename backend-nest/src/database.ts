@@ -323,6 +323,20 @@ export function initDatabase() {
     )
   `);
 
+  // Реестр государств мира: имя, цвет, флаг. Регион хранит только owner =
+  // id государства. Старые миры без строк здесь выводят государства из регионов.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS world_polities (
+      world_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      color TEXT NOT NULL,
+      flag TEXT,
+      metadata TEXT,
+      PRIMARY KEY (world_id, id)
+    )
+  `);
+
   // Настройки приложения (key → JSON), в т.ч. подключение к LLM из UI
   db.exec(`
     CREATE TABLE IF NOT EXISTS app_settings (

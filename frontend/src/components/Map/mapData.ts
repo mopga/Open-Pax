@@ -397,6 +397,42 @@ export function labelLineForPart(poly: PolygonCoords): LabelLine | null {
   return { line, length, thickness };
 }
 
+/**
+ * Контуры государств: внешние рёбра их регионов (берег или сосед другого
+ * владельца), склеенные в замкнутые кольца. Государство из многих регионов
+ * (области, провинции) получает один общий контур — по нему строится
+ * подпись. Незамкнутые цепочки (несовпавшие вершины) отбрасываются;
+ * государство без единого кольца получает null — тогда подпись строится по
+ * полигонам регионов.
+ */
+export function polityOutlines(
+  edges: BorderEdge[],
+  ownerOf: (regionId: string) => string | null | undefined,
+): Map<string, Position[][]> {
+  const segsByOwner = new Map<string, [Position, Position][]>();
+  const add = (owner: string | null | undefined, line: Position[]) => {
+    if (!owner || owner === 'neutral') return;
+    const list = segsByOwner.get(owner) ?? [];
+    for (let i = 0; i < line.length - 1; i++) list.push([line[i], line[i + 1]]);
+    segsByOwner.set(owner, list);
+  };
+  for (const e of edges) {
+    const oa = ownerOf(e.a);
+    const ob = e.b ? ownerOf(e.b) : null;
+    if (oa === ob) continue;
+    for (const line of e.lines) {
+      add(oa, line);
+      add(ob, line);
+    }
+  }
+  const out = new Map<string, Position[][]>();
+  for (const [owner, segs] of segsByOwner) {
+    const rings = chainSegments(segs).filter(l => l.length >= 4 && keyOf(l[0]) === keyOf(l[l.length - 1]));
+    out.set(owner, rings);
+  }
+  return out;
+}
+
 /** Самый крупный кусок (по площади в пикселях Меркатора) набора фич — для вида на страну */
 export function largestPartBounds(features: RegionFeature[]): [[number, number], [number, number]] | null {
   let best: PolygonCoords | null = null;
@@ -458,11 +494,22 @@ export function buildPolityLabels(
   regions: MapRegionInput[],
   features: RegionFeature[],
   polityName: (owner: string) => string,
+  /** Рёбра карты (buildBorderEdges): подпись строится по общему контуру государства */
+  edges?: BorderEdge[],
 ): PolityLabel[] {
   const geomById = new Map(features.map(f => [f.properties.id, f.geometry]));
   const partsByOwner = new Map<string, PolygonCoords[]>();
 
+  if (edges) {
+    const ownerById = new Map(regions.map(r => [r.id, r.owner]));
+    for (const [owner, rings] of polityOutlines(edges, id => ownerById.get(id))) {
+      // Кольцо контура = отдельный кусок государства (дыры для подписи не нужны)
+      if (rings.length > 0) partsByOwner.set(owner, rings.map(ring => [ring.map(p => project(p))]));
+    }
+  }
+
   for (const r of regions) {
+    if (edges && r.owner && partsByOwner.has(r.owner)) continue;
     const owner = r.owner;
     if (!owner || owner === 'neutral') continue;
     const geom = geomById.get(r.id);

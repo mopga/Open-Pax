@@ -5,7 +5,8 @@
 
 import { Router } from 'express';
 import { shortId } from '../utils/short-id';
-import { gameRepository } from '../repositories';
+import { gameRepository, worldRepository } from '../repositories';
+import { politiesFromRegions } from '../utils/name-resolver';
 import { getSessionRegistry } from '../session-registry';
 import { addSSEClient, removeSSEClient, broadcastToGame } from '../sse';
 import { LLMError } from '../llm';
@@ -100,6 +101,14 @@ gamesRouter.get('/:id', (req, res) => {
         geojson: r.geojson,
         flag: r.flag,
       })),
+      // Реестр государств (имя/цвет); у старых миров — выведен из регионов
+      polities: (() => {
+        const rows = worldRepository.getPolities(game.world.id);
+        if (rows.length > 0) return rows.map(p => ({ id: p.id, name: p.name, color: p.color, flag: p.flag ?? null }));
+        return politiesFromRegions(game.world.regions)
+          .filter(p => p.id !== 'neutral')
+          .map(p => ({ id: p.id, name: p.name, color: p.color || '#888888', flag: null }));
+      })(),
     },
     players: game.players.map((p: any) => ({
       id: p.id,

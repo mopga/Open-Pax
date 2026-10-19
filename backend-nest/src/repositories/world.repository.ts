@@ -35,6 +35,15 @@ export interface RegionRecord {
   status: string;
 }
 
+/** Государство (полития) мира */
+export interface PolityRecord {
+  id: string;
+  name: string;
+  color: string;
+  flag?: string | null;
+  metadata?: Record<string, any> | null;
+}
+
 export const worldRepository = {
   create: (world: { id: string; name: string; description?: string; startDate?: string; basePrompt?: string; historicalAccuracy?: number; simulationRules?: string | null; prompts?: string | null }) => {
     const stmt = db.prepare(`
@@ -66,6 +75,33 @@ export const worldRepository = {
       ...row,
       regions,
     };
+  },
+
+  getPolities: (worldId: string): PolityRecord[] => {
+    const rows = db.prepare('SELECT * FROM world_polities WHERE world_id = ? ORDER BY id').all(worldId) as any[];
+    return rows.map(row => ({
+      id: row.id,
+      name: row.name,
+      color: row.color,
+      flag: row.flag,
+      metadata: row.metadata ? JSON.parse(row.metadata) : null,
+    }));
+  },
+
+  /** Создать или обновить государства мира одной транзакцией */
+  upsertPolities: (worldId: string, polities: PolityRecord[]) => {
+    if (polities.length === 0) return;
+    const stmt = db.prepare(`
+      INSERT INTO world_polities (world_id, id, name, color, flag, metadata) VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(world_id, id) DO UPDATE SET
+        name = excluded.name, color = excluded.color, flag = excluded.flag,
+        metadata = COALESCE(excluded.metadata, world_polities.metadata)
+    `);
+    db.transaction((items: PolityRecord[]) => {
+      for (const p of items) {
+        stmt.run(worldId, p.id, p.name, p.color, p.flag ?? null, p.metadata ? JSON.stringify(p.metadata) : null);
+      }
+    })(polities);
   },
 
   getRegions: (worldId: string): RegionRecord[] => {
@@ -161,9 +197,10 @@ export const worldRepository = {
     stmt.run(...values);
   },
 
-  createWithRegions: (world: { id: string; name: string; description?: string; startDate?: string; basePrompt?: string; historicalAccuracy?: number; simulationRules?: string | null; prompts?: string | null }, regions: any[]) => {
+  createWithRegions: (world: { id: string; name: string; description?: string; startDate?: string; basePrompt?: string; historicalAccuracy?: number; simulationRules?: string | null; prompts?: string | null }, regions: any[], polities: PolityRecord[] = []) => {
     const createWorld = db.transaction(() => {
       worldRepository.create(world);
+      worldRepository.upsertPolities(world.id, polities);
       for (const region of regions) {
         worldRepository.addRegion({
           id: region.id,

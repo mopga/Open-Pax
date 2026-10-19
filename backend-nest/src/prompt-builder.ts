@@ -33,6 +33,8 @@ interface GameData {
     basePrompt: string;
     startDate: string;
     regions: any; // может быть Map или объект
+    /** Реестр государств: id → { name, color }. Нет у старых миров — имя берётся из регионов */
+    polities?: Record<string, { id: string; name: string; color: string }>;
     /** Переопределённые промпты мира (приоритет над дефолтными builders) */
     prompts?: PromptOverrides | string | null;
   };
@@ -144,7 +146,9 @@ export class PromptBuilder {
   buildVariables(): PromptVariables {
     const player = this.game.players[0];
     const playerRegion = getRegion(this.game.world.regions, player.regionId);
-    const playerPolityName = playerRegion?.name || player.name;
+    const playerPolityId = this.game.playerPolityId || player.polityId || playerRegion?.owner;
+    const playerPolityName = (playerPolityId && this.game.world.polities?.[playerPolityId]?.name)
+      || playerRegion?.name || player.name;
 
     return {
       STARTING_ROUND_DATE: this.game.world.startDate || '1951-01-01',
@@ -192,15 +196,16 @@ export class PromptBuilder {
    * имена — и не мог осмысленно адресовать политии в mapChanges.
    */
   private polityDisplayName(owner: string, regionList: RegionData[]): string {
-    return regionList[0]?.name || owner;
+    return this.game.world.polities?.[owner]?.name || regionList[0]?.name || owner;
   }
 
   private polityHeader(owner: string, regionList: RegionData[]): string {
     const displayName = this.polityDisplayName(owner, regionList);
     const playerMark = owner === this.game.playerPolityId ? ' (ИГРОК)' : '';
+    const color = this.game.world.polities?.[owner]?.color || regionList[0].color;
     // Показываем и имя, и id-алиас: LLM адресует политию по имени,
     // движок резолвит и то, и другое (см. utils/name-resolver).
-    return `Полития "${displayName}" [${owner}]${playerMark} (цвет ${regionList[0].color}):`;
+    return `Полития "${displayName}" [${owner}]${playerMark} (цвет ${color}, регионов: ${regionList.length}):`;
   }
 
   // Описание карты (полное)
@@ -257,12 +262,13 @@ export class PromptBuilder {
     return description;
   }
 
-  // Регионы игрока
+  // Регионы игрока: все регионы его государства (раньше — только «домашний»)
   private buildPlayerRegions(playerRegionId: string): string {
     const playerRegion = getRegion(this.game.world.regions, playerRegionId);
-    if (!playerRegion) return 'Нет регионов';
-
-    return playerRegion.name;
+    const polityId = this.game.playerPolityId || playerRegion?.owner;
+    if (!polityId) return playerRegion?.name || 'Нет регионов';
+    const owned = getAllRegions(this.game.world.regions).filter(r => r.owner === polityId);
+    return owned.length > 0 ? owned.map(r => r.name).join(', ') : 'Нет регионов';
   }
 
   // Батальоны игрока

@@ -413,6 +413,12 @@ body {
   margin-bottom: 8px;
 }
 
+.country-owner {
+  margin-top: -4px;
+  color: #9a9aac;
+  font-size: 0.9rem;
+}
+
 .action-section {
   margin-bottom: 16px;
 }

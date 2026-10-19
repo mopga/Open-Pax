@@ -16,7 +16,8 @@ import { worldRepository, gameRepository, relationshipRepository } from './repos
 // import type { ChatRecord, ChatSummary, ChatMessageRecord } from './repositories';
 import db from './database';
 import { RelationshipMatrix } from './core/RelationshipMatrix';
-import { RegionResolver, PolityResolver } from './utils/name-resolver';
+import { RegionResolver, PolityResolver, politiesFromRegions } from './utils/name-resolver';
+import { colorFromCode } from './utils/color';
 import { Difficulty, normalizeDifficulty } from './prompts/difficulty';
 // ОТКЛЮЧЕНО: переговоры — промпт дипломатических чатов не собирается
 // import { buildChatPrompt, parseChatResponse } from './prompts/chat';
@@ -34,6 +35,14 @@ export interface RegionState {
   svgPath?: string;
   borders: string[];
   status: 'active' | 'occupied' | 'destroyed' | 'independent';
+}
+
+/** Государство (полития): имя и цвет живут здесь, регион хранит только owner */
+export interface PolityState {
+  id: string;
+  name: string;
+  color: string;
+  flag?: string | null;
 }
 
 /** Изменение региона, рассылаемое в SSE jump_event */
@@ -109,6 +118,8 @@ export interface SaveData {
   currentDate: string;
   players: PlayerInfo[];
   regions: [string, RegionState][]; // [regionId, state] pairs
+  /** Реестр государств; в старых сейвах отсутствует — выводится из регионов */
+  polities?: [string, PolityState][];
   relationships?: Record<string, Record<string, string>>;
   /** Этап 2: история ходов — иначе rewind/лоад теряет контекст для LLM */
   actions?: ActionRecord[];
@@ -126,6 +137,8 @@ export class GameSession {
 
   // Full region state - source of truth during gameplay
   private regions: Map<string, RegionState> = new Map();
+  // Реестр государств мира (имя/цвет); регион ссылается на него через owner
+  private polities: Map<string, PolityState> = new Map();
 
   // Session-specific agents (not shared!)
   private gameController: GameController;
@@ -258,6 +271,7 @@ export class GameSession {
         basePrompt: this.worldBasePrompt,
         startDate: this.worldStartDate || this.currentDate,
         regions: regionsObj,
+        polities: Object.fromEntries(this.polities),
       },
       // Этап 5: правила симуляции мира → HISTORICAL_PRESET_SIMULATION_RULES
       simulationRules: this.worldSimulationRules ?? undefined,
@@ -458,6 +472,8 @@ export class GameSession {
       });
     }
 
+    this.loadPolities();
+
     // Create player. Player's polity = owner of the chosen region
     // (unified polity-id convention: country code for templates).
     const playerPolityId = this.regions.get(playerRegionId)?.owner || 'player';
@@ -549,6 +565,8 @@ export class GameSession {
       }
     }
 
+    this.loadPolities();
+
     // Re-initialize game controller with current state
     this.gameController.initPromptEngine(this.buildGameData());
 
@@ -575,6 +593,59 @@ export class GameSession {
    */
   getAllRegions(): RegionState[] {
     return Array.from(this.regions.values());
+  }
+
+  /**
+   * Реестр государств из БД; старые миры (без world_polities) — из регионов:
+   * имя и цвет первого региона владельца, как было до реестра.
+   */
+  private loadPolities(): void {
+    const rows = worldRepository.getPolities(this.worldId);
+    const list = rows.length > 0
+      ? rows.map(r => ({ id: r.id, name: r.name, color: r.color, flag: r.flag ?? null }))
+      : politiesFromRegions(Array.from(this.regions.values()))
+        .filter(p => p.id !== 'neutral')
+        .map(p => ({ id: p.id, name: p.name, color: p.color || '#888888', flag: null }));
+    this.polities = new Map(list.map(p => [p.id, p]));
+  }
+
+  /** Список государств (для API) */
+  getPolities(): PolityState[] {
+    return Array.from(this.polities.values());
+  }
+
+  /** Новое государство, созданное симуляцией: id = имя (так его адресует LLM) */
+  private ensurePolity(id: string, name: string, color?: string): PolityState {
+    let polity = this.polities.get(id);
+    if (!polity) {
+      polity = { id, name: name || id, color: color || colorFromCode(id), flag: null };
+      this.polities.set(id, polity);
+    }
+    return polity;
+  }
+
+  /** Сменить владельца региона: цвет региона — цвет государства-владельца */
+  private setRegionOwner(region: RegionState, polityId: string): void {
+    region.owner = polityId;
+    const polity = this.polities.get(polityId);
+    if (polity) region.color = polity.color;
+  }
+
+  /** Перекрасить все регионы государства в его текущий цвет */
+  private recolorPolity(polityId: string): void {
+    const polity = this.polities.get(polityId);
+    if (!polity) return;
+    for (const region of this.regions.values()) {
+      if (region.owner === polityId) region.color = polity.color;
+    }
+  }
+
+  private politySnapshot(): Map<string, string> {
+    return new Map([...this.polities].map(([id, p]) => [id, `${p.name}|${p.color}|${p.flag ?? ''}`]));
+  }
+
+  private polityDelta(before: Map<string, string>): PolityState[] {
+    return [...this.polities.values()].filter(p => before.get(p.id) !== `${p.name}|${p.color}|${p.flag ?? ''}`);
   }
 
   /** Отпечаток видимого на карте состояния регионов (для диффа по событию) */
@@ -642,7 +713,7 @@ export class GameSession {
     const all = Array.from(this.regions.values());
     return {
       regions: new RegionResolver(all),
-      polities: new PolityResolver(all, this.playerPolityId),
+      polities: new PolityResolver(Array.from(this.polities.values()), this.playerPolityId),
     };
   }
 
@@ -665,15 +736,22 @@ export class GameSession {
         if (!liveRegion) continue;
 
         const ownerResolution = resolvers.polities.resolve(newOwner);
-        liveRegion.owner = ownerResolution?.polityId || newOwner;
-
-        // Sync color: из regionColors, либо цвет существующей политии
+        const polityId = ownerResolution?.polityId || newOwner;
         const explicitColor = changes.regionColors?.[regionKey] || changes.regionColors?.[region.id];
-        const inheritedColor = resolvers.polities.colorOf(liveRegion.owner);
-        if (explicitColor) {
-          liveRegion.color = explicitColor;
-        } else if (inheritedColor && inheritedColor !== liveRegion.color) {
-          liveRegion.color = inheritedColor;
+        // Новое государство получает явный цвет из regionColors (если есть)
+        if (ownerResolution?.isNew) this.ensurePolity(polityId, newOwner, explicitColor);
+        this.setRegionOwner(liveRegion, polityId);
+      }
+    }
+
+    // regionColors с именем государства — смена его цвета (смена режима)
+    if (changes.regionColors) {
+      for (const [key, color] of Object.entries(changes.regionColors)) {
+        const polityId = resolvers.polities.resolveExact(key);
+        const polity = polityId ? this.polities.get(polityId) : undefined;
+        if (polity && color) {
+          polity.color = color;
+          this.recolorPolity(polity.id);
         }
       }
     }
@@ -836,9 +914,52 @@ export class GameSession {
    */
   private applyMapChanges(mapChanges: MapChange[] | undefined): void {
     if (!mapChanges || mapChanges.length === 0) return;
-    const resolvers = this.buildResolvers();
+    let resolvers = this.buildResolvers();
 
     for (const change of mapChanges) {
+      // --- Операции над государством целиком (имя/цвет/роспуск/создание)
+      const polityTarget = change.polityName
+        ? resolvers.polities.resolveExisting(change.polityName)
+        // Старый формат: update/delete с именем государства в regionName
+        : (change.type === 'update' || change.type === 'delete')
+          ? resolvers.polities.resolveExact(change.regionName)
+          : undefined;
+
+      if ((change.type === 'update_polity' || change.type === 'update') && polityTarget) {
+        const polity = this.polities.get(polityTarget);
+        if (polity) {
+          if (change.newName) polity.name = change.newName;
+          if (change.newColor) polity.color = change.newColor;
+          this.recolorPolity(polity.id);
+          resolvers = this.buildResolvers();
+        }
+        continue;
+      }
+      if ((change.type === 'dissolve_polity' || change.type === 'delete') && polityTarget) {
+        for (const region of this.regions.values()) {
+          if (region.owner === polityTarget) {
+            region.owner = 'neutral';
+            region.color = '#888888';
+          }
+        }
+        continue;
+      }
+      if (change.type === 'create_polity' || change.type === 'create') {
+        const name = (change.newOwner || change.newName || change.polityName || '').trim();
+        if (!name) continue;
+        // Существующим считается только точное совпадение: нечёткий поиск
+        // превратил бы «Southern France» во France
+        const polityId = resolvers.polities.resolveExact(name) ?? name;
+        this.ensurePolity(polityId, name, change.newColor);
+        const targets = [change.regionName, ...(change.regionNames ?? [])]
+          .map(key => this.resolveRegionFlexible(key, resolvers.regions))
+          .filter((r): r is RegionState => !!r);
+        for (const region of targets) this.setRegionOwner(region, polityId);
+        resolvers = this.buildResolvers();
+        continue;
+      }
+
+      // --- Операции над регионами
       const regionKey = change.regionName || change.regionId;
       const liveRegion = this.resolveRegionFlexible(regionKey, resolvers.regions);
       if (!liveRegion) {
@@ -848,32 +969,29 @@ export class GameSession {
 
       switch (change.type) {
         case 'transfer': {
-          const ownerResolution = resolvers.polities.resolve(change.newOwner);
-          if (!ownerResolution) break;
-          liveRegion.owner = ownerResolution.polityId;
-          // Цвет: явный newColor или цвет новой политии
-          const inherited = resolvers.polities.colorOf(ownerResolution.polityId);
-          liveRegion.color = change.newColor || inherited || liveRegion.color;
+          const newOwner = change.newOwner?.trim();
+          if (!newOwner) break;
+          // Точное имя → существующее государство. Новый цвет без точного
+          // совпадения — признак нового государства («Southern France» ≠ France).
+          // Иначе нечёткий поиск (склонения: «Франции» → «Франция»).
+          const exact = resolvers.polities.resolveExact(newOwner);
+          const fuzzy = exact ?? (change.newColor ? undefined : resolvers.polities.resolveExisting(newOwner));
+          const polityId = fuzzy ?? newOwner;
+          if (!fuzzy) {
+            this.ensurePolity(polityId, newOwner, change.newColor);
+            resolvers = this.buildResolvers();
+          }
+          this.setRegionOwner(liveRegion, polityId);
           break;
         }
         case 'update': {
-          if (change.newColor) liveRegion.color = change.newColor;
+          // Переименование региона (имя/цвет государства — update_polity)
           if (change.newName) liveRegion.name = change.newName;
           break;
         }
         case 'delete': {
           liveRegion.owner = 'neutral';
           liveRegion.color = '#888888';
-          break;
-        }
-        case 'create_polity':
-        case 'create': {
-          // Создание новой политии: регион получает нового владельца (+ цвет)
-          const ownerResolution = resolvers.polities.resolve(change.newOwner || change.newName);
-          if (ownerResolution) {
-            liveRegion.owner = ownerResolution.polityId;
-            if (change.newColor) liveRegion.color = change.newColor;
-          }
           break;
         }
         case 'spawn_battalion': {
@@ -1018,6 +1136,7 @@ export class GameSession {
       objects: region.objects || [],
     }));
     worldRepository.updateRegionsBatch(updates);
+    worldRepository.upsertPolities(this.worldId, Array.from(this.polities.values()));
   }
 
   /**
@@ -1032,6 +1151,7 @@ export class GameSession {
       currentDate: this.currentDate,
       players: this.players,
       regions: Array.from(this.regions.entries()),
+      polities: Array.from(this.polities.entries()),
       relationships: this.relationships.toJSON(),
       actions: this.actions,
       results: this.results,
@@ -1070,6 +1190,12 @@ export class GameSession {
     // Restore regions
     if (saveData.regions) {
       this.regions = new Map(saveData.regions);
+    }
+    // Реестр государств: из сейва; старые сейвы — из БД/регионов
+    if (saveData.polities) {
+      this.polities = new Map(saveData.polities);
+    } else {
+      this.loadPolities();
     }
 
     // Restore relationships
@@ -1111,6 +1237,7 @@ export class GameSession {
       currentDate: this.currentDate,
       players: this.players,
       regions: Array.from(this.regions.entries()),
+      polities: Array.from(this.polities.entries()),
       relationships: this.relationships.toJSON(),
       actions: this.actions,
       results: this.results,
@@ -1377,15 +1504,20 @@ ${toSummarize.map(r => `Раунд ${r.turn}: ${r.narration}`).join('\n\n')}
         }
         const event = events[i];
         let changedRegions: RegionDelta[] = [];
+        let changedPolities: PolityState[] = [];
         if (event.mapChanges && event.mapChanges.length > 0) {
           const before = this.regionSnapshot();
+          const politiesBefore = this.politySnapshot();
           this.applyMapChanges(event.mapChanges);
           changedRegions = this.regionDelta(before);
+          changedPolities = this.polityDelta(politiesBefore);
         }
         appliedEvents.push(event);
-        // changedRegions — итоговое состояние затронутых регионов: фронт
-        // перекрашивает карту прямо по ходу событий, не дожидаясь конца хода
-        this.broadcast('jump_event', { turn: this.currentTurn, index: i, total: events.length, event, changedRegions });
+        // changedRegions/changedPolities — итоговое состояние затронутого: фронт
+        // перекрашивает карту и подписи прямо по ходу событий
+        this.broadcast('jump_event', {
+          turn: this.currentTurn, index: i, total: events.length, event, changedRegions, changedPolities,
+        });
         // Пауза, чтобы фронт успел показать событие (только при живом SSE)
         if (this.sseBroadcaster && i < events.length - 1) {
           await new Promise(r => setTimeout(r, 350));

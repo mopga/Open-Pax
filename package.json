@@ -10,7 +10,8 @@
     "build:frontend": "cd frontend && npm run build",
     "install:all": "npm install --workspaces --if-present",
     "map:relief": "node scripts/build-relief-tiles.mjs",
-    "map:glyphs": "node scripts/build-glyphs.mjs"
+    "map:glyphs": "node scripts/build-glyphs.mjs",
+    "map:regions": "node scripts/build-regions.mjs"
   },
   "workspaces": [
     "frontend",
@@ -21,11 +22,13 @@
   },
   "allowScripts": {
     "better-sqlite3": true,
-    "esbuild": true
+    "esbuild": true,
+    "msgpackr-extract": false
   },
   "devDependencies": {
     "@fontsource/pt-serif": "^5.3.0",
     "adm-zip": "^0.6.1",
+    "mapshaper": "^0.7.90",
     "opentype.js": "^2.0.0",
     "pbf": "^5.1.2",
     "sharp": "^0.35.5"

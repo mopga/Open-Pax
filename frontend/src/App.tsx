@@ -22,7 +22,7 @@ import { Fab } from './components/Game/Fab';
 // ОТКЛЮЧЕНО: редактор карт (временно) — mapApi использовался только редактором/«Мои карты»
 import { gameApi, worldApi, savesApi, settingsApi, usageApi, type GameUsage, type LLMSettingsView } from './services/api';
 import { LLMSettingsModal } from './components/Settings/LLMSettingsModal';
-import type { Region, World, Game } from './types';
+import type { Region, World, Game, Polity } from './types';
 // ОТКЛЮЧЕНО: переговоры — selectTotalUnread не нужен; редактор карт — тип LocalMap не нужен
 import { useGameStore, useUIStore, useActionsStore, useChatStore } from './stores';
 import { useSSE } from './services/sse';
@@ -155,6 +155,15 @@ function App() {
     }
   };
 
+  /** Обновить реестр государств (переименования, новые государства) */
+  const applyPolityChanges = (changes: Polity[], replace = false) => {
+    const world = useGameStore.getState().currentWorld;
+    if (!world || (changes.length === 0 && !replace)) return;
+    const polities = replace ? {} as Record<string, Polity> : { ...(world.polities || {}) };
+    for (const p of changes) polities[p.id] = p;
+    setCurrentWorld({ ...world, polities });
+  };
+
   /** Полная сверка игры и карты с сервером — после хода и отката */
   const syncGameFromServer = async (gameId: string, highlight = true) => {
     const updatedGame = await gameApi.get(gameId);
@@ -165,6 +174,7 @@ function App() {
       players: updatedGame.players,
     } : updatedGame));
     applyRegionChanges(Object.values(updatedGame.world?.regions || {}), highlight);
+    applyPolityChanges(Object.values(updatedGame.world?.polities || {}), true);
   };
 
   // Refs (not in store - DOM refs)
@@ -685,8 +695,8 @@ function App() {
       const regionId = game.players?.[0]?.regionId;
       if (regionId) {
         setSelectedRegion(regionId);
-        // Восстанавливаем код страны игрока (для флагов на карте)
-        const code = String(regionId).split('_').pop();
+        // Государство игрока: polityId; у старых игр — код из id региона `${worldId}_${code}`
+        const code = game.players?.[0]?.polityId || game.world.regions[regionId]?.owner || String(regionId).split('_').pop();
         if (code) setSelectedCountry(code);
       }
       setHistory([]);
@@ -768,6 +778,7 @@ function App() {
       if (data.changedRegions?.length) {
         applyRegionChanges(data.changedRegions as (Partial<Region> & { id: string })[]);
       }
+      if (data.changedPolities?.length) applyPolityChanges(data.changedPolities as Polity[]);
       if (data.event?.headline) {
         setLiveTimelineEvents(events => [...events, data.event]);
       }
@@ -897,6 +908,7 @@ function App() {
                 changedRegionIds={changedRegions}
                 showFlags={!!selectedCountry}
                 playerCountryCode={selectedCountry || undefined}
+                polities={currentWorld?.polities}
               />
             ) : regions.some(r => r.svgPath) ? (
               <MapView
@@ -938,19 +950,26 @@ function App() {
               <label>Ваша страна:</label>
               <div className="country-locked">
                 {currentGame?.players[0] && (
-                  <span style={{ color: currentRegion?.color || '#fff' }}>
-                    {currentRegion?.name || 'Неизвестно'}
+                  <span style={{ color: currentWorld?.polities?.[playerPolityId]?.color || '#fff' }}>
+                    {currentWorld?.polities?.[playerPolityId]?.name
+                      || regions.find(r => r.id === currentGame.players[0].regionId)?.name
+                      || 'Неизвестно'}
                   </span>
                 )}
               </div>
             </div>
 
-            {/* Current country info */}
+            {/* Выбранный регион и его владелец */}
             {currentRegion && (
               <div className="country-info">
                 <div className="country-name" style={{ color: currentRegion.color }}>
                   {currentRegion.name}
                 </div>
+                {currentRegion.owner && currentRegion.owner !== 'neutral'
+                  && currentWorld?.polities?.[currentRegion.owner]
+                  && currentWorld.polities[currentRegion.owner].name !== currentRegion.name && (
+                  <div className="country-owner">{currentWorld.polities[currentRegion.owner].name}</div>
+                )}
               </div>
             )}
 

@@ -49,6 +49,9 @@
     "ZAF": "#6B8A5E",
     "AUS": "#8FA84F"
   },
+  "polity_members": {
+    "YUG": ["SRB", "HRV", "BIH", "SVN", "MNE", "MKD", "KOS"]
+  },
   "author": "Open-Pax",
   "version": "1.0"
 }
