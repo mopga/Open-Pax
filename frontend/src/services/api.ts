@@ -731,3 +731,149 @@ export const mapApi = {
     });
   },
 };
+
+
+// ============================================================================
+// LLM Settings & Usage API — свой ключ / подписка / локальная модель
+// ============================================================================
+
+export type ProviderKind = 'openai-compatible' | 'anthropic' | 'minimax' | 'ollama';
+export type BillingMode = 'payg' | 'subscription' | 'local';
+
+export interface ModelPrice {
+  inputPerM: number;
+  outputPerM: number;
+  cachedInputPerM?: number;
+}
+
+export interface ProviderPreset {
+  id: string;
+  label: string;
+  provider: ProviderKind;
+  baseUrl: string;
+  keyRequired: boolean;
+  billing: BillingMode;
+  model?: string;
+  lightModel?: string;
+  contextLength?: number;
+  keyUrl?: string;
+  hint?: string;
+}
+
+/** Сохранённые настройки без ключа (сервер отдаёт только маску) */
+export interface PublicLLMSettings {
+  presetId: string;
+  provider: ProviderKind;
+  baseUrl: string;
+  model: string;
+  lightModel?: string;
+  billing: BillingMode;
+  pricing?: ModelPrice;
+  lightPricing?: ModelPrice;
+  contextLength?: number;
+  budgetPerGameUsd?: number;
+  hasApiKey: boolean;
+  apiKeyMasked: string;
+}
+
+export interface UsageTotals {
+  calls: number;
+  failedCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  costUsd: number;
+  costIncomplete: boolean;
+  estimated: boolean;
+}
+
+export interface LLMSettingsView {
+  configured: boolean;
+  source: 'settings' | 'file' | 'env';
+  settings: PublicLLMSettings | null;
+  presets: ProviderPreset[];
+  effective: Record<'jump' | 'suggestions', { provider: string; model: string; baseUrl: string }>;
+  usage: { allTime: UsageTotals; today: UsageTotals };
+}
+
+/** Тело запроса сохранения/проверки; пустой apiKey = оставить сохранённый */
+export interface LLMSettingsInput {
+  presetId: string;
+  provider: ProviderKind;
+  baseUrl: string;
+  apiKey?: string;
+  model: string;
+  lightModel?: string;
+  billing: BillingMode;
+  pricing?: ModelPrice;
+  lightPricing?: ModelPrice;
+  contextLength?: number;
+  budgetPerGameUsd?: number;
+}
+
+export interface ConnectionTestResult {
+  ok: boolean;
+  model: string;
+  latencyMs: number;
+  reply?: string;
+  error?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
+export interface RemoteModel {
+  id: string;
+  pricing?: ModelPrice;
+}
+
+export interface GameUsage {
+  gameId: string;
+  totals: UsageTotals;
+  byMechanic: (UsageTotals & { mechanic: string; model: string })[];
+  recent: {
+    createdAt: string;
+    mechanic: string;
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    latencyMs: number;
+    ok: boolean;
+    error: string | null;
+    costUsd: number | null;
+  }[];
+  billing: BillingMode;
+  budgetPerGameUsd: number | null;
+}
+
+/** Как fetchApi, но достаёт человекочитаемое {error} из тела ответа */
+async function fetchWithServerError<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...options.headers },
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new ApiError(response.status, data?.error || `Ошибка сервера (HTTP ${response.status})`);
+  }
+  return data as T;
+}
+
+export const settingsApi = {
+  getLLM: (): Promise<LLMSettingsView> => fetchWithServerError('/settings/llm'),
+
+  saveLLM: (input: LLMSettingsInput): Promise<LLMSettingsView> =>
+    fetchWithServerError('/settings/llm', { method: 'PUT', body: JSON.stringify(input) }),
+
+  resetLLM: (): Promise<LLMSettingsView> =>
+    fetchWithServerError('/settings/llm', { method: 'DELETE' }),
+
+  testLLM: (input: LLMSettingsInput): Promise<{ ok: boolean; results: ConnectionTestResult[] }> =>
+    fetchWithServerError('/settings/llm/test', { method: 'POST', body: JSON.stringify(input) }),
+
+  listModels: (input: Partial<LLMSettingsInput>): Promise<{ models: RemoteModel[] }> =>
+    fetchWithServerError('/settings/llm/models', { method: 'POST', body: JSON.stringify(input) }),
+};
+
+export const usageApi = {
+  game: (gameId: string): Promise<GameUsage> => fetchWithServerError(`/games/${gameId}/usage`),
+};

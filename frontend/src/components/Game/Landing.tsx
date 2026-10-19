@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { savesApi } from '../../services/api';
+import { savesApi, type LLMSettingsView } from '../../services/api';
 
 export interface LandingProps {
   /** Переход к созданию новой игры */
@@ -22,6 +22,10 @@ export interface LandingProps {
   // onSelectMap: (map: any) => void;
   /** Продолжить игру из сохранения (объект из savesApi.list) */
   onResumeSave: (save: any) => void;
+  /** Текущие настройки модели ИИ (null — ещё грузятся или сервер недоступен) */
+  llmView?: LLMSettingsView | null;
+  /** Открыть окно «Модель ИИ» */
+  onOpenSettings?: () => void;
   // ОТКЛЮЧЕНО: редактор карт (временно)
   // /** Сохранённые карты пользователя (regions: {id, path, color}[]) */
   // savedMaps: any[];
@@ -53,7 +57,9 @@ function formatSavedAt(value?: string): string {
 
 export function Landing(props: LandingProps) {
   // ОТКЛЮЧЕНО: редактор карт (временно) — onOpenEditor, onSelectMap, savedMaps
-  const { onNewGame, onResumeSave } = props;
+  const { onNewGame, onResumeSave, llmView, onOpenSettings } = props;
+  const jumpModel = llmView?.effective?.jump;
+  const presetLabel = llmView?.presets.find(p => p.id === llmView.settings?.presetId)?.label;
 
   const [saves, setSaves] = useState<any[]>([]);
 
@@ -83,6 +89,20 @@ export function Landing(props: LandingProps) {
     <div className="landing">
       {/* ===== Hero: звёздное небо + горизонт планеты (pax_home.png) ===== */}
       <div className="landing-hero">
+        {onOpenSettings && (
+          <button
+            type="button"
+            className={`landing-model-btn${llmView && !llmView.configured ? ' warn' : ''}`}
+            onClick={onOpenSettings}
+            title="Модель ИИ: ключ, подписка или локальный сервер"
+          >
+            {!llmView
+              ? '⚙ Модель ИИ'
+              : llmView.configured
+                ? `⚙ ${presetLabel ?? jumpModel?.provider ?? 'Модель'} · ${jumpModel?.model ?? ''}`
+                : '⚠ Подключите модель ИИ'}
+          </button>
+        )}
         <div className="landing-stars" />
         <div className="landing-planet" />
 

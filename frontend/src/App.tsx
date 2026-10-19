@@ -21,7 +21,8 @@ import { HudBar } from './components/Game/HudBar';
 import { GameLoader, WORLD_GEN_PHASES } from './components/Game/GameLoader';
 import { Fab } from './components/Game/Fab';
 // ОТКЛЮЧЕНО: редактор карт (временно) — mapApi использовался только редактором/«Мои карты»
-import { gameApi, worldApi, savesApi } from './services/api';
+import { gameApi, worldApi, savesApi, settingsApi, usageApi, type GameUsage, type LLMSettingsView } from './services/api';
+import { LLMSettingsModal } from './components/Settings/LLMSettingsModal';
 import type { Region, World, Game } from './types';
 // ОТКЛЮЧЕНО: переговоры — selectTotalUnread не нужен; редактор карт — тип LocalMap не нужен
 import { useGameStore, useUIStore, useActionsStore, useChatStore } from './stores';
@@ -99,6 +100,38 @@ function App() {
     //   chatStore.refreshChats();
     // }
   }, [currentGameId]);
+
+  // Модель ИИ: свой ключ / подписка / локальная модель + расход токенов
+  const [llmView, setLlmView] = useState<LLMSettingsView | null>(null);
+  const [settingsModal, setSettingsModal] = useState<null | { onboarding: boolean; then?: () => void }>(null);
+  const [gameUsage, setGameUsage] = useState<GameUsage | null>(null);
+
+  useEffect(() => {
+    settingsApi.getLLM().then(setLlmView).catch(e => console.warn('[LLM] настройки недоступны:', e));
+  }, []);
+
+  /** Новая игра без подключённой модели — сначала окно настроек */
+  const requireModel = (next: () => void) => {
+    if (llmView && !llmView.configured) {
+      setSettingsModal({ onboarding: true, then: next });
+    } else {
+      next();
+    }
+  };
+
+  // Расход по игре: при смене игры/хода и периодически (подсказки и советник тоже тратят токены)
+  const refreshUsage = () => {
+    if (!currentGameId) return;
+    usageApi.game(currentGameId).then(setGameUsage).catch(() => { /* индикатор не критичен */ });
+  };
+  useEffect(() => {
+    setGameUsage(null);
+    if (!currentGameId || currentView !== 'game') return;
+    refreshUsage();
+    const timer = window.setInterval(refreshUsage, 10_000);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentGameId, currentView, currentGame?.currentTurn]);
 
   // Refs (not in store - DOM refs)
   const actionsRef = useRef<HTMLDivElement>(null);
@@ -702,7 +735,9 @@ function App() {
   // Рендер главного меню — Этап 6: лендинг в духе pax_home
   const renderMenu = () => (
     <Landing
-      onNewGame={() => setCurrentView('select-template')}
+      onNewGame={() => requireModel(() => setCurrentView('select-template'))}
+      llmView={llmView}
+      onOpenSettings={() => setSettingsModal({ onboarding: false })}
       // ОТКЛЮЧЕНО: редактор карт (временно) — onOpenEditor={() => setCurrentView('editor')}
       // ОТКЛЮЧЕНО: редактор карт (временно) — onSelectMap={handleSelectMap}
       onResumeSave={handleResumeSave}
@@ -853,6 +888,8 @@ function App() {
           onTimeSkip={handleTimeSkip}
           timelineOpen={showJumpMenu}
           onTimelineOpenChange={setShowJumpMenu}
+          usage={gameUsage}
+          onOpenSettings={() => setSettingsModal({ onboarding: false })}
         />
 
         <div className="game-container">
@@ -1561,6 +1598,17 @@ function App() {
         </div>
       )}
       {currentView === 'game' && renderGame()}
+      {settingsModal && (
+        <LLMSettingsModal
+          onboarding={settingsModal.onboarding}
+          onClose={() => setSettingsModal(null)}
+          onSaved={view => {
+            setLlmView(view);
+            refreshUsage();
+            if (view.configured) settingsModal.then?.();
+          }}
+        />
+      )}
       {/* ОТКЛЮЧЕНО: редактор карт (временно) — маршруты 'editor' и 'create-world'
       {currentView === 'editor' && renderEditor()}
       {currentView === 'create-world' && renderCreateWorld()}

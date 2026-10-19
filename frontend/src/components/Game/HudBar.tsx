@@ -21,6 +21,8 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import type { GameUsage } from '../../services/api';
+import { MECHANIC_LABELS, formatTokens, formatUsd } from '../../utils/usageFormat';
 
 // ============================================================================
 // Типы
@@ -44,6 +46,10 @@ export interface HudBarProps {
   /** Панель периода контролируется родителем, чтобы открыть её из окна действий. */
   timelineOpen: boolean;
   onTimelineOpenChange: (open: boolean) => void;
+  /** Расход токенов по игре (null — ещё не загружен) */
+  usage?: GameUsage | null;
+  /** Открыть окно «Модель ИИ» */
+  onOpenSettings?: () => void;
 }
 
 export interface TimelinePanelProps {
@@ -237,7 +243,11 @@ export const HudBar: React.FC<HudBarProps> = ({
   onTimeSkip,
   timelineOpen,
   onTimelineOpenChange,
+  usage,
+  onOpenSettings,
 }) => {
+  const [usageOpen, setUsageOpen] = useState(false);
+
   /** Выбор пункта панели: закрываем её и проксируем прыжок наверх */
   const handleTimeSkip = (days: number) => {
     onTimelineOpenChange(false);
@@ -274,8 +284,14 @@ export const HudBar: React.FC<HudBarProps> = ({
         <div className="hud-turn-badge">ХОД {turn}</div>
       </div>
 
-      {/* Правая часть: пилюля даты с навигацией (как в оригинале) */}
+      {/* Правая часть: расход токенов, настройки модели, пилюля даты (как в оригинале) */}
       <div className="hud-right">
+        {usage && <UsageChip usage={usage} open={usageOpen} onToggle={() => setUsageOpen(o => !o)} />}
+        {onOpenSettings && (
+          <button type="button" className="hud-icon-btn" onClick={onOpenSettings} title="Модель ИИ" aria-label="Настройки модели ИИ">
+            ⚙
+          </button>
+        )}
         <div className="hud-date-pill">
           <button
             type="button"
@@ -313,6 +329,67 @@ export const HudBar: React.FC<HudBarProps> = ({
             onTimeSkip={handleTimeSkip}
             onClose={() => onTimelineOpenChange(false)}
           />
+        </>
+      )}
+    </div>
+  );
+};
+
+// ============================================================================
+// Индикатор расхода (аналог баланса в шапке оригинала)
+// ============================================================================
+
+const UsageChip: React.FC<{ usage: GameUsage; open: boolean; onToggle: () => void }> = ({ usage, open, onToggle }) => {
+  const t = usage.totals;
+  const tokens = t.inputTokens + t.outputTokens;
+  const paid = usage.billing === 'payg';
+  const overBudget = paid && usage.budgetPerGameUsd != null && t.costUsd >= usage.budgetPerGameUsd;
+  const main = paid && t.costUsd > 0 ? formatUsd(t.costUsd) : `${formatTokens(tokens)} ток.`;
+
+  return (
+    <div className="hud-usage">
+      <button
+        type="button"
+        className={`hud-usage-chip${overBudget ? ' over' : ''}`}
+        onClick={onToggle}
+        aria-expanded={open}
+        title="Расход модели в этой игре"
+      >
+        <span className="hud-usage-main">{main}{paid && t.costIncomplete ? '+' : ''}</span>
+        {paid && t.costUsd > 0 && <span className="hud-usage-sub">{formatTokens(tokens)} ток.</span>}
+      </button>
+      {open && (
+        <>
+          <div className="hud-timeline-overlay" onClick={onToggle} />
+          <div className="hud-usage-popover" role="dialog" aria-label="Расход модели">
+            <div className="hud-usage-title">Расход в этой игре</div>
+            <div className="hud-usage-total">
+              {formatTokens(t.inputTokens)} вход · {formatTokens(t.outputTokens)} выход
+              {t.cachedInputTokens > 0 && ` · ${formatTokens(t.cachedInputTokens)} из кэша`}
+            </div>
+            <div className="hud-usage-total">
+              {paid
+                ? <>Стоимость: <b>{formatUsd(t.costUsd)}</b>{t.costIncomplete && ' + вызовы без известной цены'}</>
+                : usage.billing === 'local' ? 'Локальная модель — бесплатно' : 'Подписка — оплачено тарифом'}
+              {overBudget && <div className="hud-usage-warn">Бюджет {formatUsd(usage.budgetPerGameUsd!)} превышен</div>}
+            </div>
+            {usage.byMechanic.length > 0 && (
+              <table className="hud-usage-table">
+                <tbody>
+                  {usage.byMechanic.map(m => (
+                    <tr key={`${m.mechanic}-${m.model}`}>
+                      <td>{MECHANIC_LABELS[m.mechanic] ?? m.mechanic}<small>{m.model}</small></td>
+                      <td>{m.calls}×</td>
+                      <td>{formatTokens(m.inputTokens + m.outputTokens)}</td>
+                      {paid && <td>{formatUsd(m.costUsd)}</td>}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {t.failedCalls > 0 && <div className="hud-usage-warn">Ошибок вызова: {t.failedCalls}</div>}
+            {t.estimated && <div className="hud-usage-note">Часть токенов оценена по длине текста.</div>}
+          </div>
         </>
       )}
     </div>
