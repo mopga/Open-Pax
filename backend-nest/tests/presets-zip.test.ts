@@ -11,25 +11,22 @@ import fs from 'fs';
 import path from 'path';
 import AdmZip from 'adm-zip';
 import { buildPresetZip, importPresetZip, PresetZipError } from '../src/utils/preset-zip';
-import { loadPreset, PRESETS_DIR, LEGACY_TEMPLATES_DIR } from '../src/utils/preset-loader';
+import { loadPreset, PRESETS_DIR } from '../src/utils/preset-loader';
 
 const PID = process.pid;
 const PKG_ID = `test-zip-${PID}`;       // пакет на диске (сценарий экспорта)
 const IMPORT_ID = `test-zip-in-${PID}`; // пакет, создаваемый импортом
 const IMPORT2_ID = `test-zip-ow-${PID}`; // пакет для сценария overwrite
-const LEGACY_ID = `testziplegacy${PID}`; // синтетический легаси-шаблон (PRESET_ID_RE требует [a-z0-9_-])
 const EVIL = `evil-${PID}.txt`;          // файл zip-slip — не должен появиться
 
 const pkgDir = path.join(PRESETS_DIR, PKG_ID);
 const importDir = path.join(PRESETS_DIR, IMPORT_ID);
 const import2Dir = path.join(PRESETS_DIR, IMPORT2_ID);
-const legacyFile = path.join(LEGACY_TEMPLATES_DIR, `${LEGACY_ID}.json`);
 
 function cleanup() {
   for (const d of [pkgDir, importDir, import2Dir]) {
     fs.rmSync(d, { recursive: true, force: true });
   }
-  fs.rmSync(legacyFile, { force: true });
   // На всякий случай подчищаем возможные «вылетевшие» zip-slip файлы
   for (const p of [
     path.join(PRESETS_DIR, '..', EVIL),       // data/<evil>
@@ -61,34 +58,6 @@ function zipOf(files: Record<string, string | Buffer>): Buffer {
 }
 
 describe('preset-zip: экспорт', () => {
-  it('экспорт легаси-шаблона → синтезированный zip с одним preset.json', () => {
-    // Синтетический легаси-шаблон (cold_war_1951 теперь полноценный пакет
-    // с rules.md + lore.md, поэтому legacy-ветку проверяем на своём файле)
-    fs.writeFileSync(legacyFile, JSON.stringify({
-      id: LEGACY_ID,
-      name: 'Тестовый легаси',
-      description: 'd',
-      start_date: '1970-01-01',
-      country_codes: "['USA', 'RUS']", // легаси-строковый формат
-      base_prompt: 'Легаси промпт',
-    }));
-
-    const buf = buildPresetZip(LEGACY_ID);
-    expect(buf).toBeTruthy();
-
-    const zip = new AdmZip(buf!);
-    const names = zip.getEntries().map(e => e.entryName);
-    expect(names).toEqual(['preset.json']);
-
-    const raw = JSON.parse(zip.getEntry('preset.json')!.getData().toString('utf-8'));
-    expect(raw.id).toBe(LEGACY_ID);
-    expect(raw.name).toBeTruthy();
-    expect(Array.isArray(raw.country_codes)).toBe(true);
-    expect(raw.country_codes).toContain('USA');
-    expect(raw.base_prompt).toBeTruthy();
-    expect(raw.start_date).toBe('1970-01-01');
-  });
-
   it('экспорт штатного пакета cold_war_1951 → preset.json + rules.md + lore.md', () => {
     const buf = buildPresetZip('cold_war_1951');
     expect(buf).toBeTruthy();
@@ -99,8 +68,8 @@ describe('preset-zip: экспорт', () => {
 
     const raw = JSON.parse(zip.getEntry('preset.json')!.getData().toString('utf-8'));
     expect(raw.id).toBe('cold_war_1951');
-    expect(raw.country_codes).toContain('USA');
-    expect(raw.country_codes).toContain('RUS');
+    expect(raw.polities.USA).toBeTruthy();
+    expect(raw.polities.RUS).toBeTruthy();
     expect(raw.start_date).toBe('1951-01-01');
     expect(zip.getEntry('rules.md')!.getData().toString('utf-8').length).toBeGreaterThan(0);
   });
@@ -137,7 +106,6 @@ describe('preset-zip: импорт', () => {
 
     const { preset } = importPresetZip(buf);
     expect(preset.id).toBe(IMPORT_ID);
-    expect(preset.source).toBe('preset');
 
     expect(fs.existsSync(path.join(importDir, 'preset.json'))).toBe(true);
     expect(fs.existsSync(path.join(importDir, 'rules.md'))).toBe(true);
@@ -145,9 +113,8 @@ describe('preset-zip: импорт', () => {
 
     const loaded = loadPreset(IMPORT_ID);
     expect(loaded).toBeTruthy();
-    expect(loaded!.source).toBe('preset');
     expect(loaded!.simulation_rules).toBe('ПРАВИЛА-ИМПОРТ');
-    expect(loaded!.country_codes).toEqual(['USA', 'RUS']);
+    expect(loaded!.recommended).toEqual(['USA', 'RUS']);
   });
 
   it('повторный импорт без overwrite → EXISTS, с overwrite → ок', () => {

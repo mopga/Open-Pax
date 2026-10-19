@@ -7,7 +7,6 @@
  * Тёмная тема сохранена: фон #0a0a0f, градиентные акценты #667eea → #f093fb.
  *
  * Использование:
- *   <GameLoader title="Создаём вашу игру…" phase={WORLD_GEN_PHASES[i]} />
  *   <GameLoader title="Загрузка мира…" phase="Генерация географии…" progress={0.6} />
  */
 
@@ -21,19 +20,6 @@ export interface GameLoaderProps {
   /** Прогресс 0..1; если не передан — indeterminate-анимация полосы */
   progress?: number;
 }
-
-/**
- * Правдоподобные этапы генерации мира — координатор крутит их по таймеру,
- * передавая в prop `phase`.
- */
-export const WORLD_GEN_PHASES: string[] = [
-  'Подключение к модели…',
-  'Генерация политий мира…',
-  'Балансировка сил…',
-  'Формирование географии…',
-  'Написание летописи…',
-  'Финальные штрихи…',
-];
 
 export const GameLoader: React.FC<GameLoaderProps> = ({
   title = 'Загрузка…',

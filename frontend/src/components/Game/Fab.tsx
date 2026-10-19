@@ -8,9 +8,8 @@
  *
  * Использование:
  *   <Fab items={[
- *     { icon: '💬', title: 'Чаты', badge: unread, onClick: openChats },
  *     { icon: '⚡', title: 'Действия', onClick: openActions },
- *     { icon: '🔍', title: 'Поиск', onClick: openSearch },
+ *     { icon: '🔍', title: 'Поиск', badge: count, onClick: openSearch },
  *   ]} />
  */
 

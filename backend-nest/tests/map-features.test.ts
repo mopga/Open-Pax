@@ -49,7 +49,6 @@ function jumpResponse(): any {
     ],
     narration: 'Армия усилена.',
     voided: [],
-    startChat: [],
     worldChanges: { regionOwners: {}, regionColors: {} },
   };
 }
@@ -99,14 +98,14 @@ beforeAll(async () => {
     [
       {
         id: `${WORLD_ID}_DEU`, name: 'ФРГ', color: '#FF0000', owner: 'DEU',
-        population: 5000000, gdp: 200, militaryPower: 300, flag: 'DEU',
+        flag: 'DEU',
         geojson: squareGeojson(10, 40, 20, 50),
         // Сидированный объект: заодно проверяет, что addRegion персистит objects
         objects: [{ id: 'obj_seed_city', type: 'city', name: 'Кёльн', lat: 50.9, lng: 6.9 }],
       },
       {
         id: `${WORLD_ID}_POL`, name: 'Польша', color: '#00FF00', owner: 'POL',
-        population: 3000000, gdp: 100, militaryPower: 100, flag: 'POL',
+        flag: 'POL',
         geojson: squareGeojson(30, 40, 40, 50),
       },
     ]

@@ -102,11 +102,9 @@ class SessionRegistry {
         name: r.name,
         color: r.color,
         owner: r.owner,
-        population: r.population,
-        gdp: r.gdp,
-        militaryPower: r.militaryPower,
         objects: r.objects || [],
-        svgPath: r.svgPath,
+        borders: r.borders || [],
+        status: r.status || 'active',
       }
     ]);
 
@@ -203,11 +201,9 @@ class SessionRegistry {
             name: r.name,
             color: r.color,
             owner: r.owner,
-            population: r.population,
-            gdp: r.gdp,
-            militaryPower: r.militaryPower,
             objects: r.objects || [],
-            svgPath: r.svgPath,
+            borders: r.borders || [],
+            status: r.status || 'active',
           }
         ]);
 

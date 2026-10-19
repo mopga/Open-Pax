@@ -161,9 +161,6 @@ ${vars.CHATS_NON_CONSOLIDATED_ROUNDS || '(Дипломатии не было)'}
   "voided": [
     { "action": "текст действия игрока", "reason": "почему оно нереалистично" }
   ],
-  "startChat": [
-    { "polityName": "ИМЯ политии", "topic": "что она хочет обсудить" }
-  ],
   "worldChanges": {
     "regionOwners": { "ИМЯ региона": "ИМЯ политии" },
     "regionColors": { "ИМЯ региона": "#hex" }
@@ -192,8 +189,6 @@ ${vars.CHATS_NON_CONSOLIDATED_ROUNDS || '(Дипломатии не было)'}
   "захватить весь мир за неделю", технологии из будущего) — НЕ выполняй его,
   а добавь в "voided" с понятным игроку объяснением. Остальные действия
   выполняй как обычно. Если всё реалистично — "voided": [].
-- "startChat": если какая-то полития по итогам событий хочет вступить в
-  переговоры с игроком — укажи её. Если нет — "startChat": [].
 ${autoJumpInstruction}
 
 VERY IMPORTANT: Отвечай ТОЛЬКО валидным JSON, без markdown форматирования, без пояснений.`;
@@ -225,17 +220,11 @@ export function parseSimulationResponse(text: string): SimulationResult {
       voided.push({ action: raw.action, reason: typeof raw.reason === 'string' ? raw.reason : '' });
     }
 
-    const startChat = (Array.isArray(parsed.startChat) ? parsed.startChat : [])
-      .filter((c: any) => c && typeof c.polityName === 'string')
-      .map((c: any) => ({ polityName: String(c.polityName), topic: String(c.topic ?? '') }));
-
     return {
       events,
       narration: typeof parsed.narration === 'string' ? parsed.narration : 'Мир изменился...',
-      diplomacy: Array.isArray(parsed.diplomacy) ? parsed.diplomacy : [],
       worldChanges: { ...emptyWorldChanges, ...(parsed.worldChanges ?? {}) },
       voided,
-      startChat,
       targetDate: typeof parsed.targetDate === 'string' ? parsed.targetDate : undefined,
     };
   } catch (e) {
@@ -245,7 +234,6 @@ export function parseSimulationResponse(text: string): SimulationResult {
     return {
       events: [],
       narration: text.substring(0, 500),
-      diplomacy: [],
       worldChanges: emptyWorldChanges,
       voided: [],
     };

@@ -101,12 +101,13 @@ describe('preset.json: country_colors', () => {
 
   it('валидная палитра принимается и пробрасывается', () => {
     const p = validatePresetJson({ ...basePreset, country_colors: { USA: '#8FB3D9', RUS: '#A83A32' } });
-    expect(p.country_colors).toEqual({ USA: '#8FB3D9', RUS: '#A83A32' });
+    expect(p.polities.USA.color).toBe('#8FB3D9');
+    expect(p.polities.RUS.color).toBe('#A83A32');
   });
 
   it('секция отсутствует — не ломает дефолт', () => {
     const p = validatePresetJson(basePreset);
-    expect(p.country_colors).toBeUndefined();
+    expect(p.polities.USA.color).toBeUndefined();
   });
 
   it('невалидный цвет отклоняется', () => {

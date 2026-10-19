@@ -52,33 +52,13 @@ function isSafeEntryName(name: string): boolean {
 }
 
 /**
- * Собрать zip-пакет пресета по id.
- * Для пакета — файлы с диска; для легаси-шаблона — синтезируем архив
- * только с preset.json (поля из loadPreset). null, если пресет не найден.
+ * Собрать zip-пакет пресета по id из файлов на диске. null, если пресет не найден.
  */
 export function buildPresetZip(id: string): Buffer | null {
   const preset = loadPreset(id);
   if (!preset) return null;
 
   const zip = new AdmZip();
-
-  if (preset.source === 'legacy') {
-    // Легаси-шаблон: синтезируем preset.json из загруженных полей
-    const json: Record<string, unknown> = {
-      id: preset.id,
-      name: preset.name,
-      description: preset.description,
-      start_date: preset.start_date,
-      country_codes: preset.country_codes,
-      base_prompt: preset.base_prompt,
-    };
-    if (preset.historical_accuracy !== undefined) json.historical_accuracy = preset.historical_accuracy;
-    if (preset.countries !== undefined) json.countries = preset.countries;
-    if (preset.author !== undefined) json.author = preset.author;
-    if (preset.version !== undefined) json.version = preset.version;
-    zip.addFile('preset.json', Buffer.from(JSON.stringify(json, null, 2), 'utf-8'));
-    return zip.toBuffer();
-  }
 
   // Пакет: читаем файлы из data/presets/<id>
   const dir = path.join(PRESETS_DIR, preset.id);

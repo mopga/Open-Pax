@@ -40,7 +40,6 @@ function jumpResponse(): any {
         ],
         narration: 'Мир развивался без новых приказов игрока.',
         voided: [],
-        startChat: [],
         worldChanges: { regionOwners: {}, regionColors: {} },
       };
     case 'voided':
@@ -48,7 +47,6 @@ function jumpResponse(): any {
         events: [],
         narration: 'Советники отговорили правительство от безумной затеи.',
         voided: [{ action: 'Захватить весь мир за неделю', reason: 'Нереалистично для 1951 года' }],
-        startChat: [],
         worldChanges: { regionOwners: {}, regionColors: {} },
       };
     case 'auto':
@@ -58,7 +56,6 @@ function jumpResponse(): any {
         ],
         narration: 'Время шло до значимого события.',
         voided: [],
-        startChat: [],
         worldChanges: { regionOwners: {}, regionColors: {} },
         targetDate: '1951-03-10',
       };
@@ -71,7 +68,6 @@ function jumpResponse(): any {
         ],
         narration: 'Стремительная экспансия.',
         voided: [],
-        startChat: [],
         // Итоговые worldChanges при Intervene применяться НЕ должны
         worldChanges: { regionOwners: { 'Великобритания': 'ФРГ' }, regionColors: {} },
       };
@@ -82,7 +78,6 @@ function jumpResponse(): any {
         ],
         narration: 'Польша пала.',
         voided: [],
-        startChat: [],
         worldChanges: { regionOwners: {}, regionColors: {} },
       };
   }
@@ -145,11 +140,11 @@ beforeAll(async () => {
   worldRepository.createWithRegions(
     { id: WORLD_ID, name: 'Stage2 World', description: '', startDate: '1951-01-01', basePrompt: 'Тестовый лор', historicalAccuracy: 0.8 },
     [
-      { id: `${WORLD_ID}_DEU`, name: 'ФРГ', color: '#FF0000', owner: 'DEU', population: 5000000, gdp: 200, militaryPower: 300, flag: 'DEU' },
-      { id: `${WORLD_ID}_POL`, name: 'Польша', color: '#00FF00', owner: 'POL', population: 3000000, gdp: 100, militaryPower: 100, flag: 'POL' },
-      { id: `${WORLD_ID}_CZE`, name: 'Чехословакия', color: '#0000FF', owner: 'CZE', population: 2000000, gdp: 90, militaryPower: 80, flag: 'CZE' },
-      { id: `${WORLD_ID}_FRA`, name: 'Франция', color: '#FFFF00', owner: 'FRA', population: 4000000, gdp: 180, militaryPower: 200, flag: 'FRA' },
-      { id: `${WORLD_ID}_GBR`, name: 'Великобритания', color: '#FF00FF', owner: 'GBR', population: 4500000, gdp: 190, militaryPower: 250, flag: 'GBR' },
+      { id: `${WORLD_ID}_DEU`, name: 'ФРГ', color: '#FF0000', owner: 'DEU', flag: 'DEU' },
+      { id: `${WORLD_ID}_POL`, name: 'Польша', color: '#00FF00', owner: 'POL', flag: 'POL' },
+      { id: `${WORLD_ID}_CZE`, name: 'Чехословакия', color: '#0000FF', owner: 'CZE', flag: 'CZE' },
+      { id: `${WORLD_ID}_FRA`, name: 'Франция', color: '#FFFF00', owner: 'FRA', flag: 'FRA' },
+      { id: `${WORLD_ID}_GBR`, name: 'Великобритания', color: '#FF00FF', owner: 'GBR', flag: 'GBR' },
     ]
   );
 
@@ -437,9 +432,9 @@ describe('Карта: изменения регионов по событиям 
     repos.worldRepository.createWithRegions(
       { id: worldId, name: 'Map', description: '', startDate: '1951-01-01', basePrompt: '', historicalAccuracy: 0.8 },
       [
-        { id: `${worldId}_DEU`, name: 'ФРГ', color: '#FF0000', owner: 'DEU', population: 1, gdp: 1, militaryPower: 1, flag: 'DEU' },
-        { id: `${worldId}_POL`, name: 'Польша', color: '#00FF00', owner: 'POL', population: 1, gdp: 1, militaryPower: 1, flag: 'POL' },
-        { id: `${worldId}_FRA`, name: 'Франция', color: '#FFFF00', owner: 'FRA', population: 1, gdp: 1, militaryPower: 1, flag: 'FRA' },
+        { id: `${worldId}_DEU`, name: 'ФРГ', color: '#FF0000', owner: 'DEU', flag: 'DEU' },
+        { id: `${worldId}_POL`, name: 'Польша', color: '#00FF00', owner: 'POL', flag: 'POL' },
+        { id: `${worldId}_FRA`, name: 'Франция', color: '#FFFF00', owner: 'FRA', flag: 'FRA' },
       ],
     );
     const { session } = getSessionRegistry().createSession(worldId, 'Player', `${worldId}_DEU`, '#FF0000');
@@ -463,7 +458,7 @@ describe('Карта: изменения регионов по событиям 
     const worldId = 'stage2_world_2033';
     repos.worldRepository.createWithRegions(
       { id: worldId, name: 'Modern', description: '', startDate: '2033-08-20', basePrompt: '', historicalAccuracy: 0.8 },
-      [{ id: `${worldId}_UKR`, name: 'Украина', color: '#FFD700', owner: 'UKR', population: 1, gdp: 1, militaryPower: 1, flag: 'UKR' }],
+      [{ id: `${worldId}_UKR`, name: 'Украина', color: '#FFD700', owner: 'UKR', flag: 'UKR' }],
     );
     const { gameId } = getSessionRegistry().createSession(worldId, 'Player', `${worldId}_UKR`, '#FF0000');
     expect(repos.gameRepository.findById(gameId).current_date).toBe('2033-08-20');

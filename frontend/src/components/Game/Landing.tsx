@@ -15,20 +15,12 @@ import { savesApi, type LLMSettingsView } from '../../services/api';
 export interface LandingProps {
   /** Переход к созданию новой игры */
   onNewGame: () => void;
-  // ОТКЛЮЧЕНО: редактор карт (временно)
-  // /** Открыть редактор карт */
-  // onOpenEditor: () => void;
-  // /** Выбор сохранённой карты из секции «Мои карты» */
-  // onSelectMap: (map: any) => void;
   /** Продолжить игру из сохранения (объект из savesApi.list) */
   onResumeSave: (save: any) => void;
   /** Текущие настройки модели ИИ (null — ещё грузятся или сервер недоступен) */
   llmView?: LLMSettingsView | null;
   /** Открыть окно «Модель ИИ» */
   onOpenSettings?: () => void;
-  // ОТКЛЮЧЕНО: редактор карт (временно)
-  // /** Сохранённые карты пользователя (regions: {id, path, color}[]) */
-  // savedMaps: any[];
 }
 
 /** «1951-01-01» → «1 января 1951» */
@@ -56,7 +48,6 @@ function formatSavedAt(value?: string): string {
 }
 
 export function Landing(props: LandingProps) {
-  // ОТКЛЮЧЕНО: редактор карт (временно) — onOpenEditor, onSelectMap, savedMaps
   const { onNewGame, onResumeSave, llmView, onOpenSettings } = props;
   const jumpModel = llmView?.effective?.jump;
   const presetLabel = llmView?.presets.find(p => p.id === llmView.settings?.presetId)?.label;
@@ -81,9 +72,6 @@ export function Landing(props: LandingProps) {
       cancelled = true;
     };
   }, []);
-
-  // ОТКЛЮЧЕНО: редактор карт (временно) — список карт для секции «Мои карты»
-  // const maps = Array.isArray(savedMaps) ? savedMaps : [];
 
   return (
     <div className="landing">
@@ -114,82 +102,35 @@ export function Landing(props: LandingProps) {
             <button className="landing-cta" onClick={onNewGame}>
               Новая игра <span className="landing-cta-arrow">→</span>
             </button>
-            {/* ОТКЛЮЧЕНО: редактор карт (временно)
-            <button className="landing-cta-secondary" onClick={onOpenEditor}>
-              🗺 Редактор карт
-            </button>
-            */}
           </div>
         </div>
       </div>
 
       {/* ===== Секции под hero ===== */}
-      {/* ОТКЛЮЧЕНО: редактор карт (временно) — условие было (saves.length > 0 || maps.length > 0) */}
       {saves.length > 0 && (
         <div className="landing-sections">
-          {saves.length > 0 && (
-            <section className="landing-section">
-              <h2 className="landing-section-title">📂 Продолжить игру</h2>
-              <div className="landing-saves-grid">
-                {saves.map((save: any) => (
-                  <div key={save.id} className="landing-save-card">
-                    <div className="landing-save-name">{save.name || 'Сохранение'}</div>
-                    <div className="landing-save-meta">
-                      {typeof save.current_turn === 'number' && (
-                        <span className="landing-save-turn">Ход {save.current_turn}</span>
-                      )}
-                      {save.current_date && <span>{formatGameDate(save.current_date)}</span>}
-                    </div>
-                    {save.saved_at && (
-                      <div className="landing-save-date">Сохранено: {formatSavedAt(save.saved_at)}</div>
+          <section className="landing-section">
+            <h2 className="landing-section-title">📂 Продолжить игру</h2>
+            <div className="landing-saves-grid">
+              {saves.map((save: any) => (
+                <div key={save.id} className="landing-save-card">
+                  <div className="landing-save-name">{save.name || 'Сохранение'}</div>
+                  <div className="landing-save-meta">
+                    {typeof save.current_turn === 'number' && (
+                      <span className="landing-save-turn">Ход {save.current_turn}</span>
                     )}
-                    <button className="landing-save-play" onClick={() => onResumeSave(save)}>
-                      ▶ Играть
-                    </button>
+                    {save.current_date && <span>{formatGameDate(save.current_date)}</span>}
                   </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* ОТКЛЮЧЕНО: редактор карт (временно) — секция «Мои карты»
-          {maps.length > 0 && (
-            <section className="landing-section">
-              <h2 className="landing-section-title">🗺 Мои карты</h2>
-              <div className="landing-maps-grid">
-                {maps.map((map: any) => {
-                  const regions = Array.isArray(map?.regions) ? map.regions : [];
-                  return (
-                    <div
-                      key={map.id ?? map.name}
-                      className="landing-map-card"
-                      onClick={() => onSelectMap(map)}
-                    >
-                      <div className="landing-map-preview">
-                        <svg viewBox="0 0 800 600" preserveAspectRatio="xMidYMid meet">
-                          {regions.map((r: any) => (
-                            <path
-                              key={r.id}
-                              d={r.path}
-                              fill={r.color}
-                              opacity={0.7}
-                              stroke="#0a0a0f"
-                              strokeWidth={1.5}
-                            />
-                          ))}
-                        </svg>
-                      </div>
-                      <div className="landing-map-info">
-                        <h4>{map.name}</h4>
-                        <span>{regions.length} регионов</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          )}
-          */}
+                  {save.saved_at && (
+                    <div className="landing-save-date">Сохранено: {formatSavedAt(save.saved_at)}</div>
+                  )}
+                  <button className="landing-save-play" onClick={() => onResumeSave(save)}>
+                    ▶ Играть
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
         </div>
       )}
     </div>

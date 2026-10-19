@@ -35,7 +35,6 @@ npm-debug.log*
 *.sqlite3
 backend-nest/data/open-pax.db
 !backend-nest/data/.gitkeep
-!backend-nest/data/templates/
 !backend-nest/data/geojson/
 
 # Logs
@@ -47,3 +46,9 @@ logs/
 # Generated map caches and tiles
 backend-nest/data/geojson/country-borders.json
 frontend/public/tiles/
+
+# Служебные файлы агентов и локальные настройки Claude Code
+.claude/handoffs/
+.claude/.session-start
+.claude/.handoff-reminded
+.claude/settings.local.json

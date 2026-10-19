@@ -45,7 +45,6 @@ export class GameController {
     worldChanges: any;
     convertedActions: any[];
     voided?: { action: string; reason: string }[];
-    startChat?: { polityName: string; topic: string }[];
     targetDate?: string;
   }> {
     if (!this.promptEngine) {
@@ -76,7 +75,6 @@ export class GameController {
       worldChanges: simulationResult.worldChanges,
       convertedActions,
       voided: simulationResult.voided,
-      startChat: simulationResult.startChat,
       targetDate: simulationResult.targetDate,
     };
   }

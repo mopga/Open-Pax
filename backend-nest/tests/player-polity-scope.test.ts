@@ -94,7 +94,6 @@ function jumpResponse(): any {
     events: simEvents,
     narration: 'Мир изменился.',
     voided: [],
-    startChat: [],
     worldChanges: simWorldChanges,
   };
 }
@@ -112,9 +111,9 @@ function makeWorld(): string {
       historicalAccuracy: 0.8,
     },
     [
-      { id: `${wid}_DEU`, name: 'ФРГ', color: '#FF0000', owner: 'DEU', population: 5000000, gdp: 200, militaryPower: 300, flag: 'DEU' },
-      { id: `${wid}_POL`, name: 'Польша', color: '#00FF00', owner: 'POL', population: 3000000, gdp: 100, militaryPower: 100, flag: 'POL' },
-      { id: `${wid}_CZE`, name: 'Чехословакия', color: '#0000FF', owner: 'CZE', population: 2000000, gdp: 90, militaryPower: 80, flag: 'CZE' },
+      { id: `${wid}_DEU`, name: 'ФРГ', color: '#FF0000', owner: 'DEU', flag: 'DEU' },
+      { id: `${wid}_POL`, name: 'Польша', color: '#00FF00', owner: 'POL', flag: 'POL' },
+      { id: `${wid}_CZE`, name: 'Чехословакия', color: '#0000FF', owner: 'CZE', flag: 'CZE' },
     ]
   );
   return wid;

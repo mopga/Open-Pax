@@ -169,14 +169,11 @@ export const TemplateSelector: React.FC<TemplateSelectorProps> = ({ onSelect, on
             </button>
             <div className="template-card-top">
               <div className="template-name">{template.name}</div>
-              <span className={`template-badge ${template.source === 'preset' ? 'preset' : 'legacy'}`}>
-                {template.source === 'preset' ? 'Пакет' : 'Базовый'}
-              </span>
             </div>
             <div className="template-description">{template.description}</div>
             <div className="template-meta">
               <span>📅 {template.start_date}</span>
-              <span>🌍 {template.country_count} стран</span>
+              <span title="Рекомендуемые государства; играть можно за любое">⭐ {template.country_count} рекомендуемых</span>
               {template.has_rules && (
                 <span title="Кастомные правила симуляции">⚙</span>
               )}

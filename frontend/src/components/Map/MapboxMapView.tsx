@@ -23,7 +23,7 @@ import type { StyleSpecification, ExpressionSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { Region, MapObject } from '../../types';
 import {
-  MIN_LABEL_PX, buildBorderEdges, buildPolityLabels, largestPartBounds, muteColor, parseRegionFeatures, type RegionFeature, type BorderEdge,
+  MIN_LABEL_PX, buildBorderEdges, buildPolityLabels, largestPartBounds, muteColor, polityFocusBounds, parseRegionFeatures, type RegionFeature, type BorderEdge,
 } from './mapData';
 
 interface MapboxMapViewProps {
@@ -32,13 +32,9 @@ interface MapboxMapViewProps {
   onRegionClick?: (regionId: string) => void;
   onRegionHover?: (regionId: string | null) => void;
   changedRegionIds?: string[];
-  /** Оставлен для совместимости API: флаги на карте больше не рисуются */
-  showFlags?: boolean;
   playerCountryCode?: string;
   /** Реестр государств: id → имя (подписи, тултип). Нет — имя по «домашнему» региону */
   polities?: Record<string, { name: string; color?: string }>;
-  /** Оставлен для совместимости API */
-  showMinimap?: boolean;
 }
 
 // Иконки игровых объектов на карте
@@ -154,6 +150,9 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
   const map = useRef<maplibregl.Map | null>(null);
   const objectMarkers = useRef<maplibregl.Marker[]>([]);
   const [mapLoaded, setMapLoaded] = useState(false);
+  // Карта показывается, когда легли заливки владельцев и камера встала на игрока:
+  // иначе на старте видна голая Земля с рельефом без государств
+  const [ready, setReady] = useState(false);
   const [tooltipInfo, setTooltipInfo] = useState<{ x: number; y: number; name: string; owner: string | null } | null>(null);
 
   // Актуальные значения для обработчиков карты (регистрируются один раз)
@@ -184,22 +183,28 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
       ?? owner;
   }, []);
 
-  const fitToPlayerOrWorld = useCallback(() => {
+  /** Камера на своё государство (как у PaxHistoria), без игрока — весь мир */
+  const fitToPlayerOrWorld = useCallback((animate = true) => {
     const m = map.current;
     if (!m) return;
+    const ownerOf = (id: string) => regionsRef.current.find(r => r.id === id)?.owner;
     const playerFeatures = playerCountryCode
-      ? featuresRef.current.filter(f => regionsRef.current.find(r => r.id === f.properties.id)?.owner === playerCountryCode)
+      ? featuresRef.current.filter(f => ownerOf(f.properties.id) === playerCountryCode)
       : [];
-    // Своя страна — по её крупнейшему куску (без заморских владений), иначе весь мир
-    const bounds = playerFeatures.length > 0 ? largestPartBounds(playerFeatures) : featuresBounds(featuresRef.current);
+    // Основная территория — крупнейший кусок общего контура (без заморских владений)
+    const bounds = playerFeatures.length > 0
+      ? polityFocusBounds(edgesRef.current, ownerOf, playerCountryCode!) ?? largestPartBounds(playerFeatures)
+      : featuresBounds(featuresRef.current);
     if (bounds) {
-      m.fitBounds(bounds, { padding: 160, duration: 500, maxZoom: playerFeatures.length > 0 ? 3.5 : 2 });
+      const { clientWidth: w, clientHeight: h } = m.getContainer();
+      const padding = Math.round(Math.max(24, Math.min(120, Math.min(w, h) * 0.12)));
+      m.fitBounds(bounds, { padding, duration: animate ? 500 : 0, maxZoom: playerFeatures.length > 0 ? 4 : 2 });
     }
   }, [playerCountryCode]);
 
   const zoomIn = useCallback(() => { map.current?.zoomIn({ duration: 300 }); }, []);
   const zoomOut = useCallback(() => { map.current?.zoomOut({ duration: 300 }); }, []);
-  const resetView = useCallback(() => { fitToPlayerOrWorld(); }, [fitToPlayerOrWorld]);
+  const resetView = useCallback(() => { fitToPlayerOrWorld(true); }, [fitToPlayerOrWorld]);
 
   // Клавиатурная навигация: + / - / 0 / стрелки
   useEffect(() => {
@@ -418,6 +423,7 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
       // Новая карта при повторном монтировании ещё не загружена — эффекты
       // с setFeatureState должны дождаться её события load
       setMapLoaded(false);
+      setReady(false);
       geometryKey.current = '';
       m.remove();
       map.current = null;
@@ -450,7 +456,9 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
       })),
     });
     appliedFlags.current = { selected: new Set(), changed: new Set() };
-    fitToPlayerOrWorld();
+    // Первый кадр — сразу на своём государстве, без пролёта от вида на весь мир
+    fitToPlayerOrWorld(false);
+    if (features.length > 0) setReady(true);
   }, [regions, mapLoaded, fitToPlayerOrWorld]);
 
   // Владельцы и цвета: feature-state заливок, границы государств, подписи
@@ -569,8 +577,8 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', background: OCEAN_COLOR }}>
-      <div ref={mapContainer} style={{ width: '100%', height: '100%' }} />
-      {!mapLoaded && (
+      <div ref={mapContainer} style={{ width: '100%', height: '100%', opacity: ready ? 1 : 0, transition: 'opacity 0.3s' }} />
+      {!ready && (
         <div style={{
           position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
           color: '#667eea', fontSize: '1.2rem',

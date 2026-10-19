@@ -4,16 +4,9 @@
  */
 
 import type {
-  CreateWorldRequest,
-  CreateWorldResponse,
   CreateGameRequest,
   CreateGameResponse,
-  SubmitActionRequest,
-  SubmitActionResponse,
-  AdvisorResponse,
   Game,
-  World,
-  Country,
   WorldTemplate
 } from '../types';
 
@@ -57,61 +50,6 @@ async function fetchApi<T>(
 
 export const worldApi = {
   /**
-   * Создать новый мир
-   */
-  create: (data: CreateWorldRequest): Promise<CreateWorldResponse> => {
-    return fetchApi('/worlds', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
-
-  /**
-   * Создать мир из карты
-   */
-  createFromMap: (data: {
-    mapId: string;
-    name: string;
-    description?: string;
-    startDate?: string;
-    basePrompt?: string;
-    historicalAccuracy?: number;
-    initialOwners?: { id: string; owner: string }[];
-  }): Promise<{
-    world_id: string;
-    name: string;
-    regions_count: number;
-    regions: { id: string; name: string; color: string; owner: string }[];
-  }> => {
-    return fetchApi('/worlds/from-map', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
-
-  /**
-   * Получить мир по ID
-   */
-  get: (worldId: string): Promise<World> => {
-    return fetchApi(`/worlds/${worldId}`);
-  },
-
-  /**
-   * Добавить регион на карту мира
-   */
-  addRegion: (worldId: string, region: {
-    id: string;
-    name: string;
-    svg_path: string;
-    color: string;
-  }): Promise<{ id: string; name: string }> => {
-    return fetchApi(`/worlds/${worldId}/regions`, {
-      method: 'POST',
-      body: JSON.stringify(region),
-    });
-  },
-
-  /**
    * Обновить промпт мира
    */
   updatePrompt: (worldId: string, basePrompt: string): Promise<{ success: boolean; basePrompt: string }> => {
@@ -122,7 +60,7 @@ export const worldApi = {
   },
 
   /**
-   * Создать мир из шаблона (через Balance Agent)
+   * Создать мир из пресета
    */
   generateFromTemplate: (templateId: string, playerCountryCode: string): Promise<{
     templateId: string;
@@ -173,27 +111,6 @@ export const gameApi = {
   },
   
   /**
-   * Отправить действие игрока
-   */
-  submitAction: (data: SubmitActionRequest): Promise<SubmitActionResponse> => {
-    return fetchApi(`/games/${data.game_id}/action`, {
-      method: 'POST',
-      body: JSON.stringify({
-        game_id: data.game_id,
-        player_id: data.player_id,
-        text: data.text,
-      }),
-    });
-  },
-  
-  /**
-   * Получить советы от советника
-   */
-  getAdvisor: (gameId: string, playerId: string): Promise<AdvisorResponse> => {
-    return fetchApi(`/games/${gameId}/advisor?player_id=${playerId}`);
-  },
-
-  /**
    * Получить подсказки (actions.md)
    */
   getSuggestions: (gameId: string): Promise<{ suggestions: any[] }> => {
@@ -216,68 +133,6 @@ export const gameApi = {
   loadSave: (saveId: string): Promise<any> => {
     return fetchApi(`/saves/${saveId}/load`, {
       method: 'POST',
-    });
-  },
-
-  // =========================================================================
-  // Pending Actions Queue (Phase 2)
-  // =========================================================================
-
-  /**
-   * Add action to queue (without processing)
-   */
-  queueAction: (gameId: string, text: string): Promise<{
-    id: string;
-    text: string;
-    status: string;
-    createdAt: string;
-  }> => {
-    return fetchApi(`/games/${gameId}/actions/queue`, {
-      method: 'POST',
-      body: JSON.stringify({ text }),
-    });
-  },
-
-  /**
-   * Get pending actions
-   */
-  getPendingActions: (gameId: string): Promise<{ pendingActions: any[] }> => {
-    return fetchApi(`/games/${gameId}/actions/queue`);
-  },
-
-  /**
-   * Process one action from queue
-   */
-  processNextAction: (gameId: string, jumpDays?: number): Promise<{
-    id: string;
-    text: string;
-    status: string;
-    result?: {
-      narration: string;
-      countryResponse: string;
-      events: string[];
-      objects: any[];
-      turn: number;
-      periodStart: string;
-      periodEnd: string;
-    };
-  }> => {
-    return fetchApi(`/games/${gameId}/actions/process`, {
-      method: 'POST',
-      body: JSON.stringify({ jump_days: jumpDays || 30 }),
-    });
-  },
-
-  /**
-   * Process all pending actions
-   */
-  processAllActions: (gameId: string, jumpDays?: number): Promise<{
-    processedCount: number;
-    actions: any[];
-  }> => {
-    return fetchApi(`/games/${gameId}/actions/process-all`, {
-      method: 'POST',
-      body: JSON.stringify({ jump_days: jumpDays || 30 }),
     });
   },
 
@@ -328,69 +183,6 @@ export const gameApi = {
     return fetchApi(`/games/${gameId}/intervene`, { method: 'POST' });
   },
 
-};
-
-// ============================================================================
-// Chats API (Этап 3: дипломатические чаты)
-// ============================================================================
-
-/** Сводка чата с политией (строка списка чатов) */
-export interface ChatSummaryData {
-  id: string;
-  polityId: string;
-  polityName: string;
-  polityColor: string;
-  lastMessage?: string;
-  lastMessageAt?: string;
-  unread: number;
-}
-
-/** Сообщение в дипломатическом чате */
-export interface ChatMessageData {
-  id: string;
-  role: 'player' | 'polity' | 'system';
-  content: string;
-  turn?: number;
-  createdAt?: string;
-}
-
-export const chatsApi = {
-  /**
-   * Список дипломатических чатов игры
-   */
-  list: (gameId: string): Promise<{ chats: ChatSummaryData[] }> => {
-    return fetchApi(`/games/${gameId}/chats`);
-  },
-
-  /**
-   * Создать (или получить существующий) чат с политией — идемпотентно
-   */
-  create: (gameId: string, polityName: string): Promise<{ chat: ChatSummaryData }> => {
-    return fetchApi(`/games/${gameId}/chats`, {
-      method: 'POST',
-      body: JSON.stringify({ polityName }),
-    });
-  },
-
-  /**
-   * Сообщения чата (на бэкенде помечает чат прочитанным)
-   */
-  messages: (gameId: string, chatId: string): Promise<{ messages: ChatMessageData[] }> => {
-    return fetchApi(`/games/${gameId}/chats/${chatId}/messages`);
-  },
-
-  /**
-   * Отправить сообщение политии; reply — ответ политии от LLM
-   */
-  send: (gameId: string, chatId: string, content: string): Promise<{
-    message: ChatMessageData;
-    reply: ChatMessageData;
-  }> => {
-    return fetchApi(`/games/${gameId}/chats/${chatId}/messages`, {
-      method: 'POST',
-      body: JSON.stringify({ content }),
-    });
-  },
 };
 
 // ============================================================================
@@ -492,38 +284,6 @@ export const savesApi = {
 
 
 // ============================================================================
-// Health Check
-// ============================================================================
-
-export const healthApi = {
-  check: (): Promise<{ status: string; timestamp: string }> => {
-    return fetchApi('/health');
-  },
-};
-
-
-// ============================================================================
-// Countries API
-// ============================================================================
-
-export const countriesApi = {
-  /**
-   * Получить все страны
-   */
-  getAll: (): Promise<{ countries: Country[] }> => {
-    return fetchApi('/countries');
-  },
-
-  /**
-   * Получить страну по коду
-   */
-  getByCode: (code: string): Promise<Country> => {
-    return fetchApi(`/countries/${code}`);
-  },
-};
-
-
-// ============================================================================
 // Templates API
 // ============================================================================
 
@@ -535,7 +295,6 @@ export interface TemplateInfo {
   start_date: string;
   country_count: number;
   /** preset — пакет из data/presets, legacy — старый шаблон из data/templates */
-  source: 'preset' | 'legacy';
   /** Есть ли кастомные правила симуляции */
   has_rules: boolean;
   /** Есть ли своя карта (map.geojson) */
@@ -640,13 +399,6 @@ export interface GeoCountriesCollection {
   features: GeoCountryFeature[];
 }
 
-/** Столица страны от /api/geo/capitals */
-export interface GeoCapital {
-  capital: string;
-  lat: number;
-  lng: number;
-}
-
 export const geoApi = {
   /**
    * Реальные границы стран (Natural Earth) — GeoJSON FeatureCollection.
@@ -660,81 +412,7 @@ export const geoApi = {
     }
     return (data as { countries: GeoCountriesCollection }).countries;
   },
-
-  /**
-   * Столицы стран: { code: { capital, lat, lng } }
-   */
-  getCapitals: (): Promise<Record<string, GeoCapital>> => {
-    return fetchApi('/geo/capitals');
-  },
 };
-
-// ============================================================================
-// Map API
-// ============================================================================
-
-export interface MapRegionData {
-  id: string;
-  name: string;
-  color: string;
-  path: string;
-}
-
-export interface MapData {
-  id: string;
-  name: string;
-  width: number;
-  height: number;
-  regions: MapRegionData[];
-}
-
-export interface MapListItem {
-  id: string;
-  name: string;
-  regions_count: number;
-  created_at: string;
-}
-
-export const mapApi = {
-  /**
-   * Создать новую карту
-   */
-  create: (data: {
-    name: string;
-    width: number;
-    height: number;
-    regions: MapRegionData[];
-  }): Promise<{ id: string; name: string }> => {
-    return fetchApi('/maps', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
-
-  /**
-   * Список всех карт
-   */
-  list: (): Promise<MapListItem[]> => {
-    return fetchApi('/maps');
-  },
-
-  /**
-   * Получить карту по ID
-   */
-  get: (mapId: string): Promise<MapData> => {
-    return fetchApi(`/maps/${mapId}`);
-  },
-
-  /**
-   * Удалить карту
-   */
-  delete: (mapId: string): Promise<{ status: string; id: string }> => {
-    return fetchApi(`/maps/${mapId}`, {
-      method: 'DELETE',
-    });
-  },
-};
-
 
 // ============================================================================
 // LLM Settings & Usage API — свой ключ / подписка / локальная модель

@@ -1,10 +1,6 @@
 /* Open-Pax — Styles */
 
 /* Animations */
-@keyframes pulse {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 1; }
-}
 
 * {
   margin: 0;
@@ -21,112 +17,6 @@ body {
 
 .app {
   min-height: 100vh;
-}
-
-/* Menu */
-.menu-container {
-  max-width: 1000px;
-  margin: 0 auto;
-  padding: 40px 20px;
-}
-
-.menu-header {
-  text-align: center;
-  margin-bottom: 50px;
-}
-
-.menu-header h1 {
-  font-size: 3.5rem;
-  font-weight: 700;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  margin-bottom: 10px;
-}
-
-.menu-header p {
-  color: #666;
-  font-size: 1.1rem;
-}
-
-.saved-maps-section {
-  margin-bottom: 40px;
-}
-
-.saved-maps-section h3 {
-  color: #888;
-  font-size: 0.9rem;
-  text-transform: uppercase;
-  letter-spacing: 2px;
-  margin-bottom: 20px;
-}
-
-.maps-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 20px;
-}
-
-.map-card {
-  background: #14141a;
-  border-radius: 16px;
-  overflow: hidden;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  border: 1px solid #222;
-}
-
-.map-card:hover {
-  transform: translateY(-4px);
-  border-color: #667eea;
-  box-shadow: 0 10px 40px rgba(102, 126, 234, 0.2);
-}
-
-.map-preview {
-  height: 140px;
-  background: #0a0a0f;
-}
-
-.map-preview svg {
-  width: 100%;
-  height: 100%;
-}
-
-.map-info {
-  padding: 16px;
-}
-
-.map-info h4 {
-  font-size: 1.1rem;
-  margin-bottom: 4px;
-}
-
-.map-info span {
-  color: #666;
-  font-size: 0.85rem;
-}
-
-.menu-actions {
-  text-align: center;
-  margin-top: 30px;
-}
-
-.btn-primary {
-  padding: 14px 32px;
-  font-size: 1rem;
-  font-weight: 600;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border: none;
-  border-radius: 12px;
-  color: white;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.btn-primary:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
 }
 
 /* Game Layout */
@@ -167,186 +57,7 @@ body {
   flex-shrink: 0;
 }
 
-/* Timeline Bar */
-.timeline-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 16px;
-  background: #0d0d12;
-  border-bottom: 1px solid #222;
-  height: 48px;
-  flex-shrink: 0;
-}
-
-.timeline-left {
-  display: flex;
-  align-items: center;
-}
-
-.btn-back-menu {
-  background: transparent;
-  border: 1px solid #333;
-  color: #888;
-  padding: 6px 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.85rem;
-  transition: all 0.2s;
-}
-
-.btn-back-menu:hover {
-  background: #1a1a22;
-  color: #fff;
-  border-color: #555;
-}
-
-.timeline-center {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.turn-badge {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  padding: 6px 16px;
-  border-radius: 16px;
-  font-weight: 700;
-  font-size: 0.9rem;
-  color: white;
-}
-
-.timeline-right {
-  display: flex;
-  align-items: center;
-  position: relative;
-}
-
-.timeline-date {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  position: relative;
-}
-
-.date-display {
-  color: #ccc;
-  font-size: 0.95rem;
-  font-weight: 500;
-}
-
-.btn-time-skip {
-  background: #1a1a22;
-  border: 1px solid #333;
-  color: #667eea;
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 1rem;
-  font-weight: bold;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.btn-time-skip:hover {
-  background: #252530;
-  border-color: #667eea;
-  color: #8b9aff;
-}
-
-.time-skip-dropdown {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  background: #1a1a22;
-  border: 1px solid #333;
-  border-radius: 10px;
-  padding: 8px;
-  min-width: 180px;
-  z-index: 1000;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-}
-
-.time-skip-dropdown .dropdown-header {
-  color: #666;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  padding: 4px 8px 8px;
-  border-bottom: 1px solid #222;
-  margin-bottom: 8px;
-}
-
-.time-skip-dropdown button {
-  display: block;
-  width: 100%;
-  background: transparent;
-  border: none;
-  color: #ccc;
-  padding: 8px 12px;
-  text-align: left;
-  cursor: pointer;
-  border-radius: 6px;
-  font-size: 0.9rem;
-  transition: all 0.15s;
-}
-
-.time-skip-dropdown button:hover {
-  background: #252530;
-  color: #667eea;
-}
-
-.time-skip-dropdown .dropdown-divider {
-  height: 1px;
-  background: #222;
-  margin: 8px 0;
-}
-
-.custom-jump {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px;
-}
-
-.custom-jump input {
-  width: 50px;
-  background: #252530;
-  border: 1px solid #333;
-  color: #fff;
-  padding: 6px 8px;
-  border-radius: 4px;
-  text-align: center;
-  font-size: 0.9rem;
-}
-
-.custom-jump input:focus {
-  outline: none;
-  border-color: #667eea;
-}
-
-.custom-jump span {
-  color: #888;
-  font-size: 0.85rem;
-}
-
-.btn-confirm-jump {
-  background: #667eea !important;
-  color: white !important;
-  width: 32px !important;
-  height: 32px;
-  display: flex !important;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px !important;
-}
-
-.btn-confirm-jump:hover {
-  background: #5a6fd6 !important;
-}
+/* Заголовок хода */
 
 .turn-header {
   text-align: center;
@@ -417,55 +128,6 @@ body {
   margin-top: -4px;
   color: #9a9aac;
   font-size: 0.9rem;
-}
-
-.action-section {
-  margin-bottom: 16px;
-}
-
-.action-section textarea {
-  width: 100%;
-  padding: 10px 12px;
-  background: #1a1a24;
-  border: 1px solid #2a2a3a;
-  border-radius: 8px;
-  color: #fff;
-  font-size: 0.9rem;
-  resize: none;
-  margin-bottom: 8px;
-}
-
-.action-section textarea:focus {
-  outline: none;
-  border-color: #667eea;
-}
-
-.action-section textarea::placeholder {
-  color: #555;
-}
-
-.btn-turn {
-  width: 100%;
-  padding: 12px;
-  font-size: 1rem;
-  font-weight: 600;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border: none;
-  border-radius: 8px;
-  color: white;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  margin-top: 12px;
-}
-
-.btn-turn:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
-}
-
-.btn-turn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 /* Save/Load buttons */
@@ -675,150 +337,6 @@ body {
   box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
 }
 
-/* Actions List */
-.actions-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.actions-header span {
-  color: #888;
-  font-size: 0.85rem;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
-
-.btn-add-action {
-  padding: 6px 12px;
-  background: #1a1a24;
-  border: 1px solid #2a2a3a;
-  border-radius: 6px;
-  color: #667eea;
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-add-action:hover {
-  background: #222230;
-  border-color: #667eea;
-}
-
-.actions-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.action-item {
-  background: #1a1a24;
-  border-radius: 8px;
-  padding: 10px;
-  border: 1px solid #2a2a3a;
-}
-
-.action-label {
-  color: #667eea;
-  font-size: 0.75rem;
-  font-weight: 600;
-  margin-bottom: 6px;
-  text-transform: uppercase;
-}
-
-.action-input-row {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-}
-
-.action-input-row textarea {
-  flex: 1;
-  padding: 8px 10px;
-  background: #0a0a0f;
-  border: 1px solid #2a2a3a;
-  border-radius: 6px;
-  color: #fff;
-  font-size: 0.85rem;
-  resize: none;
-}
-
-.action-input-row textarea:focus {
-  outline: none;
-  border-color: #667eea;
-}
-
-.btn-remove-action {
-  width: 28px;
-  height: 28px;
-  background: #1a1a24;
-  border: 1px solid #2a2a3a;
-  border-radius: 6px;
-  color: #ff4444;
-  font-size: 1.2rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.btn-remove-action:hover {
-  background: #2a1a1a;
-  border-color: #ff4444;
-}
-
-/* Jump Menu */
-.jump-section {
-  margin-bottom: 12px;
-}
-
-.btn-jump-toggle {
-  width: 100%;
-  padding: 10px;
-  background: #1a1a24;
-  border: 1px solid #2a2a3a;
-  border-radius: 8px;
-  color: #f093fb;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-jump-toggle:hover {
-  background: #222230;
-  border-color: #f093fb;
-}
-
-.jump-menu {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-  padding: 10px;
-  background: #1a1a24;
-  border: 1px solid #2a2a3a;
-  border-radius: 8px;
-}
-
-.jump-menu button {
-  padding: 6px 12px;
-  background: #0a0a0f;
-  border: 1px solid #2a2a3a;
-  border-radius: 6px;
-  color: #aaa;
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.jump-menu button:hover {
-  background: #222230;
-  color: #fff;
-  border-color: #667eea;
-}
-
 /* Events Section */
 .events-section {
   background: #1a1a24;
@@ -850,51 +368,6 @@ body {
   content: "•";
   color: #f093fb;
   margin-right: 6px;
-}
-
-/* Advisor Section */
-.advisor-section {
-  margin-bottom: 16px;
-}
-
-.btn-advisor {
-  width: 100%;
-  padding: 10px;
-  background: #1a1a24;
-  border: 1px solid #2a2a3a;
-  border-radius: 8px;
-  color: #f093fb;
-  cursor: pointer;
-  font-size: 0.9rem;
-  transition: all 0.2s;
-}
-
-.btn-advisor:hover {
-  background: #222230;
-  border-color: #f093fb;
-}
-
-/* Floating Advisor Button */
-.floating-advisor-btn {
-  position: fixed;
-  bottom: 20px;
-  left: 20px;
-  width: 50px;
-  height: 50px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border: none;
-  color: white;
-  font-size: 1.5rem;
-  cursor: pointer;
-  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-  transition: all 0.3s ease;
-  z-index: 1000;
-}
-
-.floating-advisor-btn:hover {
-  transform: scale(1.1);
-  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
 }
 
 /* Floating Advisor Panel */
@@ -991,10 +464,6 @@ body {
 }
 
 /* Advisor Tabs */
-.advisor-tabs {
-  display: flex;
-  gap: 8px;
-}
 
 .advisor-tab {
   padding: 6px 12px;
@@ -1016,58 +485,6 @@ body {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   border-color: #667eea;
   color: white;
-}
-
-.floating-advisor-messages {
-  flex: 1;
-  padding: 12px;
-  overflow-y: auto;
-  background: #0a0a0f;
-  min-height: 200px;
-}
-
-.maximized .floating-advisor-messages {
-  min-height: 400px;
-}
-
-.advisor-message {
-  color: #ccc;
-  font-size: 0.85rem;
-  line-height: 1.5;
-  margin-bottom: 12px;
-  padding: 10px;
-  background: #1a1a24;
-  border-radius: 8px;
-  border-left: 3px solid #667eea;
-}
-
-.advisor-message.loading {
-  color: #888;
-  font-style: italic;
-}
-
-.floating-advisor-input {
-  padding: 12px;
-  border-top: 1px solid #2a2a3a;
-  background: #1a1a24;
-  border-radius: 0 0 12px 12px;
-}
-
-.btn-refresh-advice {
-  width: 100%;
-  padding: 10px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border: none;
-  border-radius: 8px;
-  color: white;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-refresh-advice:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
 }
 
 /* Suggestions */
@@ -1281,10 +698,7 @@ body {
   box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
 }
 
-/* Old Advisor Panel (hidden now) */
-.advisor-panel {
-  display: none;
-}
+/* История ходов */
 
 .history-section {
   flex: 1;
@@ -1455,18 +869,6 @@ body {
   color: #fff;
 }
 
-/* Map View */
-.map-container {
-  max-width: 100%;
-  max-height: 100%;
-}
-
-.map-container svg {
-  max-height: 80vh;
-  border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-}
-
 /* Responsive */
 @media (max-width: 900px) {
   .game-container {
@@ -1565,30 +967,6 @@ body {
   font-weight: 600;
 }
 
-/* Country Selector */
-.country-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 15px;
-}
-
-.country-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  background: #1a1a24;
-  border: 1px solid #2a2a3a;
-  border-radius: 10px;
-  padding: 15px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.country-card:hover {
-  border-color: #667eea;
-  transform: translateY(-2px);
-}
-
 .country-color {
   width: 24px;
   height: 24px;
@@ -1625,24 +1003,7 @@ body {
   margin-bottom: 20px;
 }
 
-/* Country Panel */
-.country-panel {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 20px;
-  background: #1a1a24;
-  border-radius: 12px;
-  min-width: 200px;
-}
-
-.country-flag {
-  width: 60px;
-  height: 40px;
-  border-radius: 6px;
-  margin-bottom: 10px;
-  border: 2px solid rgba(255,255,255,0.2);
-}
+/* Карточка страны */
 
 .country-code {
   font-size: 0.85rem;
@@ -1658,86 +1019,7 @@ body {
   margin-bottom: 5px;
 }
 
-.country-ideology {
-  font-size: 0.8rem;
-  color: #888;
-  font-style: italic;
-}
-
-.country-divider {
-  width: 80%;
-  height: 1px;
-  background: #333;
-  margin: 15px 0;
-}
-
-.country-status {
-  font-size: 0.85rem;
-  color: #667eea;
-  margin-bottom: 10px;
-}
-
-.country-date {
-  font-size: 0.9rem;
-  color: #888;
-  margin-bottom: 15px;
-}
-
-.btn-time-jump {
-  width: 100%;
-  padding: 12px 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border: none;
-  border-radius: 8px;
-  color: #fff;
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s;
-}
-
-.btn-time-jump:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
-}
-
-/* Time Jump Modal */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.8);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.time-jump-modal {
-  background: #1a1a24;
-  border-radius: 16px;
-  width: 90%;
-  max-width: 500px;
-  max-height: 90vh;
-  overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-}
-
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 20px;
-  border-bottom: 1px solid #333;
-}
-
-.modal-header h3 {
-  font-size: 1.2rem;
-  color: #fff;
-  margin: 0;
-}
+/* Кнопка закрытия */
 
 .btn-close {
   background: none;
@@ -1750,164 +1032,6 @@ body {
 
 .btn-close:hover {
   color: #fff;
-}
-
-.modal-body {
-  padding: 20px;
-  max-height: 60vh;
-  overflow-y: auto;
-}
-
-.date-display {
-  font-size: 1.1rem;
-  color: #667eea;
-  text-align: center;
-  margin-bottom: 20px;
-  font-weight: 600;
-}
-
-.action-section {
-  margin-bottom: 20px;
-}
-
-.action-section label {
-  display: block;
-  font-size: 0.85rem;
-  color: #888;
-  margin-bottom: 8px;
-}
-
-.action-section textarea {
-  width: 100%;
-  padding: 12px;
-  background: #0d0d14;
-  border: 1px solid #333;
-  border-radius: 8px;
-  color: #fff;
-  font-size: 0.95rem;
-  resize: vertical;
-  font-family: inherit;
-}
-
-.action-section textarea:focus {
-  outline: none;
-  border-color: #667eea;
-}
-
-.suggestions-section {
-  margin-bottom: 20px;
-}
-
-.suggestions-section label {
-  display: block;
-  font-size: 0.85rem;
-  color: #888;
-  margin-bottom: 8px;
-}
-
-.suggestions-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.suggestion-btn {
-  padding: 8px 14px;
-  background: #252530;
-  border: 1px solid #333;
-  border-radius: 20px;
-  color: #aaa;
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.suggestion-btn:hover {
-  background: #333;
-  color: #fff;
-  border-color: #667eea;
-}
-
-.period-section label {
-  display: block;
-  font-size: 0.85rem;
-  color: #888;
-  margin-bottom: 8px;
-}
-
-.period-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.period-btn {
-  padding: 8px 16px;
-  background: #252530;
-  border: 1px solid #333;
-  border-radius: 8px;
-  color: #888;
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.period-btn:hover {
-  border-color: #667eea;
-  color: #fff;
-}
-
-.period-btn.active {
-  background: #667eea;
-  border-color: #667eea;
-  color: #fff;
-}
-
-.modal-footer {
-  display: flex;
-  gap: 12px;
-  padding: 20px;
-  border-top: 1px solid #333;
-}
-
-.btn-cancel,
-.btn-submit {
-  flex: 1;
-  padding: 12px 20px;
-  border-radius: 8px;
-  font-size: 0.95rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-cancel {
-  background: #252530;
-  border: 1px solid #333;
-  color: #888;
-}
-
-.btn-cancel:hover {
-  background: #333;
-  color: #fff;
-}
-
-.btn-submit {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border: none;
-  color: #fff;
-}
-
-.btn-submit:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
-}
-
-.btn-submit:disabled,
-.btn-cancel:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none;
 }
 
 /* Этап 2: баннер прогресса хода + Intervene */
@@ -1984,7 +1108,7 @@ body {
 }
 
 /* ============================================================================
-   Этап 3: дипломатические чаты + живой Советник
+   Этап 3: живой Советник
    ========================================================================== */
 
 /* Строка вкладок в плавающей панели */
@@ -1997,49 +1121,7 @@ body {
   flex-shrink: 0;
 }
 
-/* Бейдж непрочитанного на вкладке */
-.tab-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  margin-left: 6px;
-  padding: 0 5px;
-  background: #ef4444;
-  border-radius: 9px;
-  color: #fff;
-  font-size: 0.7rem;
-  font-weight: 600;
-}
-
-/* Бейдж непрочитанного на плавающей кнопке ⚡ */
-.floating-btn-badge {
-  position: absolute;
-  top: -4px;
-  right: -4px;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 5px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #ef4444;
-  border: 2px solid #0a0a0f;
-  border-radius: 10px;
-  color: #fff;
-  font-size: 0.7rem;
-  font-weight: 700;
-}
-
-/* --- Панель чатов --- */
-.chats-panel {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  background: #0a0a0f;
-}
+/* --- Лента и поле ввода советника --- */
 
 .chats-empty {
   color: #555;
@@ -2047,212 +1129,6 @@ body {
   text-align: center;
   padding: 20px 12px;
   line-height: 1.5;
-}
-
-.chats-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 8px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.chat-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px;
-  background: #1a1a24;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.chat-item:hover {
-  background: #222230;
-  border-color: #667eea;
-}
-
-.chat-color-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-}
-
-.chat-item-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.chat-item-name {
-  color: #eee;
-  font-size: 0.9rem;
-  font-weight: 600;
-}
-
-.chat-item-last {
-  color: #888;
-  font-size: 0.78rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  margin-top: 2px;
-}
-
-.chat-unread-badge {
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #ef4444;
-  border-radius: 10px;
-  color: #fff;
-  font-size: 0.72rem;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-
-/* Кнопка «Новый чат» и выбор политии */
-.btn-new-chat {
-  margin: 12px 12px 0;
-  padding: 9px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border: none;
-  border-radius: 8px;
-  color: white;
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: all 0.2s;
-  flex-shrink: 0;
-}
-
-.btn-new-chat:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-}
-
-.new-chat-picker {
-  margin: 8px 12px 0;
-  max-height: 180px;
-  overflow-y: auto;
-  background: #1a1a24;
-  border: 1px solid #2a2a3a;
-  border-radius: 8px;
-  flex-shrink: 0;
-}
-
-.polity-pick-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-  color: #ccc;
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.polity-pick-item:hover {
-  background: #252530;
-  color: #fff;
-}
-
-/* --- Тред сообщений --- */
-.chat-thread-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  background: #1a1a24;
-  border-bottom: 1px solid #2a2a3a;
-  flex-shrink: 0;
-}
-
-.btn-chat-back {
-  width: 28px;
-  height: 28px;
-  background: #252530;
-  border: 1px solid #333;
-  border-radius: 6px;
-  color: #888;
-  cursor: pointer;
-  font-size: 0.9rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-}
-
-.btn-chat-back:hover {
-  background: #333;
-  color: #667eea;
-  border-color: #667eea;
-}
-
-.chat-thread-title {
-  color: #eee;
-  font-size: 0.95rem;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.chat-messages {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-/* Пузыри сообщений: player справа, polity слева, system по центру */
-.chat-bubble {
-  max-width: 85%;
-  padding: 9px 12px;
-  border-radius: 12px;
-  font-size: 0.85rem;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.chat-bubble.player {
-  align-self: flex-end;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: #fff;
-  border-bottom-right-radius: 4px;
-}
-
-.chat-bubble.polity {
-  align-self: flex-start;
-  background: #1a1a24;
-  border: 1px solid #2a2a3a;
-  color: #ddd;
-  border-bottom-left-radius: 4px;
-}
-
-.chat-bubble.system {
-  align-self: center;
-  background: transparent;
-  border: 1px dashed #333;
-  color: #888;
-  font-size: 0.78rem;
-  font-style: italic;
-}
-
-.chat-bubble.loading {
-  color: #888;
-  font-style: italic;
 }
 
 /* Поле ввода сообщения */
@@ -2376,26 +1252,6 @@ body {
   50% { opacity: 0; }
 }
 
-/* Кнопка «Переговоры» в панели дипломатии */
-.btn-negotiate {
-  margin-left: auto;
-  padding: 3px 8px;
-  background: #252530;
-  border: 1px solid #333;
-  border-radius: 6px;
-  color: #888;
-  font-size: 0.72rem;
-  cursor: pointer;
-  transition: all 0.2s;
-  flex-shrink: 0;
-}
-
-.btn-negotiate:hover {
-  background: #333;
-  color: #667eea;
-  border-color: #667eea;
-}
-
 /* ==========================================================================
  * Этап 4: выбор страны на карте мира (WorldSelectMap + CountrySelector)
  * ========================================================================== */
@@ -2447,11 +1303,33 @@ body {
   box-shadow: 0 0 12px rgba(240, 147, 251, 0.15);
 }
 
-/* Выделенная карточка в fallback-сетке */
-.country-card.selected {
-  border-color: #f093fb;
-  background: rgba(240, 147, 251, 0.08);
-  box-shadow: 0 0 12px rgba(240, 147, 251, 0.15);
+.country-search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  background: #12121a;
+  border: 1px solid #2a2a3a;
+  border-radius: 10px;
+  color: #e0e0e0;
+  font-size: 0.95rem;
+}
+
+.country-search:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.country-list-heading {
+  margin: 8px 2px 0;
+  color: #8a8aa0;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.country-members {
+  color: #8a8aa0;
+  font-size: 0.8rem;
 }
 
 /* Контейнер SVG-карты мира с градиентом океана */
@@ -2479,7 +1357,7 @@ body {
 
 /* Страны на карте */
 .world-select-map path.world-country {
-  fill: #2a2a3a;
+  fill: var(--owner-color, #2a2a3a);
   stroke: #444;
   stroke-width: 0.5;
   transition: fill 0.15s, opacity 0.15s;
@@ -2597,30 +1475,6 @@ body {
 
 .template-card-top .template-name {
   margin-bottom: 0;
-}
-
-/* Бейдж источника шаблона */
-.template-badge {
-  flex-shrink: 0;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 0.7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-/* Пакет-пресет (data/presets) — акцентный */
-.template-badge.preset {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: #fff;
-}
-
-/* Легаси-шаблон (data/templates) — нейтральный */
-.template-badge.legacy {
-  background: #2a2a3a;
-  border: 1px solid #3a3a4a;
-  color: #999;
 }
 
 /* Иконки возможностей пакета — подсказка по наведению */
@@ -3522,26 +2376,6 @@ body {
   transform: translateX(4px);
 }
 
-.landing-cta-secondary {
-  padding: 16px 36px;
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: #cfd0e0;
-  background: rgba(26, 26, 36, 0.6);
-  border: 1px solid rgba(102, 126, 234, 0.4);
-  border-radius: 999px;
-  cursor: pointer;
-  backdrop-filter: blur(6px);
-  transition: all 0.3s ease;
-}
-
-.landing-cta-secondary:hover {
-  border-color: #f093fb;
-  color: #fff;
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-}
-
 /* --- Секции под hero --- */
 .landing-sections {
   position: relative;
@@ -3630,55 +2464,6 @@ body {
 .landing-save-play:hover {
   box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
   filter: brightness(1.1);
-}
-
-/* Карточки карт с SVG-превью */
-.landing-maps-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 16px;
-}
-
-.landing-map-card {
-  cursor: pointer;
-  background: rgba(26, 26, 36, 0.75);
-  border: 1px solid #2a2a3a;
-  border-radius: 14px;
-  overflow: hidden;
-  backdrop-filter: blur(6px);
-  transition: all 0.25s ease;
-}
-
-.landing-map-card:hover {
-  border-color: rgba(240, 147, 251, 0.55);
-  transform: translateY(-2px);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
-}
-
-.landing-map-preview {
-  aspect-ratio: 4 / 3;
-  background: #0d0d14;
-}
-
-.landing-map-preview svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-
-.landing-map-info {
-  padding: 12px 14px;
-}
-
-.landing-map-info h4 {
-  margin: 0 0 4px;
-  font-size: 1rem;
-  color: #fff;
-}
-
-.landing-map-info span {
-  font-size: 0.85rem;
-  color: #888;
 }
 
 /* --- Этап 6: SaveGameModal (замена prompt()) --- */

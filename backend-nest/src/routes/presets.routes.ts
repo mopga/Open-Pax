@@ -42,7 +42,7 @@ presetsRouter.post(
           name: preset.name,
           description: preset.description,
           start_date: preset.start_date,
-          country_count: preset.country_codes.length,
+          country_count: preset.recommended.length,
         },
       });
     } catch (e: any) {
