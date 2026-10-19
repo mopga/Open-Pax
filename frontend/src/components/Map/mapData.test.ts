@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  buildBorderEdges, buildPolityLabels, chainSegments, muteColor, parseRegionFeatures, project, unproject,
+  buildBorderEdges, buildPolityLabels, chainSegments, muteColor, parseRegionFeatures, polityOutlines, project, unproject,
   type MapRegionInput, type Position,
 } from './mapData';
 
@@ -131,5 +131,39 @@ describe('labelLineForPart / линии меток', () => {
       expect(l.letterSpacing).toBeGreaterThanOrEqual(0.25);
       expect(l.letterSpacing).toBeLessThanOrEqual(1.4);
     }
+  });
+});
+
+describe('polityOutlines / регионы мельче стран', () => {
+  // Регионы (admin-1) из scripts/build-regions.mjs
+  const REGIONS = JSON.parse(fs.readFileSync(
+    path.resolve(__dirname, '../../../../backend-nest/data/geojson/regions.geojson'), 'utf8',
+  ));
+  const regionsOf = (iso3: string[], owner?: string): MapRegionInput[] => REGIONS.features
+    .filter((f: any) => iso3.includes(f.properties.iso3))
+    .map((f: any) => ({
+      id: f.properties.id, name: f.properties.nameEn, owner: owner ?? f.properties.iso3, geojson: JSON.stringify(f),
+    }));
+
+  it('государство из многих регионов — одна подпись на материке', () => {
+    const regions = regionsOf(['FRA', 'DEU', 'ESP']);
+    expect(regions.filter(r => r.owner === 'FRA').length).toBeGreaterThan(3);
+    const features = parseRegionFeatures(regions);
+    const labels = buildPolityLabels(regions, features, o => o, buildBorderEdges(features));
+    const europeanFrance = labels.filter(l => l.owner === 'FRA' && l.point[1] > 40 && l.point[0] > -5);
+    expect(europeanFrance).toHaveLength(1);
+    expect(labels.filter(l => l.owner === 'DEU')).toHaveLength(1);
+  });
+
+  it('составное государство (Югославия из 7 стран) — один общий контур и подпись', () => {
+    const regions = regionsOf(['SRB', 'HRV', 'BIH', 'SVN', 'MNE', 'MKD', 'KOS'], 'YUG');
+    const features = parseRegionFeatures(regions);
+    const edges = buildBorderEdges(features);
+    const outlines = polityOutlines(edges, id => regions.find(r => r.id === id)?.owner);
+    expect(outlines.get('YUG')!.length).toBeGreaterThanOrEqual(1);
+    const labels = buildPolityLabels(regions, features, () => 'Yugoslavia', edges);
+    expect(labels).toHaveLength(1);
+    expect(labels[0].point[0]).toBeGreaterThan(13);
+    expect(labels[0].point[0]).toBeLessThan(23);
   });
 });

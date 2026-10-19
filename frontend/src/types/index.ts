@@ -109,6 +109,14 @@ export interface Bloc {
 // Game Models
 // ============================================================================
 
+/** Государство: владеет регионами; имя и цвет живут здесь */
+export interface Polity {
+  id: string;
+  name: string;
+  color: string;
+  flag?: string | null;
+}
+
 export interface World {
   id: string;
   name: string;
@@ -117,6 +125,8 @@ export interface World {
   basePrompt: string;
   historicalAccuracy: number;
   regions: Record<string, Region>;
+  /** Реестр государств по id (с сервера приходит массивом, нормализуется в gameApi.get) */
+  polities?: Record<string, Polity>;
   blocs: Record<string, Bloc>;
 }
 

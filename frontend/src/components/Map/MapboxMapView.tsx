@@ -35,6 +35,8 @@ interface MapboxMapViewProps {
   /** Оставлен для совместимости API: флаги на карте больше не рисуются */
   showFlags?: boolean;
   playerCountryCode?: string;
+  /** Реестр государств: id → имя (подписи, тултип). Нет — имя по «домашнему» региону */
+  polities?: Record<string, { name: string; color?: string }>;
   /** Оставлен для совместимости API */
   showMinimap?: boolean;
 }
@@ -146,6 +148,7 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
   onRegionHover,
   changedRegionIds = [],
   playerCountryCode,
+  polities,
 }) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
@@ -156,6 +159,8 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
   // Актуальные значения для обработчиков карты (регистрируются один раз)
   const regionsRef = useRef(regions);
   regionsRef.current = regions;
+  const politiesRef = useRef(polities);
+  politiesRef.current = polities;
   const onRegionClickRef = useRef(onRegionClick);
   onRegionClickRef.current = onRegionClick;
   const onRegionHoverRef = useRef(onRegionHover);
@@ -168,8 +173,10 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
   const hoveredId = useRef<string | null>(null);
   const appliedFlags = useRef<{ selected: Set<string>; changed: Set<string> }>({ selected: new Set(), changed: new Set() });
 
-  /** Имя государства: имя его «домашнего» региона (id `${worldId}_${owner}`) */
+  /** Имя государства: из реестра; у старых миров — имя «домашнего» региона (id `${worldId}_${owner}`) */
   const polityName = useCallback((owner: string): string => {
+    const fromRegistry = politiesRef.current?.[owner]?.name;
+    if (fromRegistry) return fromRegistry;
     const list = regionsRef.current;
     return list.find(r => r.owner === owner && r.id.endsWith(`_${owner}`))?.name
       ?? list.find(r => r.id.endsWith(`_${owner}`))?.name
@@ -254,14 +261,16 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
         },
       });
 
-      // Тонкие контуры регионов (внутри одного государства — едва заметны)
+      // Тонкие контуры регионов: на дальнем зуме скрыты, проявляются при
+      // приближении («диапазон затухания границ» у PaxHistoria)
       m.addLayer({
         id: REGION_LINE_LAYER,
         type: 'line',
         source: REGIONS_SOURCE,
         paint: {
-          'line-color': 'rgba(12, 10, 24, 0.45)',
-          'line-width': ['interpolate', ['linear'], ['zoom'], 1, 0.3, 6, 0.9] as ExpressionSpecification,
+          'line-color': 'rgb(12, 10, 24)',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 2, 0.3, 6, 0.9] as ExpressionSpecification,
+          'line-opacity': ['interpolate', ['linear'], ['zoom'], 2, 0, 3.5, 0.3, 6, 0.45] as ExpressionSpecification,
         },
       });
 
@@ -462,7 +471,8 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
       m.setFeatureState({ source: BORDERS_SOURCE, id: i }, { diff, player });
     });
 
-    const labels = buildPolityLabels(regions, featuresRef.current, polityName);
+    // Подписи — по общему контуру государства (его регионы склеиваются по рёбрам)
+    const labels = buildPolityLabels(regions, featuresRef.current, polityName, edgesRef.current);
     (m.getSource(LABELS_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData({
       type: 'FeatureCollection',
       features: labels.map(l => ({
@@ -471,7 +481,7 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
         geometry: { type: 'LineString', coordinates: l.line },
       })),
     });
-  }, [regions, mapLoaded, playerCountryCode, polityName]);
+  }, [regions, mapLoaded, playerCountryCode, polityName, polities]);
 
   // Выбор и подсветка изменённых — диффом, без перерисовки данных
   useEffect(() => {
