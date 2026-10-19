@@ -382,11 +382,21 @@ export class PromptEngine {
     vars.PLAYER_ACTIONS_THIS_ROUND = actions.join('\n');
 
     const promptOverride = getPromptOverride(await resolveWorldPrompts(game), 'simulation');
+    // Preset overrides are allowed to replace the default simulation prompt,
+    // so explicitly preserve the autonomous-world contract for an empty turn.
+    // This is a mode instruction, not a synthetic player action.
+    const roundEventInstruction = `\n\nПравила событий этого раунда:
+- Верни события в хронологическом порядке за весь выбранный период.
+- Смешай реакции на реальные приказы игрока с независимыми событиями мира, вытекающими именно из лора и правил текущего пресета.
+- Пометь каждое событие полем "kind": "reaction" или "independent".`;
+    const autonomousInstruction = actions.length === 0
+      ? `\n- Игрок не отдавал приказов в этом раунде. Не придумывай и не выполняй действия за политию игрока; все события должны быть автономными.`
+      : '';
     // Пресетный шаблон заменяет дефолтный промпт целиком; правила auto-jump
     // (если режим включён) дописываем после него, чтобы механика не ломалась.
     const prompt = promptOverride
-      ? renderPromptTemplate(promptOverride, vars) + (autoJump ? buildAutoJumpInstruction(vars) : '')
-      : buildSimulationPrompt(vars, { autoJump });
+      ? renderPromptTemplate(promptOverride, vars) + (autoJump ? buildAutoJumpInstruction(vars) : '') + roundEventInstruction + autonomousInstruction
+      : buildSimulationPrompt(vars, { autoJump }) + roundEventInstruction + autonomousInstruction;
     // system — короткая ролевая инструкция, user — большой промпт.
     // Раньше весь промпт шёл в system, а user был пустым: часть моделей
     // (особенно локальные) на это реагирует заметно хуже.
@@ -449,7 +459,7 @@ export class PromptEngine {
       { temperature: 0.5 }
     );
 
-    return parseBatchConverterResponse(response.content);
+    return parseBatchConverterResponse(response.content, actionTexts);
   }
 
   async getAdvisor(game: GameData, message: string, history: AdvisorMessage[] = []): Promise<string> {

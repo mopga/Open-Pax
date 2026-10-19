@@ -273,19 +273,35 @@ export const gameApi = {
   },
 
   /**
-   * Time-skip: process pending actions OR just advance date
+   * Time-skip: process pending actions or simulate an autonomous world turn
    */
-  timeSkip: (gameId: string, jumpDays?: number): Promise<{
-    type: 'actions_processed' | 'date_advanced';
+  timeSkip: (gameId: string, jumpDays?: number, actions?: string[]): Promise<{
+    type: 'actions_processed' | 'world_simulated';
     processedCount?: number;
     actions?: any[];
+    result?: {
+      narration: string;
+      countryResponse: string;
+      events: string[];
+      timelineEvents: Array<{
+        headline: string;
+        description: string;
+        date: string;
+        kind?: 'reaction' | 'independent' | 'world';
+        mapChanges?: any[];
+      }>;
+      objects: any[];
+      turn: number;
+      periodStart: string;
+      periodEnd: string;
+    };
     newDate?: string;
     newTurn?: number;
     jumpDays?: number;
   }> => {
     return fetchApi(`/games/${gameId}/time-skip`, {
       method: 'POST',
-      body: JSON.stringify({ jump_days: jumpDays ?? 30 }),
+      body: JSON.stringify({ jump_days: jumpDays ?? 30, actions }),
     });
   },
 

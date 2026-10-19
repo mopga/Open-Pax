@@ -229,10 +229,10 @@ describe('Этап 0: сквозной дым-тест', () => {
     expect(loaded.getRegion(`${WORLD_ID}_POL`).owner).toBe('DEU');
   });
 
-  it('движок вызывает LLM с правильными механиками (Этап 1)', () => {
+  it('движок использует единый world jump без дублирующего NPC-прохода', () => {
     expect(seenMechanics).toContain('converter');
     expect(seenMechanics).toContain('jump');
-    expect(seenMechanics).toContain('npc');
+    expect(seenMechanics).not.toContain('npc');
   });
 
   it('падение LLM на прыжке: действие возвращается в pending, ошибка пробрасывается', async () => {

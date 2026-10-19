@@ -1482,6 +1482,64 @@ body {
   margin-right: 6px;
 }
 
+.history-timeline-events {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.live-event-sequence {
+  position: fixed;
+  top: 64px;
+  left: 50%;
+  z-index: 80;
+  width: min(520px, calc(100vw - 32px));
+  max-height: 45vh;
+  padding: 10px;
+  overflow-y: auto;
+  transform: translateX(-50%);
+  border: 1px solid #34344a;
+  border-radius: 10px;
+  background: rgba(14, 14, 22, 0.96);
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.45);
+}
+
+.history-event-card {
+  padding: 9px 10px;
+  border: 1px solid #303044;
+  border-left: 3px solid #7d87ff;
+  border-radius: 7px;
+  background: #14141d;
+}
+
+.history-event-card.independent {
+  border-left-color: #50bfa5;
+}
+
+.history-event-card-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+  color: #85859a;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.history-event-card-title {
+  color: #ececf5;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.history-event-card-description {
+  margin-top: 4px;
+  color: #aaaabd;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
 .btn-back {
   padding: 12px;
   background: #1a1a24;

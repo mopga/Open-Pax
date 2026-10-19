@@ -525,20 +525,22 @@ function App() {
     setLoading(true);
 
     try {
-      const result = await gameApi.timeSkip(currentGame.id, days);
+      const draftActions = pendingActions.map(action => action.text);
+      const result = await gameApi.timeSkip(currentGame.id, days, draftActions);
 
       if (result.type === 'actions_processed') {
-        for (const action of result.actions || []) {
-          if (action.result) {
-            addHistory({
-              turn: action.result.turn,
-              action: action.text,
-              result: action.result.narration,
-              events: action.result.events,
-              periodStart: action.result.periodStart,
-              periodEnd: action.result.periodEnd,
-            });
-          }
+        const turnActions = result.actions || [];
+        const turnResult = turnActions.find(action => action.result)?.result;
+        if (turnResult) {
+          addHistory({
+            turn: turnResult.turn,
+            action: turnActions.map(action => action.text).join('\n'),
+            result: turnResult.narration,
+            events: turnResult.events,
+            timelineEvents: turnResult.timelineEvents,
+            periodStart: turnResult.periodStart,
+            periodEnd: turnResult.periodEnd,
+          });
         }
 
         const lastAction = result.actions?.[result.actions.length - 1];
@@ -549,24 +551,29 @@ function App() {
             currentDate: (lastAction.result as any).periodEnd,
           } : prev);
         }
-      } else if (result.type === 'date_advanced') {
-        const startDate = currentGame.currentDate || '1951-01-01';
+      } else if (result.type === 'world_simulated' && result.result) {
+        const turnResult = result.result;
         addHistory({
-          turn: currentGame.currentTurn,
-          action: `⏭️ Time-skip`,
-          result: `Продвинуто на ${days} дней`,
-          periodStart: startDate,
-          periodEnd: result.newDate,
+          turn: turnResult.turn,
+          action: '⏭️ Автономный ход мира',
+          result: turnResult.narration,
+          events: turnResult.events,
+          timelineEvents: turnResult.timelineEvents,
+          periodStart: turnResult.periodStart,
+          periodEnd: turnResult.periodEnd,
         });
 
         setCurrentGame(prev => prev ? {
           ...prev,
-          currentTurn: result.newTurn!,
-          currentDate: result.newDate,
+          currentTurn: turnResult.turn + 1,
+          currentDate: turnResult.periodEnd,
         } : prev);
       }
+      clearPendingActions();
+      setLiveTimelineEvents([]);
     } catch (e) {
       console.error('Time-skip failed:', e);
+      setLiveTimelineEvents([]);
     }
 
     setLoading(false);
@@ -716,6 +723,12 @@ function App() {
   // SSE real-time updates
   const [isProcessingTurn, setIsProcessingTurn] = useState(false);
   const [turnProgress, setTurnProgress] = useState<string>('');
+  const [liveTimelineEvents, setLiveTimelineEvents] = useState<Array<{
+    headline: string;
+    description?: string;
+    date?: string;
+    kind?: 'reaction' | 'independent' | 'world';
+  }>>([]);
   // Этап 2: сложность новой игры
   const [difficulty, setDifficulty] = useState<string>('normal');
 
@@ -742,6 +755,7 @@ function App() {
       console.log('[SSE] Turn started:', data);
       setIsProcessingTurn(true);
       setTurnProgress('Обработка хода...');
+      setLiveTimelineEvents([]);
     },
     onGeneratingNarration: () => {
       console.log('[SSE] Generating narration...');
@@ -752,9 +766,17 @@ function App() {
     },
     onJumpEvent: (data) => {
       setTurnProgress(`Событие ${data.index + 1}/${data.total}: ${data.event?.headline || ''}`);
+      if (data.event?.headline) {
+        setLiveTimelineEvents(events => [...events, data.event]);
+      }
     },
     onActionVoided: (data) => {
       setTurnProgress(`⊘ Действие отклонено: ${data.reason || data.action}`);
+      setLiveTimelineEvents(events => [...events, {
+        headline: `⊘ Отклонено: ${data.action}`,
+        description: data.reason,
+        kind: 'reaction',
+      }]);
     },
     // ОТКЛЮЧЕНО: переговоры — входящие сообщения дипломатических чатов не обрабатываем
     // // Этап 3: входящее сообщение от политии — бейдж unread + обновление списка чатов
@@ -779,17 +801,10 @@ function App() {
       setIsProcessingTurn(false);
       setTurnProgress('');
 
-      // Add to history
+      // HTTP-ответ хода содержит полный список приказов, интервал и карточки
+      // событий; историю добавляет только он. SSE отвечает за live-прогресс
+      // и синхронизацию состояния, иначе один ход появлялся дважды.
       if (data) {
-        addHistory({
-          turn: data.turn,
-          action: data.action || 'Ход',
-          result: data.narration,
-          events: data.events,
-          periodEnd: data.newDate,
-        });
-
-        // Update current game state
         if (data.newTurn && data.newDate) {
           setCurrentGame(prev => prev ? {
             ...prev,
@@ -836,6 +851,8 @@ function App() {
           }}
           onRewind={handleRewind}
           onTimeSkip={handleTimeSkip}
+          timelineOpen={showJumpMenu}
+          onTimelineOpenChange={setShowJumpMenu}
         />
 
         <div className="game-container">
@@ -850,6 +867,20 @@ function App() {
               >
                 ⏸ Intervene
               </button>
+            </div>
+          )}
+          {liveTimelineEvents.length > 0 && (
+            <div className="live-event-sequence" aria-live="polite">
+              {liveTimelineEvents.map((event, index) => (
+                <div key={`${event.date || 'live'}-${index}`} className={`history-event-card ${event.kind || 'world'}`}>
+                  <div className="history-event-card-meta">
+                    <span>{event.kind === 'reaction' ? 'Реакция' : event.kind === 'independent' ? 'Событие мира' : 'Событие'}</span>
+                    {event.date && <time>{event.date}</time>}
+                  </div>
+                  <div className="history-event-card-title">{event.headline}</div>
+                  {event.description && <div className="history-event-card-description">{event.description}</div>}
+                </div>
+              ))}
             </div>
           )}
           {/* Карта слева */}
@@ -1098,14 +1129,8 @@ function App() {
                             <div
                               key={ai}
                               className="suggestion-action"
-                              onClick={async () => {
-                                if (!currentGame) return;
+                              onClick={() => {
                                 const text = a.content;
-                                try {
-                                  await gameApi.queueAction(currentGame.id, text);
-                                } catch (e) {
-                                  console.error('Failed to queue suggestion:', e);
-                                }
                                 addPendingAction({
                                   id: `suggestion-${Date.now()}-${ai}`,
                                   text
@@ -1245,15 +1270,10 @@ function App() {
                     />
                     <button
                       className="btn-add-pending"
-                      onClick={async () => {
-                        if (newActionText.trim() && currentGame) {
-                          const text = newActionText.trim();
-                          try {
-                            await gameApi.queueAction(currentGame.id, text);
-                          } catch (e) {
-                            console.error('Failed to queue action:', e);
-                          }
-                          addPendingAction({
+                       onClick={() => {
+                         if (newActionText.trim() && currentGame) {
+                           const text = newActionText.trim();
+                           addPendingAction({
                             id: `manual-${Date.now()}`,
                             text
                           });
@@ -1290,42 +1310,13 @@ function App() {
                   <button
                     className="btn-submit-actions"
                     disabled={pendingActions.length === 0 || loading}
-                    onClick={async () => {
-                      if (!currentGame || pendingActions.length === 0) return;
-                      setLoading(true);
-                      try {
-                        const result = await gameApi.processAllActions(currentGame.id, 30);
-
-                        for (const action of result.actions) {
-                          if (action.result) {
-                            addHistory({
-                              turn: action.result.turn,
-                              action: action.text,
-                              result: action.result.narration,
-                              events: action.result.events,
-                              periodStart: action.result.periodStart,
-                              periodEnd: action.result.periodEnd,
-                            });
-                          }
-                        }
-
-                        const lastAction = result.actions[result.actions.length - 1];
-                        if (lastAction?.result) {
-                          setCurrentGame(prev => prev ? {
-                            ...prev,
-                            currentTurn: (lastAction.result as any).turn + 1,
-                            currentDate: (lastAction.result as any).periodEnd,
-                          } : prev);
-                        }
-
-                        clearPendingActions();
-                      } catch (e) {
-                        console.error('Failed to process actions:', e);
-                      }
-                      setLoading(false);
+                    onClick={() => {
+                      if (pendingActions.length === 0) return;
+                      setShowActions(false);
+                      setShowJumpMenu(true);
                     }}
                   >
-                    {loading ? 'Думаю...' : `Отправить ${pendingActions.length} действие(й) →`}
+                    Выбрать период · приказов: {pendingActions.length} →
                   </button>
                 </div>
                 )}
@@ -1350,7 +1341,20 @@ function App() {
                     </div>
                     <div className="history-action">→ {item.action}</div>
                     <div className="history-result">{item.result}</div>
-                    {item.events && item.events.length > 0 && (
+                    {item.timelineEvents && item.timelineEvents.length > 0 ? (
+                      <div className="history-timeline-events">
+                        {item.timelineEvents.map((event, ei) => (
+                          <div key={`${event.date}-${ei}`} className={`history-event-card ${event.kind || 'world'}`}>
+                            <div className="history-event-card-meta">
+                              <span>{event.kind === 'reaction' ? 'Реакция' : event.kind === 'independent' ? 'Событие мира' : 'Событие'}</span>
+                              {event.date && <time>{event.date}</time>}
+                            </div>
+                            <div className="history-event-card-title">{event.headline}</div>
+                            {event.description && <div className="history-event-card-description">{event.description}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    ) : item.events && item.events.length > 0 && (
                       <div className="history-events">
                         {item.events.map((event, ei) => (
                           <div key={ei} className="history-event">• {event}</div>

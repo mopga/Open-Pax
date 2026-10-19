@@ -120,7 +120,7 @@ ${recentEvents}
     try {
       const result = await this.provider.generate('npc', system, user, {
         temperature: 0.7,
-        // MiniMax-M2.5 — reasoning-модель: «мысли» съедают ~500-1500 токенов
+        // MiniMax reasoning-модели: «мысли» могут съедать заметную часть бюджета
         // до начала ответа; лимит 500 приводил к finish_reason=length и пустому content.
         maxTokens: 2500,
       });

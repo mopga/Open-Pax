@@ -55,7 +55,7 @@ function resolveApiKey(raw: string | undefined): string {
 function defaultConfig(): LLMConfig {
   const envKey = process.env.LLM_API_KEY || process.env.MINIMAX_API_KEY || '';
   const envBase = process.env.LLM_BASE_URL || process.env.MINIMAX_BASE_URL || 'https://api.minimax.io/v1';
-  const envModel = process.env.LLM_MODEL || 'MiniMax-M2.5';
+  const envModel = process.env.LLM_MODEL || 'MiniMax-M3';
   const envProvider = (process.env.LLM_PROVIDER as MechanicConfig['provider']) || 'minimax';
   const cfg = {} as LLMConfig;
   for (const m of ALL_MECHANICS) {
