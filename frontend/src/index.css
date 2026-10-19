@@ -4303,3 +4303,24 @@ body {
   color: #77778a;
   font-size: 0.75rem;
 }
+
+/* HUD: края (меню/лого и расход/⚙/дата) по содержимому, центр занимает
+   остаток и уступает место — название мира обрезается многоточием */
+.hud-left,
+.hud-right {
+  flex: 0 0 auto;
+}
+
+.hud-center {
+  flex: 1 1 0;
+}
+
+.hud-world-name {
+  min-width: 0;
+}
+
+@media (max-width: 1280px) {
+  .hud-usage-sub {
+    display: none;
+  }
+}
