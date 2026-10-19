@@ -47,16 +47,19 @@ AI превращает их в полноценные исторические 
 git clone https://github.com/mopga/Open-Pax.git
 cd Open-Pax
 
-# 2. Добавь ключ
-echo "MINIMAX_API_KEY=твой_ключ" > backend-nest/.env
+# 2. Установи зависимости
+npm install
 
-# 3. Запусти
+# 3. (по желанию) Рельеф для карты: скачает Natural Earth SR_LR (~25 МБ) и нарежет тайлы
+npm run map:relief
+
+# 4. Запусти
 npm start
 ```
 
-Открой **[http://localhost:5173](http://localhost:5173)** — и играй.
+Открой **[http://localhost:5173](http://localhost:5173)**, нажми «⚙ Модель ИИ» и подключи модель: свой API-ключ (DeepSeek, OpenAI, Anthropic, OpenRouter…), подписку (MiniMax, Z.ai) или локальный сервер (llama.cpp, Ollama, LM Studio). Ключ хранится только локально.
 
-*Нужен API ключ? Получи на [platform.minimaxi.com](https://platform.minimaxi.com)*
+Без шага 3 карта работает, но без рельефа. Шрифт подписей (PT Serif) уже лежит в `frontend/public/glyphs`; пересобрать его можно командой `npm run map:glyphs`.
 
 ---
 

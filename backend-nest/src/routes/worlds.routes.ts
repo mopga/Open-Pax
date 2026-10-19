@@ -13,7 +13,7 @@ import { BalanceAgent } from '../agents/balance-agent';
 import { getLLMRouter } from '../llm';
 import { loadPreset, loadPresetMap } from '../utils/preset-loader';
 import { computeBorders } from '../utils/borders';
-import { resolveRegionColor } from '../utils/color';
+import { colorFromCode, resolveRegionColor } from '../utils/color';
 
 export const worldsRouter = Router();
 
@@ -24,6 +24,52 @@ export const worldsRouter = Router();
 // остаются без столиц, генерация мира не падает.
 interface CapitalEntry { capital: string; lat: number; lng: number }
 let capitalsCache: Record<string, CapitalEntry> | null = null;
+/** Реестр стран data/countries.json (английские имена и цвета) */
+let countryRegistryCache: Record<string, { name: string; color: string }> | null = null;
+function getCountryRegistry(): Record<string, { name: string; color: string }> {
+  if (countryRegistryCache) return countryRegistryCache;
+  try {
+    const list = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'data', 'countries.json'), 'utf-8'));
+    countryRegistryCache = Object.fromEntries((list as any[]).map(c => [c.code, { name: c.name, color: c.color }]));
+  } catch {
+    countryRegistryCache = {};
+  }
+  return countryRegistryCache!;
+}
+
+/**
+ * Соседство стран стандартной карты Natural Earth. Геометрия статична, а
+ * полный расчёт (turf, 243 страны) занимает ~10 с — считаем один раз и
+ * кэшируем в data/geojson/country-borders.json.
+ */
+let standardBordersCache: Record<string, string[]> | null = null;
+function getStandardBorders(geojsonFeatures: Record<string, any>): Record<string, string[]> {
+  if (standardBordersCache) return standardBordersCache;
+  const cachePath = path.join(process.cwd(), 'data', 'geojson', 'country-borders.json');
+  try {
+    if (fs.existsSync(cachePath)) {
+      standardBordersCache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
+      return standardBordersCache!;
+    }
+  } catch { /* битый кэш — пересчитаем */ }
+  standardBordersCache = computeBorders(
+    Object.fromEntries(Object.entries(geojsonFeatures).map(([code, f]) => [code, f.geometry ?? f])),
+  );
+  try {
+    fs.writeFileSync(cachePath, JSON.stringify(standardBordersCache));
+  } catch (e) {
+    console.warn('[Generate World] не удалось записать кэш соседства:', e);
+  }
+  return standardBordersCache;
+}
+
+function capitalObjectsFor(code: string): any[] {
+  const cap = getCapitals()[code];
+  return (cap && typeof cap.lat === 'number' && typeof cap.lng === 'number')
+    ? [{ id: shortId(), type: 'capital', name: cap.capital, lat: cap.lat, lng: cap.lng }]
+    : [];
+}
+
 function getCapitals(): Record<string, CapitalEntry> {
   if (capitalsCache) return capitalsCache;
   try {
@@ -102,10 +148,7 @@ worldsRouter.post('/generate', async (req, res) => {
       if (geojson) {
         // Этап 4: столица страны как map feature (формат согласован с фронтом:
         // { id, type, name, lat, lng }). Нет записи в capitals.json — без столицы.
-        const cap = getCapitals()[code];
-        const capitalObjects = (cap && typeof cap.lat === 'number' && typeof cap.lng === 'number')
-          ? [{ id: shortId(), type: 'capital', name: cap.capital, lat: cap.lat, lng: cap.lng }]
-          : [];
+        const capitalObjects = capitalObjectsFor(code);
         regionsObj[code] = {
           id: code,
           name: state.name,
@@ -131,6 +174,37 @@ worldsRouter.post('/generate', async (req, res) => {
       }
     }
 
+    // Весь мир под владельцами: страны Natural Earth вне пресета становятся
+    // самостоятельными политиями без LLM-генерации (иначе на карте пустая
+    // суша). Язык имён — как у стран пресета, чтобы на карте не было смеси.
+    if (!preset.has_custom_map) {
+      const presetUsesCyrillic = Object.values(regionsObj).some(r => /[А-Яа-яЁё]/.test(r.name));
+      const registry = getCountryRegistry();
+      for (const [code, feature] of Object.entries(geojsonFeatures)) {
+        if (regionsObj[code]) continue;
+        const props = feature.properties || {};
+        const name = presetUsesCyrillic
+          ? (props.name || props.nameEn || code)
+          : (registry[code]?.name || props.nameEn || props.name || code);
+        regionsObj[code] = {
+          id: code,
+          name,
+          color: resolveRegionColor(code, registry[code]?.color || colorFromCode(code), preset.country_colors),
+          geojson: JSON.stringify(feature),
+          owner: code,
+          population: 0,
+          gdp: 0,
+          militaryPower: 0,
+          objects: capitalObjectsFor(code),
+          borders: [],
+          status: 'active',
+          flag: code,
+          // Фоновая страна: не входит в пресет, статы не генерировались
+          metadata: { background: true },
+        };
+      }
+    }
+
     const worldId = shortId();
     const worldData = {
       id: worldId,
@@ -151,13 +225,15 @@ worldsRouter.post('/generate', async (req, res) => {
     // Borders are computed from actual geometry (turf) once, here — the NPC
     // expansion logic depends on them to only spread into adjacent regions.
     const templateCodes = Object.keys(regionsObj);
-    const bordersMap = computeBorders(
-      Object.fromEntries(
-        templateCodes
-          .filter(code => geojsonFeatures[code])
-          .map(code => [code, geojsonFeatures[code].geometry ?? geojsonFeatures[code]])
+    const bordersMap = preset.has_custom_map
+      ? computeBorders(
+        Object.fromEntries(
+          templateCodes
+            .filter(code => geojsonFeatures[code])
+            .map(code => [code, geojsonFeatures[code].geometry ?? geojsonFeatures[code]])
+        )
       )
-    );
+      : getStandardBorders(geojsonFeatures);
 
     const regionsArray = Object.entries(regionsObj).map(([code, region]) => ({
       id: `${worldId}_${code}`,

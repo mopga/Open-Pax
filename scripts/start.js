@@ -174,6 +174,10 @@ async function main() {
     process.exit(1);
   }
 
+  if (!fs.existsSync(path.join(frontendDir, 'public', 'tiles', 'relief', '0', '0', '0.webp'))) {
+    log('Map relief tiles are not built — the map works without relief. Run "npm run map:relief" to add it.', 'WARN');
+  }
+
   try {
     if (!isDev) ensureBackendBuilt(backendDir, npmCmd);
 

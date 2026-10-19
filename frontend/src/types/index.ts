@@ -65,13 +65,17 @@ export interface CountryState {
 
 export interface MapObject {
   id: string;
-  type: "army" | "factory" | "university" | "city";
+  type: "army" | "factory" | "university" | "city" | "capital" | "battalion" | "fleet" | "missile" | "radar" | "port";
   name: string;
-  x: number;
-  y: number;
+  /** Легаси: SVG-координаты канвы 2000×1500 */
+  x?: number;
+  y?: number;
+  /** Географические координаты (столицы, объекты Natural Earth) */
+  lat?: number;
+  lng?: number;
   owner?: string;
-  level: number;
-  metadata: Record<string, any>;
+  level?: number;
+  metadata?: Record<string, any>;
 }
 
 export interface Region {
