@@ -116,6 +116,8 @@ export interface Game {
   currentDate?: string;
   maxTurns: number;
   status: GameStatus;
+  /** История ходов с сервера (для ленты после загрузки сейва) */
+  history?: { turn: number; action: string; result: string; events?: string[] }[];
 }
 
 // ============================================================================

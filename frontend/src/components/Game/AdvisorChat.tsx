@@ -8,6 +8,7 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
+import { renderMarkdown } from '../../utils/inlineMarkdown';
 import { advisorApi, type AdvisorHistoryItem } from '../../services/api';
 import { useChatStore } from '../../stores';
 
@@ -74,7 +75,7 @@ export const AdvisorChat: React.FC<AdvisorChatProps> = ({ gameId }) => {
             return (
               <div key={i} className={`advisor-bubble ${m.role}`}>
                 {m.proactive && <span className="proactive-badge">Сводка</span>}
-                {m.content}
+                {m.role === 'assistant' ? renderMarkdown(m.content) : m.content}
                 {isStreamingThis && <span className="stream-cursor">▌</span>}
               </div>
             );

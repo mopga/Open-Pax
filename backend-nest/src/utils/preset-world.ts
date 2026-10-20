@@ -120,7 +120,7 @@ export function buildPresetWorld(preset: PresetPackage, worldId: string, geo: Pr
 
   const world = {
     id: worldId,
-    name: `${preset.name} - ${new Date().toLocaleDateString()}`,
+    name: preset.name,
     description: preset.description || preset.base_prompt.substring(0, 200),
     startDate: preset.start_date,
     // Лор пакета (lore.md) дополняет базовый промпт мира
