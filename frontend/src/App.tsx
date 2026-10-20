@@ -18,6 +18,7 @@ import { LLMSettingsModal } from './components/Settings/LLMSettingsModal';
 import type { Region, Polity } from './types';
 import { useGameStore, useUIStore, useActionsStore, useChatStore } from './stores';
 import { useSSE } from './services/sse';
+import { renderMarkdown } from './utils/inlineMarkdown';
 
 // Вспомогательная функция: форматирование диапазона дат
 const formatDateRange = (start: string, end: string): string => {
@@ -115,12 +116,16 @@ function App() {
     if (!world || changes.length === 0) return;
     const regions = { ...world.regions };
     const changed: string[] = [];
+    // Объекты (батальоны, столицы) обновляют карту, но регион не подсвечивают
+    let objectsChanged = false;
+    const objectIds = (r?: Partial<Region>) => (r?.objects || []).map(o => o.id).join(',');
     for (const c of changes) {
       const old = regions[c.id];
       if (!old || old.owner !== c.owner || old.color !== c.color || old.name !== c.name) changed.push(c.id);
+      else if (c.objects && objectIds(old) !== objectIds(c)) objectsChanged = true;
       regions[c.id] = { ...old, ...c } as Region;
     }
-    if (changed.length === 0) return;
+    if (changed.length === 0 && !objectsChanged) return;
     setCurrentWorld({ ...world, regions });
     if (highlight) {
       setChangedRegions(changed);
@@ -317,7 +322,7 @@ function App() {
         const code = game.players?.[0]?.polityId || game.world.regions[regionId]?.owner || String(regionId).split('_').pop();
         if (code) setSelectedCountry(code);
       }
-      setHistory([]);
+      setHistory(game.history ?? []);
       setCurrentView('game');
     } catch (e) {
       console.error('[Save] Failed to resume save:', e);
@@ -485,7 +490,7 @@ function App() {
                     {event.date && <time>{event.date}</time>}
                   </div>
                   <div className="history-event-card-title">{event.headline}</div>
-                  {event.description && <div className="history-event-card-description">{event.description}</div>}
+                  {event.description && <div className="history-event-card-description">{renderMarkdown(event.description)}</div>}
                 </div>
               ))}
             </div>
@@ -788,7 +793,7 @@ function App() {
                       )}
                     </div>
                     <div className="history-action">→ {item.action}</div>
-                    <div className="history-result">{item.result}</div>
+                    <div className="history-result">{renderMarkdown(item.result)}</div>
                     {item.timelineEvents && item.timelineEvents.length > 0 ? (
                       <div className="history-timeline-events">
                         {item.timelineEvents.map((event, ei) => (
@@ -798,7 +803,7 @@ function App() {
                               {event.date && <time>{event.date}</time>}
                             </div>
                             <div className="history-event-card-title">{event.headline}</div>
-                            {event.description && <div className="history-event-card-description">{event.description}</div>}
+                            {event.description && <div className="history-event-card-description">{renderMarkdown(event.description)}</div>}
                           </div>
                         ))}
                       </div>
