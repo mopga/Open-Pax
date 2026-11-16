@@ -11,6 +11,7 @@
 import React, { useMemo, useState } from 'react';
 import type { WorldTemplate, Country } from '../../types';
 import { WorldSelectMap } from './WorldSelectMap';
+import { muteColor } from '../Map/mapData';
 
 interface CountrySelectorProps {
   template: WorldTemplate;
@@ -31,7 +32,8 @@ export const CountrySelector: React.FC<CountrySelectorProps> = ({ template, onSe
     const colorOf: Record<string, string> = {};
     const nameOf: Record<string, string> = {};
     for (const c of countries) {
-      colorOf[c.code] = c.color;
+      // Те же приглушённые тона, что на игровой карте (цвета реестра — флаговые)
+      colorOf[c.code] = muteColor(c.color);
       nameOf[c.code] = c.name;
       for (const m of c.members ?? []) ownerOf[m] = c.code;
     }
@@ -59,7 +61,7 @@ export const CountrySelector: React.FC<CountrySelectorProps> = ({ template, onSe
       onClick={() => setSelectedCode(country.code)}
       title={country.description}
     >
-      <div className="country-color" style={{ backgroundColor: country.color }} />
+      <div className="country-color" style={{ backgroundColor: muteColor(country.color) }} />
       <div className="country-name">
         {country.name}
         {country.members && country.members.length > 0 && (

@@ -189,6 +189,10 @@ describe('Этап 0: сквозной дым-тест', () => {
     expect(restored.getCurrentTurn()).toBe(2);
     expect(restored.getRegion(`${WORLD_ID}_POL`).owner).toBe('DEU');
     expect(restored.getPlayer().polityId).toBe('DEU');
+    // История ходов тоже из БД: без неё ИИ после рестарта забывал прошлые события
+    expect(restored.getResults().map((r: any) => r.turn)).toEqual([1]);
+    expect(restored.getResults()[0].events).toContain('Польша капитулировала перед ФРГ');
+    expect(restored.getActions().map((a: any) => a.text)).toEqual(['Атаковать Польшу и аннексировать её']);
   });
 
   it('сейв/лоад сохраняет состояние полностью', async () => {
@@ -202,6 +206,9 @@ describe('Этап 0: сквозной дым-тест', () => {
     expect(loaded).not.toBeNull();
     expect(loaded.getCurrentDate()).toBe('1951-01-31');
     expect(loaded.getRegion(`${WORLD_ID}_POL`).owner).toBe('DEU');
+    // История в БД переписана по сейву: следующий рестарт увидит ту же ветку времени
+    const turns = db.prepare('SELECT turn FROM turn_results WHERE game_id = ? ORDER BY turn').all(gameId).map((r: any) => r.turn);
+    expect(turns).toEqual(loaded.getResults().map((r: any) => r.turn));
   });
 
   it('движок использует единый world jump без дублирующего NPC-прохода', () => {

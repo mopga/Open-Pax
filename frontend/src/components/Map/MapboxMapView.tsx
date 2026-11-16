@@ -238,7 +238,6 @@ export const MapboxMapView: React.FC<MapboxMapViewProps> = ({
     map.current = m;
     // Отладка в dev: карта доступна из консоли как window.__openPaxMap
     if (import.meta.env.DEV) (window as any).__openPaxMap = m;
-    m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
 
     m.on('load', () => {
       m.addSource(REGIONS_SOURCE, { type: 'geojson', data: EMPTY_FC, promoteId: 'id' });

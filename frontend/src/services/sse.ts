@@ -15,7 +15,7 @@ interface UseSSEOptions {
     index: number;
     total: number;
     event: any;
-    changedRegions?: { id: string; owner: string; color: string; name: string; status: string }[];
+    changedRegions?: { id: string; owner: string; color: string; name: string; status: string; objects?: any[] }[];
     /** Государства, у которых по событию сменились имя/цвет (или появились новые) */
     changedPolities?: { id: string; name: string; color: string; flag?: string | null }[];
   }) => void;

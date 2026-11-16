@@ -43,6 +43,8 @@ export interface RegionDelta {
   color: string;
   name: string;
   status: RegionState['status'];
+  /** Объекты региона (столица, батальоны) — меняются событиями spawn/move_battalion */
+  objects: any[];
 }
 
 export interface PlayerInfo {
@@ -386,6 +388,10 @@ export class GameSession {
 
     this.loadPolities();
 
+    // История ходов — из БД: без неё после рестарта сервера ИИ терял все прошлые события
+    this.actions = gameRepository.getActions(this.id);
+    this.results = gameRepository.getTurnResults(this.id);
+
     // Re-initialize game controller with current state
     this.gameController.initPromptEngine(this.buildGameData());
 
@@ -465,11 +471,13 @@ export class GameSession {
   }
 
   /** Отпечаток видимого на карте состояния регионов (для диффа по событию) */
+  private regionKey(r: RegionState): string {
+    return `${r.owner}|${r.color}|${r.name}|${r.status}|${(r.objects || []).map((o: any) => o.id).join(',')}`;
+  }
+
   private regionSnapshot(): Map<string, string> {
     const snap = new Map<string, string>();
-    for (const [id, r] of this.regions) {
-      snap.set(id, `${r.owner}|${r.color}|${r.name}|${r.status}`);
-    }
+    for (const [id, r] of this.regions) snap.set(id, this.regionKey(r));
     return snap;
   }
 
@@ -477,8 +485,8 @@ export class GameSession {
   private regionDelta(before: Map<string, string>): RegionDelta[] {
     const out: RegionDelta[] = [];
     for (const [id, r] of this.regions) {
-      if (before.get(id) !== `${r.owner}|${r.color}|${r.name}|${r.status}`) {
-        out.push({ id, owner: r.owner, color: r.color, name: r.name, status: r.status });
+      if (before.get(id) !== this.regionKey(r)) {
+        out.push({ id, owner: r.owner, color: r.color, name: r.name, status: r.status, objects: r.objects || [] });
       }
     }
     return out;
@@ -517,6 +525,11 @@ export class GameSession {
    */
   getResults(): TurnResultRecord[] {
     return this.results;
+  }
+
+  /** Приказы игрока по ходам */
+  getActions(): ActionRecord[] {
+    return this.actions;
   }
 
   /**
@@ -904,6 +917,8 @@ export class GameSession {
     // Update game in DB
     gameRepository.updateTurnAndDate(this.id, this.currentTurn, this.currentDate);
     gameRepository.updateConsolidation(this.id, this.consolidatedHistory, this.consolidatedUpTo);
+    // История в БД — как в сейве (сейв мог быть сделан в другой ветке времени)
+    gameRepository.replaceHistory(this.id, this.actions, this.results);
 
     // Sync restored regions to DB
     this.syncRegionsToDB();

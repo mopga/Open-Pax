@@ -120,6 +120,38 @@ export const gameRepository = {
     stmt.run(history, upToTurn, gameId);
   },
 
+  /** Приказы игры по порядку ходов — история для LLM после рестарта сервера */
+  getActions: (gameId: string): { id: string; playerId: string; turn: number; text: string; createdAt: string }[] => {
+    const rows = db.prepare('SELECT * FROM actions WHERE game_id = ? ORDER BY turn, created_at').all(gameId) as any[];
+    return rows.map(r => ({ id: r.id, playerId: r.player_id, turn: r.turn, text: r.text, createdAt: r.created_at }));
+  },
+
+  /** Итоги ходов игры по порядку */
+  getTurnResults: (gameId: string): { id: string; turn: number; narration: string; countryResponse: string; events: string[] }[] => {
+    const rows = db.prepare('SELECT * FROM turn_results WHERE game_id = ? ORDER BY turn').all(gameId) as any[];
+    return rows.map(r => ({
+      id: r.id,
+      turn: r.turn,
+      narration: r.narration ?? '',
+      countryResponse: r.country_response ?? '',
+      events: (() => { try { return JSON.parse(r.events || '[]'); } catch { return []; } })(),
+    }));
+  },
+
+  /** Заменить историю игры (загрузка сейва из другой ветки времени) */
+  replaceHistory: (
+    gameId: string,
+    actions: { id: string; playerId: string; turn: number; text: string }[],
+    results: { id: string; turn: number; narration: string; countryResponse: string; events: string[] }[],
+  ) => {
+    db.transaction(() => {
+      db.prepare('DELETE FROM actions WHERE game_id = ?').run(gameId);
+      db.prepare('DELETE FROM turn_results WHERE game_id = ?').run(gameId);
+      for (const a of actions) gameRepository.addAction({ ...a, gameId });
+      for (const r of results) gameRepository.addTurnResult({ ...r, gameId });
+    })();
+  },
+
   /** Этап 2 (rewind): удалить действия и результаты ходов новее указанного. */
   deleteAfterTurn: (gameId: string, turn: number) => {
     db.prepare('DELETE FROM actions WHERE game_id = ? AND turn > ?').run(gameId, turn);

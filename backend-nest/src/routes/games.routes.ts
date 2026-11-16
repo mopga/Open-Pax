@@ -114,6 +114,21 @@ gamesRouter.get('/:id', (req, res) => {
       regionId: p.regionId,
       polityId: p.polityId,
     })),
+    // История ходов — для ленты после загрузки сейва или перезагрузки страницы
+    history: (() => {
+      const session = getSessionRegistry().getSession(game.id);
+      if (!session) return [];
+      const actions = session.getActions();
+      return session.getResults().map(r => {
+        const orders = actions.filter(a => a.turn === r.turn).map(a => a.text);
+        return {
+          turn: r.turn,
+          action: orders.length > 0 ? orders.join('\n') : '⏭️ Автономный ход мира',
+          result: r.narration,
+          events: r.events,
+        };
+      });
+    })(),
   });
 });
 
